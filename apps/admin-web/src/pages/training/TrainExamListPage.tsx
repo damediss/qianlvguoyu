@@ -42,6 +42,7 @@ const TYPE_OPTIONS = [
 const SOURCE_OPTIONS = [
   { value: 0, label: '内部' },
   { value: 1, label: '外部' },
+  { value: 3, label: '赛前复习' },
 ];
 
 /** 列表查询状态持久化：进入 AI 同步学统计页后列表组件被卸载，返回时从 sessionStorage 恢复当前页/筛选 */
@@ -126,7 +127,10 @@ export function TrainExamListPage() {
     },
     {
       title: '来源', dataIndex: 'source', width: 80,
-      render: (v?: number) => (v === 1 ? <Tag>外部</Tag> : <Tag color="green">内部</Tag>),
+      render: (v?: number) =>
+        v === 1 ? <Tag>外部</Tag>
+        : v === 3 ? <Tag color="blue">赛前复习</Tag>
+        : <Tag color="green">内部</Tag>,
     },
     { title: '考试日期', dataIndex: 'examDate', width: 120 },
     { title: '考试时长(分)', dataIndex: 'examTime', width: 110 },
