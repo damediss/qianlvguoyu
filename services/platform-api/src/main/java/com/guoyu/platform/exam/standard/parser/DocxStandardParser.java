@@ -183,8 +183,17 @@ public class DocxStandardParser {
       return;
     }
     if (ctx.mainSection == 3 && h.depth == 2) {
-      StandardLevelDoc level = new StandardLevelDoc();
       int levelCode = resolveLevelCode(h.title, h.n2, ctx.result.getParseWarnings());
+      // 防御：同一等级只建一个文档。重复的等级标题（误判标题/重复章节）归并到已有等级，
+      // 后续表格继续挂上去；否则 build() 会为同一 等级×方向 建多棵同 key 树，
+      // persistTree 预分配 ID 撞主键（炭素成型工选考说明事故）
+      StandardLevelDoc existing = findParsedLevel(ctx.result.getLevels(), levelCode);
+      if (existing != null) {
+        ctx.result.getParseWarnings().add("WARN: 等级标题重复，归并到已解析等级：" + h.title);
+        ctx.currentLevel = existing;
+        return;
+      }
+      StandardLevelDoc level = new StandardLevelDoc();
       level.setLevelCode(levelCode);
       level.setLevelName(LEVEL_NAMES[levelCode]);
       ctx.result.getLevels().add(level);
@@ -199,6 +208,15 @@ public class DocxStandardParser {
       }
       return;
     }
+  }
+
+  private StandardLevelDoc findParsedLevel(List<StandardLevelDoc> levels, int levelCode) {
+    for (StandardLevelDoc level : levels) {
+      if (level != null && level.getLevelCode() == levelCode) {
+        return level;
+      }
+    }
+    return null;
   }
 
   private int resolveLevelCode(String title, int h2, List<String> warnings) {

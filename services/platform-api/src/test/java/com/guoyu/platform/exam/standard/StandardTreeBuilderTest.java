@@ -10,10 +10,12 @@ import com.guoyu.platform.exam.standard.parser.DocxStandardParser;
 import com.guoyu.platform.exam.standard.parser.model.ParsedStandard;
 import com.guoyu.platform.exam.standard.service.NodeKeyGenerator;
 import com.guoyu.platform.exam.standard.service.StandardL2WeightInitializer;
+import com.guoyu.platform.exam.standard.service.StandardParseApplicationService;
 import com.guoyu.platform.exam.standard.service.StandardTreeBuilder;
 import com.guoyu.platform.exam.standard.service.StandardTreeDraft;
 import java.io.InputStream;
 import java.math.BigDecimal;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -234,5 +236,31 @@ class StandardTreeBuilderTest {
       assertTrue(combos.contains("4|电焊工"));
       assertTrue(combos.contains("4|焊接设备操作工"));
     }
+  }
+
+  /**
+   * B6：炭素成型工——选考说明段不产生假等级，同 等级×方向 树 key 唯一（生产主键冲突事故回归）。
+   * 事故：选考说明"…工作内容 2. 6 及 2. 7"曾被粘连兜底判为等级标题，一级(levelCode=4)
+   * 文档解析出三份，persistTree 预分配 ID 时同 key 覆盖，两批节点同 ID 撞 exam_standard_node.PRIMARY。
+   */
+  @Test
+  void b6_tansuDraftKeysUnique() throws Exception {
+    ParsedStandard tansu;
+    try (InputStream in = StandardTreeBuilderTest.class
+        .getResourceAsStream("/standard/炭素成型工.docx")) {
+      assertNotNull(in, "测试资源缺失：炭素成型工.docx");
+      tansu = new DocxStandardParser().parse(in);
+    }
+    List<StandardTreeDraft> drafts = new StandardTreeBuilder().build(tansu);
+    Set<String> seen = new HashSet<>();
+    for (StandardTreeDraft draft : drafts) {
+      String mapKey = StandardParseApplicationService.treeMapKey(
+          draft.levelCode(), draft.direction(), draft.nodeKey());
+      assertTrue(seen.add(mapKey), "draft mapKey 不应重复：" + mapKey);
+    }
+    // 5 个等级 × 默认方向 → 恰好 5 棵树（5 个 A 根）
+    long roots = drafts.stream().filter(d -> "A".equals(d.nodeKey())).count();
+    assertEquals(5, roots, "应有 5 棵等级树（5 等级 × 默认方向），实际：" + seen.stream()
+        .filter(k -> k.endsWith("|A")).toList());
   }
 }

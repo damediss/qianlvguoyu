@@ -23,6 +23,12 @@ public final class DocxTextUtil {
   /** 全文搜索 plausible 标题（用于页眉垃圾与标题粘连的段落） */
   private static final Pattern HEADING_SEARCH = Pattern.compile(
       "(\\d)\\s*\\.\\s*(\\d{1,2})(?:\\s*\\.\\s*(\\d{1,2}))?\\s*\\.?\\s*([\\u4e00-\\u9fff][^　]*)$");
+  /**
+   * 编号特征（"2. 6"/"2.6"）：粘连候选的尾部再含它即为枚举/说明段而非标题。
+   * 坑：炭素成型工每等级开头的选考说明"…工作内容 2. 6 及 2. 7"曾被当标题，按章节序号兜底
+   * 推断成一级(levelCode=4)，同一等级文档重复三份，persistTree 预分配 ID 撞主键 500。
+   */
+  private static final Pattern NUMBERING_TAIL = Pattern.compile("\\d\\s*\\.\\s*\\d");
   /** 表格单元格内的点号编号项，如 1.1.1 / 2.1（可能带空格：1. 1. 1） */
   private static final Pattern DOTTED_ITEM = Pattern.compile(
       "(\\d{1,2}(?:\\s*\\.\\s*\\d{1,2}){1,2})\\s*\\.?\\s*");
@@ -113,7 +119,12 @@ public final class DocxTextUtil {
         if (n3 > 30) {
           continue;
         }
-        last = new Heading(n3 >= 0 ? 3 : 2, n1, n2, n3, m.group(4).trim());
+        String tail = m.group(4).trim();
+        // 尾部再含编号特征 = 枚举/说明段（如选考说明"…工作内容 2. 6 及 2. 7"），不是标题
+        if (NUMBERING_TAIL.matcher(tail).find()) {
+          continue;
+        }
+        last = new Heading(n3 >= 0 ? 3 : 2, n1, n2, n3, tail);
         lastStart = m.start();
       }
     }

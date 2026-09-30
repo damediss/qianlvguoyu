@@ -28,6 +28,7 @@ class DocxStandardParserTest {
   private static ParsedStandard kuangshan;
   private static ParsedStandard hangong;
   private static ParsedStandard beiliao;
+  private static ParsedStandard tansu;
 
   @BeforeAll
   static void parseAll() throws Exception {
@@ -46,6 +47,11 @@ class DocxStandardParserTest {
         .getResourceAsStream("/standard/重冶备料工.docx")) {
       assertNotNull(in, "测试资源缺失：重冶备料工.docx");
       beiliao = parser.parse(in);
+    }
+    try (InputStream in = DocxStandardParserTest.class
+        .getResourceAsStream("/standard/炭素成型工.docx")) {
+      assertNotNull(in, "测试资源缺失：炭素成型工.docx");
+      tansu = parser.parse(in);
     }
   }
 
@@ -136,6 +142,59 @@ class DocxStandardParserTest {
   void a4_headingTraps() {
     assertNodeTreeClean(kuangshan);
     assertNodeTreeClean(hangong);
+  }
+
+  /**
+   * A11：炭素成型工选考说明段落不得被当成等级标题（生产 500 事故回归）。
+   * 该职业每个等级开头有"本等级第 X 项职业功能为选考项…工作内容 2. 4、2. 5、2. 6 及 2. 7…"，
+   * 粘连兜底曾把"…2. 6 及 2. 7"识别为标题 → 同一等级文档解析出三份 → 建树 ID 撞主键。
+   */
+  @Test
+  void a11_tansuLevelsExactlyFiveNoDuplicate() {
+    assertEquals(5, tansu.getLevels().size(), "应识别 5 个等级节，选考说明不得膨胀出假等级");
+    List<Integer> codes = tansu.getLevels().stream()
+        .map(StandardLevelDoc::getLevelCode).toList();
+    assertEquals(List.of(0, 1, 2, 3, 4), codes, "等级应为五~一级各一份且有序");
+
+    // 表格归属：五级的工作要求表应挂在五级名下，不被假标题截走
+    List<StandardNodeDoc> chuJiFuncs = tansu.levelOf(0).getWorkFunctions();
+    assertFalse(chuJiFuncs.isEmpty(), "五级职业功能不应为空");
+    assertTrue(chuJiFuncs.stream().anyMatch(f -> f.getTitle().contains("工作准备")),
+        "五级应含工作准备职业功能");
+    assertTrue(chuJiFuncs.stream().anyMatch(f -> f.getTitle().contains("生产操作")),
+        "五级应含生产操作职业功能");
+
+    // 一级挂的是一级自己的表（生产异常处理是"异常判断与处理"下的工作内容），不是四级/五级的表
+    List<StandardNodeDoc> yiJiFuncs = tansu.levelOf(4).getWorkFunctions();
+    assertFalse(yiJiFuncs.isEmpty(), "一级职业功能不应为空");
+    assertTrue(yiJiFuncs.stream().anyMatch(f -> f.getTitle().contains("异常判断与处理")
+            && f.getChildren().stream().anyMatch(c -> c.getTitle().contains("生产异常处理"))),
+        "一级应在异常判断与处理下含生产异常处理工作内容");
+    assertTrue(yiJiFuncs.stream().noneMatch(f -> f.getTitle().contains("工作交接")),
+        "一级不应混入五级的工作交接");
+
+    for (String warning : tansu.getParseWarnings()) {
+      assertFalse(warning.startsWith("ERROR"), "不应有 ERROR 级警告：" + warning);
+    }
+  }
+
+  /** A11b：粘连兜底的单元口径——枚举/说明段拒绝，真粘连标题保留 */
+  @Test
+  void a11b_selectionNoteParagraphNotHeading() {
+    // 尾部再含编号（"…2. 6 及 2. 7"）= 枚举段，拒绝
+    assertNull(DocxTextUtil.detectHeading(
+        "本等级第 2 项职业功能为选考项，其中炭素配料工考核工作内容 2.4、2.5、2.6 及 2.7，"
+            + "炭素混捏工考核工作内容 2.2、2.3、2.4，炭素压制工考核工作内容 2.5、2.6 及 2.7"));
+    // 尾部无编号的纯枚举段（原三级选考说明，本就不产生假标题）保持拒绝
+    assertNull(DocxTextUtil.detectHeading(
+        "本等级第 1 项职业功能为选考项，其中炭素配料工考核工作内容 1.4、1.5、1.6，"
+            + "炭素混捏工考核工作内容 1.2、1.3、1.7，炭素压制工考核工作内容 1.5、1.6"));
+    // 页眉垃圾粘连真标题（"4. 1 理论知识权重表"）不受影响
+    DocxTextUtil.Heading glued = DocxTextUtil.detectHeading(
+        "105105职业编码：6-15-07-02 4. 1 理论知识权重表");
+    assertNotNull(glued, "页眉粘连的真标题应保留");
+    assertEquals(2, glued.depth);
+    assertEquals("理论知识权重表", glued.title);
   }
 
   private void assertNodeTreeClean(ParsedStandard standard) {
