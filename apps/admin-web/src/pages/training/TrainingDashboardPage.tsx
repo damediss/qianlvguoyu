@@ -26,6 +26,7 @@ import ReactECharts from 'echarts-for-react';
 import { useEffect, useMemo, useState } from 'react';
 import * as trainApi from '../../api/training';
 import { PermissionGate } from '../../directives/permission';
+import { ReviewSyncPanel } from './ReviewSyncPanel';
 import type {
   DashboardAlertItem,
   DashboardCompanyOverview,
@@ -364,6 +365,8 @@ export function TrainingDashboardPage() {
             </div>
           ))}
         </div>
+
+        <ReviewSyncPanel />
 
         <Card title="培训全流程模块概览" size="small">
           <div className="training-dashboard-modules">

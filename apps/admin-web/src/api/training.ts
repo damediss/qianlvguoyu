@@ -21,6 +21,7 @@ import type {
   TrainProjectTable, TrainProjectTableQuery, TrainProjectTableCreateReq, TrainProjectTableUpdateReq,
   TrainDashboard,
   DashboardMilestoneItem,
+  ReviewSyncPanel,
   DashboardStageDistribution,
   DashboardCompanyOverview,
   TrainTalentNeed, TrainTalentNeedQuery, TrainTalentNeedCreateReq, TrainTalentNeedUpdateReq,
@@ -386,6 +387,11 @@ export function deleteProjectTable(id: number) {
 // ==================== Dashboard (仪表盘) ====================
 export function getDashboard() {
   return unwrap<TrainDashboard>(apiClient.get(`${BASE}/dashboard`));
+}
+
+/** 同步练习（AI 同步学）统计面板：一次拿全，默认近 30 天 */
+export function getReviewSyncPanel(days: number = 30) {
+  return unwrap<ReviewSyncPanel>(apiClient.get(`${BASE}/dashboard/review-sync`, { params: { days } }));
 }
 
 export function getDashboardMilestones() {
