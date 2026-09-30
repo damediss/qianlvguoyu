@@ -306,6 +306,77 @@ class ClassReviewSyncAutoProvisionTest {
   }
 
   @Test
+  void ensureBoundAndSyncRoster_mismatchSoftFailsWithoutAutoRebind() {
+    TrainClassReviewSyncEntity existing = new TrainClassReviewSyncEntity();
+    existing.setId(3L);
+    existing.setTenantId(1L);
+    existing.setClassId(88L);
+    existing.setExamId(400L);
+    existing.setEnabled(1);
+    existing.setDeleted(0);
+    stored[0] = existing;
+
+    // 他班「*-同步学」：即便工种等级相符也不得 Tab 静默改绑
+    TrainExamListEntity bound = exam(400L, "中级2班-同步学");
+    bound.setLevel("3");
+    when(examListMapper.selectOne(any())).thenReturn(bound);
+    when(examListMapper.selectById(400L)).thenReturn(bound);
+    when(workTypeListMapper.selectList(any())).thenReturn(List.of(binding(400L, 5L, "3")));
+
+    try (MockedStatic<SecurityContext> ignored = mockCurrentAdmin()) {
+      Map<String, Object> out = service.ensureBoundAndSyncRoster(88L);
+      assertThat(out.get("ok")).isEqualTo(false);
+      assertThat(out.get("action")).isEqualTo("mismatch");
+      assertThat(String.valueOf(out.get("message"))).contains("同步学配置");
+    }
+    verify(examListApplicationService, never()).createForClassReviewSync(any(), any());
+  }
+
+  @Test
+  void unenrollClassRosterFromOtherSyncExams_includesNewFormatTitles() {
+    TrainExamListEntity legacy = exam(201L, "他班-同步学");
+    TrainExamListEntity neu = exam(202L, "他班-同步学-99");
+    when(examListMapper.selectList(any())).thenReturn(List.of(legacy, neu));
+
+    TrainPeopleListEntity student = new TrainPeopleListEntity();
+    student.setPlatformUserId(501L);
+    student.setIdCard("110101199001011234");
+    student.setType("student");
+    student.setDeleted(0);
+    when(peopleMapper.selectList(any())).thenReturn(List.of(student));
+
+    TrainExamPeopleListEntity onLegacy = new TrainExamPeopleListEntity();
+    onLegacy.setId(11L);
+    onLegacy.setExamId(201L);
+    onLegacy.setPlatformUserId(501L);
+    onLegacy.setDeleted(0);
+    TrainExamPeopleListEntity onNew = new TrainExamPeopleListEntity();
+    onNew.setId(12L);
+    onNew.setExamId(202L);
+    onNew.setPlatformUserId(501L);
+    onNew.setDeleted(0);
+    when(examPeopleMapper.selectList(any())).thenReturn(List.of(onLegacy), List.of(onNew));
+    when(examPeopleMapper.deleteById(11L)).thenReturn(1);
+    when(examPeopleMapper.deleteById(12L)).thenReturn(1);
+
+    int removed = service.unenrollClassRosterFromOtherSyncExams(clazz, 999L);
+    assertThat(removed).isEqualTo(2);
+    verify(examPeopleMapper).deleteById(11L);
+    verify(examPeopleMapper).deleteById(12L);
+  }
+
+  @Test
+  void titleOwnsClass_keepsOwnershipAfterClassRenameViaClassIdSuffix() {
+    TrainInfoClassEntity renamed = new TrainInfoClassEntity();
+    renamed.setId(88L);
+    renamed.setTitle("改名后的班");
+    assertThat(ClassReviewSyncApplicationService.titleOwnsClass("浸出班-同步学-88", renamed)).isTrue();
+    assertThat(ClassReviewSyncApplicationService.titleOwnsClass("改名后的班-同步学-88", renamed)).isTrue();
+    assertThat(ClassReviewSyncApplicationService.titleOwnsClass("中级2班-同步学-99", renamed)).isFalse();
+    assertThat(ClassReviewSyncApplicationService.titleOwnsClass("改名后的班-同步学", renamed)).isTrue();
+  }
+
+  @Test
   void unenrollClassRosterFromExam_softDeletesOnlyClassStudents() {
     TrainPeopleListEntity student = new TrainPeopleListEntity();
     student.setPlatformUserId(501L);
@@ -475,6 +546,48 @@ class ClassReviewSyncAutoProvisionTest {
       assertThat(service.ensureExamReviewConfig(999L)).isFalse();
     }
     verify(jdbcTemplate, never()).update(any(String.class), any(), any(), any(), any(), any());
+  }
+
+  @Test
+  void enrollRoster_rewritesStalePlatformUserIdOnIdCardHit() {
+    TrainClassReviewSyncEntity existing = new TrainClassReviewSyncEntity();
+    existing.setId(3L);
+    existing.setTenantId(1L);
+    existing.setClassId(88L);
+    existing.setExamId(999L);
+    existing.setEnabled(1);
+    existing.setDeleted(0);
+    stored[0] = existing;
+
+    TrainExamListEntity keep = exam(999L, "浸出班-同步学-88");
+    when(examListMapper.selectOne(any())).thenReturn(keep);
+    when(examListMapper.selectById(999L)).thenReturn(keep);
+    when(examListMapper.selectList(any())).thenReturn(List.of());
+
+    TrainPeopleListEntity student = new TrainPeopleListEntity();
+    student.setPlatformUserId(777L);
+    student.setIdCard("110101199001011234");
+    student.setRealname("补开账号学员");
+    student.setType("student");
+    student.setDeleted(0);
+    when(peopleMapper.selectList(any())).thenReturn(List.of(student));
+
+    TrainExamPeopleListEntity staleUid = new TrainExamPeopleListEntity();
+    staleUid.setId(55L);
+    staleUid.setExamId(999L);
+    staleUid.setPlatformUserId(111L); // 旧账号
+    staleUid.setIdCardNum("110101199001011234");
+    staleUid.setDeleted(0);
+    when(examPeopleMapper.selectList(any())).thenReturn(List.of(staleUid));
+    when(examPeopleMapper.updateById(any(TrainExamPeopleListEntity.class))).thenReturn(1);
+
+    try (MockedStatic<SecurityContext> ignored = mockCurrentAdmin()) {
+      Map<String, Object> out = service.enrollRoster(88L);
+      assertThat(out.get("existed")).isEqualTo(1);
+      assertThat(out.get("inserted")).isEqualTo(0);
+    }
+    assertThat(staleUid.getPlatformUserId()).isEqualTo(777L);
+    verify(examPeopleMapper).updateById(staleUid);
   }
 
   @Test

@@ -19,6 +19,7 @@ import com.guoyu.platform.trainingdepartment.entity.TrainExamListEntity;
 import com.guoyu.platform.trainingdepartment.entity.TrainExamPeopleListEntity;
 import com.guoyu.platform.trainingdepartment.entity.TrainInfoListEntity;
 import com.guoyu.platform.trainingdepartment.entity.TrainPeopleListEntity;
+import com.guoyu.platform.trainingdepartment.mapper.TrainClassReviewSyncMapper;
 import com.guoyu.platform.trainingdepartment.mapper.TrainExamListMapper;
 import com.guoyu.platform.trainingdepartment.mapper.TrainExamPeopleListMapper;
 import com.guoyu.platform.trainingdepartment.mapper.TrainExamWorkTypeListMapper;
@@ -60,6 +61,8 @@ class TrainExamListGuardTest {
   private TrainInfoListMapper trainInfoListMapper;
   @Mock
   private TrainPeopleListMapper trainPeopleListMapper;
+  @Mock
+  private TrainClassReviewSyncMapper reviewSyncMapper;
 
   private TrainExamListApplicationService service;
 
@@ -67,7 +70,8 @@ class TrainExamListGuardTest {
   void setUp() {
     service = new TrainExamListApplicationService(mapper, workTypeListMapper, peopleListMapper,
         examCourseMapper, knowledgeStructureMapper, examDetailMapper,
-        trainInfoListMapper, trainPeopleListMapper, mock(TrainingOperatorScopeService.class));
+        trainInfoListMapper, trainPeopleListMapper, reviewSyncMapper,
+        mock(TrainingOperatorScopeService.class));
   }
 
   private MockedStatic<SecurityContext> mockCurrentAdmin() {

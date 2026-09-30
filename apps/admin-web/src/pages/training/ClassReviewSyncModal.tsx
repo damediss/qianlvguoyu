@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert,
   Button,
@@ -48,6 +48,8 @@ export function ClassReviewSyncModal({ open, onClose, classId, classTitle }: Pro
   const [enabled, setEnabled] = useState(true);
   const [remark, setRemark] = useState('');
   const [syncRange, setSyncRange] = useState<[Dayjs, Dayjs] | null>(null);
+  /** 仅在打开弹窗时灌入表单，避免 ensure/refetch 冲掉未保存编辑 */
+  const seededForOpenRef = useRef(false);
 
   const configQuery = useQuery({
     queryKey: ['class-review-sync-config', classId],
@@ -63,7 +65,12 @@ export function ClassReviewSyncModal({ open, onClose, classId, classTitle }: Pro
   });
 
   useEffect(() => {
-    if (!open || !configQuery.data) return;
+    if (!open) {
+      seededForOpenRef.current = false;
+      return;
+    }
+    if (!configQuery.data || seededForOpenRef.current) return;
+    seededForOpenRef.current = true;
     const d = configQuery.data;
     setExamId(d.examId ?? undefined);
     setEnabled(!!d.enabled);

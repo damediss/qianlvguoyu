@@ -37,7 +37,7 @@ public class TrainClassRoleController {
 
   @GetMapping("/classes/{classId}/role-summary")
   @PreAuthorize(TrainingAuthorityExpressions.CLASS_PEOPLE_VIEW
-      + " or hasAuthority('train:follow:view') or hasAuthority('train:attendance:view')")
+      + " or hasAuthority('train:attendance:view')")
   public ApiResponse<Map<String, Object>> summary(@PathVariable Long classId) {
     return ApiResponse.ok(roleService.roleSummary(classId));
   }

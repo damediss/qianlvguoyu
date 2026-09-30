@@ -2855,8 +2855,10 @@ export function ensureClassSubsidy(
   );
 }
 
-/** 跳转申报补贴页时写入焦点（班级 / 单号）；页面挂载后消费并清除 */
+/** 跳转申报补贴页时写入焦点（班级 / 单号）；页面挂载或已打开时消费并清除 */
 export const SUBSIDY_DECLARE_FOCUS_KEY = 'train_subsidy_declare_focus';
+/** 同页已挂载时通知消费焦点（sessionStorage 同标签页不触发 storage 事件） */
+export const SUBSIDY_DECLARE_FOCUS_EVENT = 'train_subsidy_declare_focus';
 
 export type SubsidyDeclareFocus = {
   classId?: number | string;
@@ -2869,6 +2871,11 @@ export function stashSubsidyDeclareFocus(focus: SubsidyDeclareFocus) {
     sessionStorage.setItem(SUBSIDY_DECLARE_FOCUS_KEY, JSON.stringify(focus));
   } catch {
     /* ignore quota */
+  }
+  try {
+    window.dispatchEvent(new CustomEvent(SUBSIDY_DECLARE_FOCUS_EVENT, { detail: focus }));
+  } catch {
+    /* ignore non-browser */
   }
 }
 

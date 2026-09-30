@@ -363,6 +363,36 @@ type Props = {
   onBack: () => void;
 };
 
+/** 分页拉齐考勤，避免单页 5000 截断导致累计统计不准 */
+async function fetchAllAttendances(params: {
+  classId: number;
+  attendanceDate?: string;
+  scheduleId?: number;
+  unscheduledOnly?: boolean;
+}): Promise<{ items: trainApi.TrainAttendanceItem[]; total: number }> {
+  const pageSize = 500;
+  const maxPages = 200;
+  const items: trainApi.TrainAttendanceItem[] = [];
+  let page = 1;
+  let total = Number.POSITIVE_INFINITY;
+  while (items.length < total && page <= maxPages) {
+    const res = await trainApi.pageAttendances({
+      ...params,
+      page,
+      pageSize,
+    });
+    const batch = res.items ?? [];
+    items.push(...batch);
+    total = typeof res.total === 'number' ? res.total : items.length;
+    if (batch.length === 0) break;
+    page += 1;
+  }
+  if (items.length < total) {
+    message.warning(`考勤记录较多，仅加载 ${items.length}/${total} 条，累计统计可能偏少`);
+  }
+  return { items, total };
+}
+
 export function FollowClassWorkbench({ classItem, onBack }: Props) {
   const queryClient = useQueryClient();
   const navigateTo = useNavStore((s) => s.setSelectedKey);
@@ -700,10 +730,28 @@ export function FollowClassWorkbench({ classItem, onBack }: Props) {
   const students = studentsData?.list ?? [];
   const studentTotal = studentsData?.total ?? 0;
 
-  /** 概览统计用全量花名册（避免分页导致当日实到不准） */
+  /** 概览统计用全量花名册（分页拉齐，避免 >500 人时当日实到不准） */
   const { data: allStudentsData } = useQuery({
     queryKey: ['follow-students-all', classId],
-    queryFn: () => trainApi.listClassStudents(classId, 1, 500),
+    queryFn: async () => {
+      const pageSize = 200;
+      const list: NonNullable<Awaited<ReturnType<typeof trainApi.listClassStudents>>['list']> = [];
+      let page = 1;
+      let total = Number.POSITIVE_INFINITY;
+      const maxPages = 100;
+      while (list.length < total && page <= maxPages) {
+        const res = await trainApi.listClassStudents(classId, page, pageSize);
+        const batch = res.list ?? [];
+        list.push(...batch);
+        total = typeof res.total === 'number' ? res.total : list.length;
+        if (batch.length === 0) break;
+        page += 1;
+      }
+      if (list.length < total) {
+        message.warning(`本班花名册较大，概览仅加载 ${list.length}/${total} 人，当日实到可能偏少`);
+      }
+      return { list, total };
+    },
     enabled: !!classId,
   });
   const allStudents = allStudentsData?.list ?? students;
@@ -719,9 +767,7 @@ export function FollowClassWorkbench({ classItem, onBack }: Props) {
   const { data: attendancePage, isLoading: attendanceLoading, isError: attendanceError } = useQuery({
     queryKey: ['follow-attendance', classIdNum, dateStr, sessionKey],
     queryFn: () =>
-      trainApi.pageAttendances({
-        page: 1,
-        pageSize: 5000,
+      fetchAllAttendances({
         classId: classIdNum!,
         attendanceDate: dateStr,
         ...(isSessionAttendance ? { scheduleId: selectedScheduleId! } : {}),
@@ -733,12 +779,7 @@ export function FollowClassWorkbench({ classItem, onBack }: Props) {
   /** 班级全部考勤（累计统计 / 近日出勤） */
   const { data: allAttendancePage, isLoading: allAttendanceLoading } = useQuery({
     queryKey: ['follow-attendance-all', classIdNum],
-    queryFn: () =>
-      trainApi.pageAttendances({
-        page: 1,
-        pageSize: 5000,
-        classId: classIdNum!,
-      }),
+    queryFn: () => fetchAllAttendances({ classId: classIdNum! }),
     enabled: classIdNum != null && classIdNum > 0,
     retry: false,
   });

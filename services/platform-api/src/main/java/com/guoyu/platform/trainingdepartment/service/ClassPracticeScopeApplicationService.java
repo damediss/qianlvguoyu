@@ -79,17 +79,31 @@ public class ClassPracticeScopeApplicationService {
 
   @Transactional(readOnly = true)
   public Map<String, Object> listCourseOptions(String keyword, Long workTypeId) {
-    LambdaQueryWrapper<ExamCourseEntity> q = new LambdaQueryWrapper<ExamCourseEntity>()
-        .orderByAsc(ExamCourseEntity::getSortNumber)
-        .orderByAsc(ExamCourseEntity::getId)
-        .last("LIMIT 500");
-    if (workTypeId != null && workTypeId > 0) {
-      q.eq(ExamCourseEntity::getWorkTypeId, workTypeId.intValue());
+    // 分页拉全量：原先 LIMIT 500 大题库选不全；有 keyword 时同样分页以免截断
+    List<ExamCourseEntity> courses = new ArrayList<>();
+    final int pageSize = 1000;
+    final int maxPages = 50;
+    for (int page = 0; page < maxPages; page++) {
+      LambdaQueryWrapper<ExamCourseEntity> q = new LambdaQueryWrapper<ExamCourseEntity>()
+          .orderByAsc(ExamCourseEntity::getSortNumber)
+          .orderByAsc(ExamCourseEntity::getId)
+          .last("LIMIT " + (page * pageSize) + "," + pageSize);
+      if (workTypeId != null && workTypeId > 0) {
+        q.eq(ExamCourseEntity::getWorkTypeId, workTypeId.intValue());
+      }
+      if (StringUtils.hasText(keyword)) {
+        q.like(ExamCourseEntity::getTitle, keyword.trim());
+      }
+      List<ExamCourseEntity> batch = examCourseMapper.selectList(q);
+      if (batch.isEmpty()) {
+        break;
+      }
+      courses.addAll(batch);
+      if (batch.size() < pageSize) {
+        break;
+      }
     }
-    if (StringUtils.hasText(keyword)) {
-      q.like(ExamCourseEntity::getTitle, keyword.trim());
-    }
-    List<Map<String, Object>> items = examCourseMapper.selectList(q).stream().map(c -> {
+    List<Map<String, Object>> items = courses.stream().map(c -> {
       Map<String, Object> row = new LinkedHashMap<>();
       row.put("id", c.getId());
       row.put("title", c.getTitle());

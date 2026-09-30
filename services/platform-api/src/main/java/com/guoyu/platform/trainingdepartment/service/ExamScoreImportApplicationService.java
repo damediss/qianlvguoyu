@@ -134,39 +134,52 @@ public class ExamScoreImportApplicationService {
     } else {
       companyFilter = operatorScopeService.resolveCompanyFilter(companyId);
     }
-    int limit = (companyFilter != null || unassignedOnly) ? 2000 : 500;
-    LambdaQueryWrapper<TrainInfoClassEntity> wrapper = new LambdaQueryWrapper<TrainInfoClassEntity>()
-        .eq(TrainInfoClassEntity::getDeleted, 0)
-        .orderByDesc(TrainInfoClassEntity::getAddtime)
-        .last("LIMIT " + limit);
-    if (unassignedOnly) {
-      // 班级与培训需求均未挂企业
-      wrapper.and(w -> w.isNull(TrainInfoClassEntity::getCompanyId)
-          .or()
-          .eq(TrainInfoClassEntity::getCompanyId, 0L));
-      wrapper.and(w -> w.isNull(TrainInfoClassEntity::getTrainInfoId)
-          .or()
-          .eq(TrainInfoClassEntity::getTrainInfoId, 0L)
-          .or()
-          .notInSql(
-              TrainInfoClassEntity::getTrainInfoId,
-              "SELECT id FROM train_info_list WHERE deleted=0 AND company_id IS NOT NULL AND company_id<>0"));
-    } else if (companyFilter != null) {
-      // 班级 company_id 可能为空：同时按培训需求 train_info_list.company_id 归属
-      Long cid = companyFilter;
-      wrapper.and(w -> w.eq(TrainInfoClassEntity::getCompanyId, cid)
-          .or()
-          .inSql(
-              TrainInfoClassEntity::getTrainInfoId,
-              "SELECT id FROM train_info_list WHERE deleted=0 AND company_id=" + cid));
+    // 分页拉全量：原先无企业筛选 LIMIT 500、有筛选 2000，大租户会漏班导致统计/导入选不齐
+    List<TrainInfoClassEntity> classes = new ArrayList<>();
+    final int pageSize = 1000;
+    final int maxPages = 50; // 硬顶 5 万，防失控
+    for (int page = 0; page < maxPages; page++) {
+      LambdaQueryWrapper<TrainInfoClassEntity> wrapper = new LambdaQueryWrapper<TrainInfoClassEntity>()
+          .eq(TrainInfoClassEntity::getDeleted, 0)
+          .orderByDesc(TrainInfoClassEntity::getAddtime)
+          .orderByDesc(TrainInfoClassEntity::getId)
+          .last("LIMIT " + (page * pageSize) + "," + pageSize);
+      if (unassignedOnly) {
+        // 班级与培训需求均未挂企业
+        wrapper.and(w -> w.isNull(TrainInfoClassEntity::getCompanyId)
+            .or()
+            .eq(TrainInfoClassEntity::getCompanyId, 0L));
+        wrapper.and(w -> w.isNull(TrainInfoClassEntity::getTrainInfoId)
+            .or()
+            .eq(TrainInfoClassEntity::getTrainInfoId, 0L)
+            .or()
+            .notInSql(
+                TrainInfoClassEntity::getTrainInfoId,
+                "SELECT id FROM train_info_list WHERE deleted=0 AND company_id IS NOT NULL AND company_id<>0"));
+      } else if (companyFilter != null) {
+        // 班级 company_id 可能为空：同时按培训需求 train_info_list.company_id 归属
+        Long cid = companyFilter;
+        wrapper.and(w -> w.eq(TrainInfoClassEntity::getCompanyId, cid)
+            .or()
+            .inSql(
+                TrainInfoClassEntity::getTrainInfoId,
+                "SELECT id FROM train_info_list WHERE deleted=0 AND company_id=" + cid));
+      }
+      if (trainInfoId != null && trainInfoId != 0) {
+        wrapper.eq(TrainInfoClassEntity::getTrainInfoId, trainInfoId);
+      }
+      if (StringUtils.hasText(keyword)) {
+        wrapper.like(TrainInfoClassEntity::getTitle, keyword.trim());
+      }
+      List<TrainInfoClassEntity> batch = classMapper.selectList(wrapper);
+      if (batch.isEmpty()) {
+        break;
+      }
+      classes.addAll(batch);
+      if (batch.size() < pageSize) {
+        break;
+      }
     }
-    if (trainInfoId != null && trainInfoId != 0) {
-      wrapper.eq(TrainInfoClassEntity::getTrainInfoId, trainInfoId);
-    }
-    if (StringUtils.hasText(keyword)) {
-      wrapper.like(TrainInfoClassEntity::getTitle, keyword.trim());
-    }
-    List<TrainInfoClassEntity> classes = classMapper.selectList(wrapper);
     if (classes.isEmpty()) {
       return List.of();
     }

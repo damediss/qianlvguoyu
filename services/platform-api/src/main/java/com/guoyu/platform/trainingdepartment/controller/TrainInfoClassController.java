@@ -311,9 +311,13 @@ public class TrainInfoClassController {
     return ApiResponse.ok(classReviewSyncApplicationService.ensureGray(classId));
   }
 
-  /** 跟班同步学 Tab：未绑定则自动开通，已绑定则把本班学员写入考生名单 */
+  /**
+   * 跟班同步学 Tab：未绑定则自动开通，已绑定则把本班学员写入考生名单。
+   * 与 GET config 同级（CLASS_PEOPLE_VIEW）：只读/企业账号可触发「已绑定名单同步」；
+   * 新建/改绑仍由服务端 soft-fail（仅机构可开通），避免 Tab 激活直接 403。
+   */
   @PostMapping("/info-classes/{classId}/review-sync-config/ensure-roster")
-  @PreAuthorize(TrainingAuthorityExpressions.INFO_CLASS_SAVE)
+  @PreAuthorize(TrainingAuthorityExpressions.CLASS_PEOPLE_VIEW)
   @AuditLog(module = "training", action = "info-class:review-sync-ensure-roster", targetType = "train_info_class")
   public ApiResponse<Map<String, Object>> ensureReviewSyncRoster(@PathVariable Long classId) {
     return ApiResponse.ok(classReviewSyncApplicationService.ensureBoundAndSyncRoster(classId));

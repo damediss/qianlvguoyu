@@ -27,8 +27,23 @@ export function TrainingSchedulePage() {
   }, [scheduleData]);
 
   const { data: classData } = useQuery({
-    queryKey: ['info-classes', { page: 1, pageSize: 100 }],
-    queryFn: () => trainApi.pageInfoClassList({ page: 1, pageSize: 100 }),
+    queryKey: ['info-classes', 'schedule-all'],
+    queryFn: async () => {
+      const pageSize = 200;
+      const maxPages = 50;
+      const list: NonNullable<Awaited<ReturnType<typeof trainApi.pageInfoClassList>>['list']> = [];
+      let page = 1;
+      let total = Number.POSITIVE_INFINITY;
+      while (list.length < total && page <= maxPages) {
+        const res = await trainApi.pageInfoClassList({ page, pageSize });
+        const batch = res.list ?? [];
+        list.push(...batch);
+        total = typeof res.total === 'number' ? res.total : list.length;
+        if (batch.length === 0) break;
+        page += 1;
+      }
+      return { list, total: list.length };
+    },
   });
 
   const saveMu = useMutation({

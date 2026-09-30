@@ -28,10 +28,10 @@ public final class TrainingAuthorityExpressions {
   public static final String INFO_LIST_PAGE_VIEW =
       "hasAnyAuthority('train:info-list:view', 'train:need:view')";
 
-  /** 班级列表（班级人员 + 开班申报 + 企业审核） */
+  /** 班级列表（班级人员 + 开班申报 + 企业审核 + 跟班） */
   public static final String INFO_CLASS_PAGE_VIEW =
       "hasAnyAuthority('train:info-class:view', 'train:people-list:view', 'train:declare:view', "
-          + "'pxqiyeshenhe:view')";
+          + "'pxqiyeshenhe:view', 'train:follow:view')";
 
   /** 班级新增/编辑（班级人员页 save） */
   public static final String INFO_CLASS_SAVE =
@@ -42,9 +42,10 @@ public final class TrainingAuthorityExpressions {
   public static final String INFO_CLASS_BATCH_DELETE =
       "hasAnyAuthority('train:info-class:delete', 'train:people-list:delete')";
 
-  /** 班级人员子功能（学员/教务/负责人/报名导入 + 企业审核查看学员） */
+  /** 班级人员子功能（学员/教务/同步学读 + 企业审核 + 跟班工作台） */
   public static final String CLASS_PEOPLE_VIEW =
-      "hasAnyAuthority('train:info-class:view', 'train:people-list:view', 'pxqiyeshenhe:view')";
+      "hasAnyAuthority('train:info-class:view', 'train:people-list:view', 'pxqiyeshenhe:view', "
+          + "'train:follow:view')";
   public static final String CLASS_PEOPLE_CREATE =
       "hasAnyAuthority('train:info-class:create', 'train:people-list:create')";
   public static final String CLASS_PEOPLE_UPDATE =
