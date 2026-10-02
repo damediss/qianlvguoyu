@@ -11,6 +11,7 @@ import com.guoyu.platform.ai.mapper.AiGenerationDraftMapper;
 import com.guoyu.platform.common.exception.BusinessException;
 import com.guoyu.platform.common.exception.ErrorCode;
 import com.guoyu.platform.exam.entity.ExamFaqModelConfigEntity;
+import com.guoyu.platform.exam.reviewsync.support.QuestionTypes;
 import com.guoyu.platform.exam.reviewsync.support.SubjectiveAnswerExtractor;
 import com.guoyu.platform.exam.service.FaqModelConfigApplicationService;
 import com.guoyu.platform.system.entity.DictEntity;
@@ -18,7 +19,6 @@ import com.guoyu.platform.system.mapper.DictMapper;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.List;
-import java.util.Set;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
@@ -37,10 +37,7 @@ import org.springframework.util.DigestUtils;
 @Service
 public class AiGradeApplicationService {
 
-  /** 主观题白名单 8 种（方案 Q1）；空 type 与未知 type 不按主观题处理 */
-  private static final Set<String> SUBJECTIVE_TYPES =
-      Set.of("answer", "cal", "essay", "analysis", "explain", "fill", "short", "drafting");
-
+  /** 主观题白名单口径收敛在 {@link QuestionTypes}（唯一来源，禁止复制） */
   private static final String DICT_MODEL_CODE = "ai_review_model_code";
   private static final String DEFAULT_MODEL_CODE = "deepseek-review";
   private static final String DICT_PASS_RATE = "ai_review_grade_pass_rate";
@@ -91,7 +88,7 @@ public class AiGradeApplicationService {
 
   /** 主观题白名单判定（题型归一：trim + 小写） */
   public static boolean isSubjective(String type) {
-    return type != null && SUBJECTIVE_TYPES.contains(type.trim().toLowerCase());
+    return QuestionTypes.isSubjective(type);
   }
 
   /** 判分结果；gradable=false 表示无参考答案等不可判分情形（上层走自评兜底，Q4-A） */
