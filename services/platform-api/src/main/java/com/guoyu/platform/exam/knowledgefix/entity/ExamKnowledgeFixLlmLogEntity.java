@@ -29,6 +29,10 @@ public class ExamKnowledgeFixLlmLogEntity {
   /** Jev 概率分布 top1/top2 */
   private java.math.BigDecimal top1Prob;
   private java.math.BigDecimal top2Prob;
+  /** 剪枝归因（v1.3 附一 KP-22，供 A4 错 L2 归因回查；NULL=该次调用未启用剪枝，如 LLM stage1 恒全量） */
+  private Integer prunedCandidates;
+  private Integer pruneWeakFallback;
+  private Integer pruneReservedOld;
   private LocalDateTime createdAt;
   private LocalDateTime updatedAt;
   private Long createdBy;
@@ -67,6 +71,12 @@ public class ExamKnowledgeFixLlmLogEntity {
   public void setTop1Prob(java.math.BigDecimal top1Prob) { this.top1Prob = top1Prob; }
   public java.math.BigDecimal getTop2Prob() { return top2Prob; }
   public void setTop2Prob(java.math.BigDecimal top2Prob) { this.top2Prob = top2Prob; }
+  public Integer getPrunedCandidates() { return prunedCandidates; }
+  public void setPrunedCandidates(Integer prunedCandidates) { this.prunedCandidates = prunedCandidates; }
+  public Integer getPruneWeakFallback() { return pruneWeakFallback; }
+  public void setPruneWeakFallback(Integer pruneWeakFallback) { this.pruneWeakFallback = pruneWeakFallback; }
+  public Integer getPruneReservedOld() { return pruneReservedOld; }
+  public void setPruneReservedOld(Integer pruneReservedOld) { this.pruneReservedOld = pruneReservedOld; }
   public LocalDateTime getCreatedAt() { return createdAt; }
   public void setCreatedAt(LocalDateTime createdAt) { this.createdAt = createdAt; }
   public LocalDateTime getUpdatedAt() { return updatedAt; }
