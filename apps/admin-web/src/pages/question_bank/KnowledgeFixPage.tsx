@@ -143,9 +143,10 @@ const KnowledgeFixPage: React.FC = () => {
 
   const [fixStatus, setFixStatus] = useState<string | undefined>();
   const [fixPage, setFixPage] = useState(1);
+  const [fixPageSize, setFixPageSize] = useState(20);
   const fixQuery = useQuery({
-    queryKey: ['knowledgefix-fix-list', fixStatus, fixPage],
-    queryFn: () => fixList({ status: fixStatus, page: fixPage, pageSize: 20 }),
+    queryKey: ['knowledgefix-fix-list', fixStatus, fixPage, fixPageSize],
+    queryFn: () => fixList({ status: fixStatus, page: fixPage, pageSize: fixPageSize }),
   });
 
   const doSubmitClassify = async (scope?: { courseId?: number; limit?: number }) => {
@@ -531,8 +532,16 @@ const KnowledgeFixPage: React.FC = () => {
                   onChange: (keys) => setSelectedRowKeys(keys as string[]),
                 } : undefined}
                 pagination={{
-                  current: fixPage, pageSize: 20, total: fixQuery.data?.total ?? 0,
-                  onChange: (p) => setFixPage(p),
+                  current: fixPage, pageSize: fixPageSize, total: fixQuery.data?.total ?? 0,
+                  showSizeChanger: true,
+                  onChange: (p, ps) => {
+                    if (ps !== fixPageSize) {
+                      setFixPageSize(ps);
+                      setFixPage(1);
+                    } else {
+                      setFixPage(p);
+                    }
+                  },
                 }} />
             </>
           ),

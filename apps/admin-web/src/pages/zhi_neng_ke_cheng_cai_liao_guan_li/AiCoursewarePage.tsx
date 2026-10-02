@@ -131,10 +131,11 @@ function ProjectListView({ onCreate, onOpen, onProgress }: {
   onProgress: (id: string) => void;
 }) {
   const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(20);
   const queryClient = useQueryClient();
   const { data, isLoading } = useQuery({
-    queryKey: ['courseware-projects', page],
-    queryFn: () => listCoursewareProjects({ page, pageSize: 20 }),
+    queryKey: ['courseware-projects', page, pageSize],
+    queryFn: () => listCoursewareProjects({ page, pageSize }),
   });
 
   const columns: ColumnsType<CoursewareProject> = [
@@ -206,8 +207,16 @@ function ProjectListView({ onCreate, onOpen, onProgress }: {
         dataSource={data?.items ?? []}
         columns={columns}
         pagination={{
-          current: page, pageSize: 20, total: data?.total ?? 0,
-          onChange: (p) => setPage(p), showSizeChanger: false,
+          current: page, pageSize, total: data?.total ?? 0,
+          showSizeChanger: true,
+          onChange: (p, ps) => {
+            if (ps !== pageSize) {
+              setPageSize(ps);
+              setPage(1);
+            } else {
+              setPage(p);
+            }
+          },
         }}
       />
     </>

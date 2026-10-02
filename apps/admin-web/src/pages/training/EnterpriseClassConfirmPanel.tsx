@@ -91,6 +91,7 @@ export function EnterpriseClassConfirmPanel() {
   const [legacyDetailOpen, setLegacyDetailOpen] = useState(false);
   const [currentClass, setCurrentClass] = useState<TrainInfoClassListItem | null>(null);
   const [studentPage, setStudentPage] = useState(1);
+  const [studentPageSize, setStudentPageSize] = useState(20);
 
   const packListQuery = useQuery({
     queryKey: ['enterprise-pack-confirm', packTab, packPage, packPageSize],
@@ -119,8 +120,8 @@ export function EnterpriseClassConfirmPanel() {
   });
 
   const studentsQuery = useQuery({
-    queryKey: ['enterprise-class-students', currentClass?.id, studentPage],
-    queryFn: () => trainApi.listClassStudents(currentClass!.id, studentPage, 20),
+    queryKey: ['enterprise-class-students', currentClass?.id, studentPage, studentPageSize],
+    queryFn: () => trainApi.listClassStudents(currentClass!.id, studentPage, studentPageSize),
     enabled: legacyDetailOpen && !!currentClass?.id,
   });
 
@@ -577,9 +578,16 @@ export function EnterpriseClassConfirmPanel() {
               loading={studentsQuery.isLoading}
               pagination={{
                 current: studentPage,
-                pageSize: 20,
+                pageSize: studentPageSize,
                 total: studentsQuery.data?.total ?? 0,
-                onChange: (p) => setStudentPage(p),
+                onChange: (p, ps) => {
+                  if (ps !== studentPageSize) {
+                    setStudentPageSize(ps);
+                    setStudentPage(1);
+                  } else {
+                    setStudentPage(p);
+                  }
+                },
               }}
             />
           </>
