@@ -7,10 +7,12 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Random;
+import java.util.Set;
 
 /**
  * 题目选择（§5.3 冗余裁剪 / §5.6 自组模考卷）。纯逻辑可单测。
@@ -271,6 +273,55 @@ public final class QuestionSelectDomainService {
         need--;
       }
     }
+  }
+
+  /**
+   * 模考卷主观题数量上限裁剪（《简答题作答与AI判分方案》Q2-A：同步交卷的墙钟预算约束）。
+   *
+   * <p>裁剪规则：客观题（single/multi/judge）永不裁；主观题超过 maxSubjective 时，
+   * 按题型优先级裁——cal/answer/essay 复杂主观题（与 §5.3-4 pickTailQuestionsToDrop 的
+   * "偏题"口径一致）优先裁，其余主观题按组卷原顺序裁尾部（组卷已按 L1 配额+错题率加权
+   * +随机定序）。被裁名额不回补客观题：入卷题量相应减少，调用方按实际入卷题重算总分/
+   * 及格分（passScore=total×0.6 同比缩小，口径自洽）。
+   *
+   * @param questionIds    组卷产出的卷题 id（有序）
+   * @param byId           题 id → 轻量元数据（取 type 用）
+   * @param maxSubjective  主观题上限（sys_dict ai_review_mock_subjective_max）
+   * @return 裁剪后的卷题 id（保持组卷原顺序）
+   */
+  public static List<Long> capSubjectiveCount(List<Long> questionIds, Map<Long, ReviewQuestion> byId,
+      int maxSubjective) {
+    List<Long> subjective = new ArrayList<>();
+    for (Long id : questionIds) {
+      ReviewQuestion q = byId.get(id);
+      if (q != null && AiGradeApplicationService.isSubjective(q.type())) {
+        subjective.add(id);
+      }
+    }
+    if (subjective.size() <= maxSubjective) {
+      return questionIds;
+    }
+    // 裁 drop 个：cal/answer/essay 复杂主观题排前（优先裁）；同档内按组卷原顺序从尾部裁
+    // （组卷已按 L1 配额+错题率加权+随机定序，保留更靠前的入选题）
+    Map<Long, Integer> orderIndex = new HashMap<>();
+    for (int i = 0; i < subjective.size(); i++) {
+      orderIndex.put(subjective.get(i), i);
+    }
+    List<Long> dropOrder = new ArrayList<>(subjective);
+    dropOrder.sort(Comparator
+        .comparingInt((Long id) -> {
+          ReviewQuestion q = byId.get(id);
+          return q != null && isComplexType(q.type()) ? 0 : 1;
+        })
+        .thenComparing(Comparator.comparingInt(orderIndex::get).reversed()));
+    Set<Long> dropped = new HashSet<>(dropOrder.subList(0, subjective.size() - maxSubjective));
+    List<Long> kept = new ArrayList<>(questionIds.size() - dropped.size());
+    for (Long id : questionIds) {
+      if (!dropped.contains(id)) {
+        kept.add(id);
+      }
+    }
+    return kept;
   }
 
   /** 题型自然分布（组卷说明/快照用） */

@@ -18,6 +18,7 @@ import com.guoyu.platform.exam.reviewsync.mapper.AiReviewPlanDayMapper;
 import com.guoyu.platform.exam.reviewsync.mapper.AiReviewPlanMapper;
 import com.guoyu.platform.exam.reviewsync.mapper.AiReviewWrongItemMapper;
 import com.guoyu.platform.exam.reviewsync.mapper.ExamResultWriteRepository;
+import com.guoyu.platform.exam.reviewsync.service.AiGradeApplicationService;
 import com.guoyu.platform.exam.reviewsync.service.ReviewQuestionQueryService;
 import com.guoyu.platform.exam.reviewsync.service.ReviewLlmAssistService;
 import com.guoyu.platform.exam.reviewsync.service.ReviewPlanApplicationService;
@@ -25,6 +26,7 @@ import com.guoyu.platform.system.entity.DictEntity;
 import com.guoyu.platform.system.mapper.DictMapper;
 import java.util.List;
 import org.junit.jupiter.api.Test;
+import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 
 /** D8 灰度拦截（方案 §15.2）：开关 + exam/user 双粒度白名单 */
 class ReviewGrayReleaseGateTest {
@@ -44,7 +46,9 @@ class ReviewGrayReleaseGateTest {
       mock(ExamResultWriteRepository.class),
       mock(ReviewLlmAssistService.class),
       dictMapper,
-      new ObjectMapper());
+      new ObjectMapper(),
+      mock(AiGradeApplicationService.class),
+      mock(ThreadPoolTaskExecutor.class));
 
   private void stubGraySwitch(String value) {
     when(dictMapper.selectList(any())).thenAnswer(invocation -> {

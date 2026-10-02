@@ -58,6 +58,8 @@ public class TenantContextFilter extends OncePerRequestFilter {
 
   /** AI 同步学 App 链路：强制租户 10159（合并库 gjjddbpro 唯一租户） */
   private static final String APP_REVIEW_SYNC_PREFIX = "/api/appreviewsync";
+  /** 主观题 AI 判分 App 链路：同样强制租户 10159（与 appreviewsync 同链） */
+  private static final String APP_REVIEW_AI_PREFIX = "/api/appreviewai";
   /** 跟班 App 链路（含班级同步学入口）同样强制 10159，避免旧 App header=1 查空绑定 */
   private static final String APP_FOLLOW_PREFIX = "/api/training/follow";
 
@@ -70,9 +72,10 @@ public class TenantContextFilter extends OncePerRequestFilter {
     String path = request.getRequestURI();
     String method = request.getMethod();
 
-    // /appreviewsync/** 与 /training/follow/**：强制租户 10159，忽略 X-Tenant-Id
+    // /appreviewsync/**、/appreviewai/** 与 /training/follow/**：强制租户 10159，忽略 X-Tenant-Id
     //（旧版 App 仍发 header=1；共库后业务数据均在 10159）
     if (path.equals(APP_REVIEW_SYNC_PREFIX) || path.startsWith(APP_REVIEW_SYNC_PREFIX + "/")
+        || path.equals(APP_REVIEW_AI_PREFIX) || path.startsWith(APP_REVIEW_AI_PREFIX + "/")
         || path.equals(APP_FOLLOW_PREFIX) || path.startsWith(APP_FOLLOW_PREFIX + "/")) {
       try {
         TenantContextHolder.setTenantId(TenantContextHolder.DEFAULT_TENANT_ID);
