@@ -15,6 +15,7 @@ import static org.mockito.ArgumentMatchers.contains;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -23,6 +24,7 @@ import com.guoyu.platform.ai.dto.JevDecisionResult;
 import com.guoyu.platform.ai.dto.LlmChatCompletionResult;
 import com.guoyu.platform.ai.infrastructure.FaqLlmClient;
 import com.guoyu.platform.ai.infrastructure.JevDecisionClient;
+import com.guoyu.platform.ai.infrastructure.JevValidationException;
 import com.guoyu.platform.common.tenant.TenantContextHolder;
 import com.guoyu.platform.exam.entity.ExamFaqModelConfigEntity;
 import com.guoyu.platform.exam.knowledgefix.dto.KnowledgeNodeRow;
@@ -623,4 +625,44 @@ class KnowledgeFixPruneClassifyTest {
     assertEquals(8, s2.getPrunedCandidates());
   }
 
+
+  /** KP-23（v1.4 补，2026-10-04 生产缺陷修复）：JEV 422=token_budget_exceeded → 降级 LLM 分类成功（不再 SKIP_ROW 卡死） */
+  @Test
+  void kp23_budgetExceeded422FallsBackToLlm() {
+    stubCommon();
+    stubLlmStage1(501);
+    stubLlmStage2(601, 0.9);
+    when(jevClient.decide(anyString(), anyString(), anyString(), anyString(), eq("l2"),
+        anyString(), anyMap(), anyInt()))
+        .thenThrow(new JevValidationException("Jev 422 请求校验失败: "
+            + "{\"detail\":{\"code\":\"token_budget_exceeded\",\"counted_tokens\":33480,\"limit_tokens\":32768}}"));
+    runBatch(jevChannel(), new KnowledgeFixClassifyService.PruneConfig(true, true),
+        row(1L, 4192, "蒸发器跑碱如何处理"));
+    verify(jevClient, times(1)).decide(anyString(), anyString(), anyString(), anyString(),
+        eq("l2"), anyString(), anyMap(), anyInt());
+    assertEquals("apply", statusByRowId.get(1L));
+    assertEquals("llm", basisByRowId.get(1L));
+  }
+
+  /** KP-23 补：非预算类 422（真构造 bug）保持 SKIP_ROW 既有语义——行不进 LLM、计失败 */
+  @Test
+  void kp23_nonBudget422StillSkipsRow() {
+    stubCommon();
+    stubLlmStage1(501);
+    stubLlmStage2(601, 0.9);
+    when(jevClient.decide(anyString(), anyString(), anyString(), anyString(), eq("l2"),
+        anyString(), anyMap(), anyInt()))
+        .thenThrow(new JevValidationException("Jev 422 请求校验失败: "
+            + "{\"detail\":{\"msg\":\"Dictionary should have at least 2 items\"}}"));
+    runBatch(jevChannel(), new KnowledgeFixClassifyService.PruneConfig(true, true),
+        row(1L, 4192, "蒸发器跑碱如何处理"));
+    // SKIP_ROW 行保持 pending，3 轮派发各试一次（MAX_DISPATCH_ROUNDS=3，既有语义）
+    verify(jevClient, times(3)).decide(anyString(), anyString(), anyString(), anyString(),
+        eq("l2"), anyString(), anyMap(), anyInt());
+    verify(llmClient, never()).chatCompletionDetailed(anyString(), anyString(), anyString(),
+        anyString(), contains("候选分类（L2）"), anyInt(), any(), any(), anyBoolean(),
+        anyLong(), anyInt());
+    // 批次未达门禁收尾：未分类行落 flag（与生产「批次中断未分类」一致）
+    assertEquals("flag", statusByRowId.get(1L));
+  }
 }

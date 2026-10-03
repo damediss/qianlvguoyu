@@ -78,6 +78,12 @@ public class KnowledgeFixClassifyService {
   private static final int MAX_JEV_CRITERIA = 255;
   /** θ₂ 硬底线（§7.1）：配置低于 0.3 拒绝提交 */
   private static final BigDecimal JEV_MIN_THETA2 = new BigDecimal("0.3");
+  /**
+   * Jev 422 细分标记（v1.4 补充，2026-10-04 生产实测）：TokenDance 对候选做展开后校验
+   * expanded_input_tokens ≤ 32,768——候选过多（实测 53 个 L2 全量展开 33,480）必 422。
+   * 该类 422 该行由 LLM 可正常分类 → 降级 LLM；其余 422 = 请求构造 bug → SKIP_ROW（§5）。
+   */
+  private static final String JEV_BUDGET_EXCEEDED_MARKER = "token_budget_exceeded";
   private static final BigDecimal DEFAULT_JEV_THETA = new BigDecimal("0.5");
   private static final int DEFAULT_JEV_CONCURRENCY = 5;
   private static final int DEFAULT_JEV_READ_TIMEOUT_SECONDS = 30;
@@ -800,7 +806,16 @@ public class KnowledgeFixClassifyService {
       countLlmFallback(ctx, row.getRowId());
       return JevOutcome.FALLBACK_LLM;
     } catch (JevValidationException e) {
-      // 422=请求构造 bug：该行记失败并跳过（不走 LLM），连续 ≥5 熔断（§5）；行保持 pending 供下轮
+      // 422 细分（v1.4，2026-10-04 生产实测）：token_budget_exceeded = 候选超展开预算
+      // （expanded_input_tokens ≤ 32,768，53 个 L2 全量展开 33,480 即超）——该行 LLM 可正常分类
+      // → 降级 LLM 全流程；其余 422 = 请求构造 bug，重试无用 → SKIP_ROW（§5）
+      if (e.getMessage() != null && e.getMessage().contains(JEV_BUDGET_EXCEEDED_MARKER)) {
+        log.warn("[Jev] 422 候选超展开预算，行降级 LLM：batchNo={}, detailId={}, err={}",
+            batchNo, row.getDetailId(), e.getMessage());
+        logJevCall(tenantId, batchNo, row.getDetailId(), "jev-stage1", ctx.ch(), null, questionText, e, stage1Audit);
+        countLlmFallback(ctx, row.getRowId());
+        return JevOutcome.FALLBACK_LLM;
+      }
       batchMapper.incrementFailed(batchNo);
       if (ctx.consecutiveFailures().incrementAndGet() >= MAX_CONSECUTIVE_FAILURES) {
         ctx.openRound().set(true);
@@ -891,6 +906,14 @@ public class KnowledgeFixClassifyService {
       countLlmFallback(ctx, row.getRowId());
       return JevOutcome.FALLBACK_LLM;
     } catch (JevValidationException e) {
+      // 422 细分同 stage1（v1.4）：预算超限 → 降级 LLM；构造 bug → SKIP_ROW
+      if (e.getMessage() != null && e.getMessage().contains(JEV_BUDGET_EXCEEDED_MARKER)) {
+        log.warn("[Jev] 422 候选超展开预算，行降级 LLM：batchNo={}, detailId={}, err={}",
+            batchNo, row.getDetailId(), e.getMessage());
+        logJevCall(tenantId, batchNo, row.getDetailId(), "jev-stage2", ctx.ch(), null, questionText, e, stage2Audit);
+        countLlmFallback(ctx, row.getRowId());
+        return JevOutcome.FALLBACK_LLM;
+      }
       batchMapper.incrementFailed(batchNo);
       if (ctx.consecutiveFailures().incrementAndGet() >= MAX_CONSECUTIVE_FAILURES) {
         ctx.openRound().set(true);
