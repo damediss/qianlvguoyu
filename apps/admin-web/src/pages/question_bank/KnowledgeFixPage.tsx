@@ -134,6 +134,14 @@ const KnowledgeFixPage: React.FC = () => {
     refetchInterval: (q) => (batchRunning(q.state.data) ? 3000 : false),
   });
   const batch = progressQuery.data;
+  // 待写回改挂行数（实时）：人工定夺会把 flag 行翻转成 apply，批次卡的 applyCnt 是批次时点快照不更新，
+  // 写回按钮必须按当前行数判断（否则定夺后按钮恒灰）
+  const applyCountQuery = useQuery({
+    queryKey: ['knowledgefix-apply-count'],
+    queryFn: () => fixList({ status: 'apply', page: 1, pageSize: 1 }),
+    enabled: !!batch,
+  });
+  const applyCount = applyCountQuery.data?.total ?? 0;
 
   const reportQuery = useQuery({
     queryKey: ['knowledgefix-report'],
@@ -202,6 +210,7 @@ const KnowledgeFixPage: React.FC = () => {
       message.success(`知识修正写回完成：${r.affectedRows} 行（备份表 ${r.backupTable ?? '-'}）`);
       qc.invalidateQueries({ queryKey: ['knowledgefix-fix-list'] });
       qc.invalidateQueries({ queryKey: ['knowledgefix-report'] });
+      qc.invalidateQueries({ queryKey: ['knowledgefix-apply-count'] });
     } catch {
       /* 拦截器统一提示 */
     } finally {
@@ -219,6 +228,7 @@ const KnowledgeFixPage: React.FC = () => {
     }
     setSelectedRowKeys([]);
     qc.invalidateQueries({ queryKey: ['knowledgefix-fix-list'] });
+    qc.invalidateQueries({ queryKey: ['knowledgefix-apply-count'] });
   };
 
   const doAdjudicate = async (rowId: string, action: 'apply' | 'keep') => {
@@ -426,10 +436,10 @@ const KnowledgeFixPage: React.FC = () => {
                   title="确认执行知识修正写回？"
                   description="仅改挂行更新 knowledge_id（已自动备份，可回滚）"
                   onConfirm={doApplyFix}
-                  disabled={fixApplying || !batch || batch.status !== 'done' || (batch.applyCnt ?? 0) === 0}
+                  disabled={fixApplying || !batch || batch.status !== 'done' || applyCount === 0}
                 >
                   <Button danger loading={fixApplying}
-                    disabled={fixApplying || !batch || batch.status !== 'done' || (batch.applyCnt ?? 0) === 0}>
+                    disabled={fixApplying || !batch || batch.status !== 'done' || applyCount === 0}>
                     执行写回（仅改挂行）
                   </Button>
                 </Popconfirm>
