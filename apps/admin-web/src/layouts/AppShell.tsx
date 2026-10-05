@@ -345,7 +345,8 @@ export function AppShell({
     if (!tabsEnabled || tabsRestoredForSession || !menuTree.length) return;
     tabsRestoredForSession = true;
     const store = useTabStore.getState();
-    store.restoreFromStorage(menuTree, (key) => Boolean(pageMap[key]));
+    // 次要问题②：用 visibleMenuTree（与菜单渲染同口径，剔除 hiddenMenuCodes），被隐藏的菜单码不恢复成标签
+    store.restoreFromStorage(visibleMenuTree, (key) => Boolean(pageMap[key]));
     // 深链直达：URL 解析到菜单码且未命中隐藏路由 → 优先于存储的 activeKey（§3.4）
     const deepLinkCode = findMenuCodeByPath(menuTree, window.location.pathname);
     if (

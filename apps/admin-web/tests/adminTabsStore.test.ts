@@ -36,6 +36,8 @@ const TREE: MenuVO[] = [
   menu('competition_event', '赛事创建', '/competition/events'),
   // 真实存在、含连字符的菜单码（不得被 kebab→snake 误归一，§3.2）
   menu('train_people-list', '花名册', '/training/people-list'),
+  // D1 回归用：菜单 path 为单数 /training/exam-list，不命中隐藏匹配器（正是 D1 的坑位）
+  menu('train_exam-list', '考试计划', '/training/exam-list'),
 ];
 
 function fixedTabItem(): TabItem {
@@ -305,6 +307,93 @@ describe('reorderTabs（UT-20）', () => {
     useTabStore.getState().reorderTabs('certification_dashboard', 0);
     expect(useTabStore.getState().tabs[0].key).toBe('knowledge');
     expect(useTabStore.getState().tabs[1].key).toBe('certification_dashboard');
+  });
+});
+
+describe('覆盖态标签原子入口 openOverrideTab（D1 回归）', () => {
+  it('创建标签全程不触碰 URL：直达隐藏路由 URL 不被菜单 path 改写', () => {
+    // 模拟直达 /training/exam-lists/123/review-sync-stats 后 shell 的接线
+    window.history.replaceState({}, '', '/training/exam-lists/123/review-sync-stats');
+    const popstateSpy = vi.spyOn(window, 'dispatchEvent');
+    useTabStore.getState().openOverrideTab('train_exam-list', undefined, '/training/exam-lists/123/review-sync-stats');
+    // URL 原样保留（菜单 path /training/exam-list 不命中隐藏匹配器，旧实现会在这里改写 URL）
+    expect(window.location.pathname).toBe('/training/exam-lists/123/review-sync-stats');
+    expect(useTabStore.getState().activeKey).toBe('train_exam-list');
+    const tab = useTabStore.getState().tabs.find((t) => t.key === 'train_exam-list')!;
+    expect(tab.overridePath).toBe('/training/exam-lists/123/review-sync-stats');
+    expect(tab.title).toBe('考试计划');
+    // 不派发 popstate（App() 已在该 shell，无需重选）
+    expect(popstateSpy.mock.calls.some(([event]) => event?.type === 'popstate')).toBe(false);
+  });
+
+  it('再次进入更新 overridePath 并激活，不重复开标签、不触碰 URL', () => {
+    useTabStore.getState().openOverrideTab('train_exam-list', undefined, '/training/exam-lists/123/review-sync-stats');
+    const countBefore = useTabStore.getState().tabs.length;
+    useTabStore.getState().openOverrideTab('train_exam-list', undefined, '/training/exam-lists/456/review-sync-stats');
+    expect(useTabStore.getState().tabs.length).toBe(countBefore);
+    expect(useTabStore.getState().tabs.find((t) => t.key === 'train_exam-list')!.overridePath)
+      .toBe('/training/exam-lists/456/review-sync-stats');
+    expect(useTabStore.getState().activeKey).toBe('train_exam-list');
+  });
+
+  it('覆盖态回退链路完整：overridePath 写入后点回标签 → URL 恢复 + popstate', () => {
+    window.history.replaceState({}, '', '/training/exam-lists/123/review-sync-stats');
+    useTabStore.getState().openOverrideTab('train_exam-list', undefined, '/training/exam-lists/123/review-sync-stats');
+    // 切到普通标签（URL 变菜单 path），再点回覆盖态标签
+    useTabStore.getState().openTab('knowledge_fix');
+    expect(window.location.pathname).toBe('/question-bank/knowledge-fix');
+    const popstateSpy = vi.spyOn(window, 'dispatchEvent');
+    useTabStore.getState().activateTab('train_exam-list');
+    expect(window.location.pathname).toBe('/training/exam-lists/123/review-sync-stats');
+    expect(popstateSpy.mock.calls.some(([event]) => event?.type === 'popstate')).toBe(true);
+  });
+});
+
+describe('openTab 既有标签同步 title/path（次要①回归）', () => {
+  it('菜单改名/补 path 后重开同步最新值，不重复开标签', () => {
+    useTabStore.getState().openTab('knowledge_fix');
+    const countBefore = useTabStore.getState().tabs.length;
+    useTabStore.getState().openTab('knowledge_fix', '知识归属修正（新）', '/question-bank/knowledge-fix-v2');
+    expect(useTabStore.getState().tabs.length).toBe(countBefore);
+    const tab = useTabStore.getState().tabs.find((t) => t.key === 'knowledge_fix')!;
+    expect(tab.title).toBe('知识归属修正（新）');
+    expect(tab.path).toBe('/question-bank/knowledge-fix-v2');
+  });
+});
+
+describe('恢复校验与 visitedKeys（D3 + 次要②回归）', () => {
+  it('UT-D3 恢复后仅激活标签入 visitedKeys，其余等首次激活再挂载', () => {
+    localStorage.setItem('guoyu_admin_tabs:10159', JSON.stringify({
+      version: 1,
+      tabs: [
+        fixedTabItem(),
+        { key: 'knowledge_fix', title: '知识归属修正', path: '/question-bank/knowledge-fix', closable: true },
+        { key: 'system_user', title: '用户管理', path: '/system/users', closable: true },
+      ],
+      activeKey: 'system_user',
+      scrollPositions: {},
+    }));
+    useTabStore.getState().restoreFromStorage(TREE, (key) => TREE.some((m) => m.code === key));
+    expect(useTabStore.getState().tabs).toHaveLength(3);
+    expect(useTabStore.getState().visitedKeys).toEqual(['system_user']); // 而非全部 3 个
+  });
+
+  it('UT-minor2 调用方传过滤后的树：树中存在但被判 hidden 的码不恢复成标签', () => {
+    const treeWithHidden = [...TREE, menu('competition_theory_exam', '理论监考', '/competition/theory-exam')];
+    localStorage.setItem('guoyu_admin_tabs:10159', JSON.stringify({
+      version: 1,
+      tabs: [
+        fixedTabItem(),
+        { key: 'competition_theory_exam', title: '理论监考', path: '/competition/theory-exam', closable: true },
+      ],
+      activeKey: 'competition_theory_exam',
+      scrollPositions: {},
+    }));
+    // AppShell 实际传 visibleMenuTree（剔除 hiddenMenuCodes），这里模拟该过滤
+    const visibleTree = treeWithHidden.filter((node) => node.code !== 'competition_theory_exam');
+    useTabStore.getState().restoreFromStorage(visibleTree, (key) => visibleTree.some((m) => m.code === key));
+    expect(useTabStore.getState().tabs.map((t) => t.key)).toEqual(['knowledge']);
+    expect(useTabStore.getState().activeKey).toBe('knowledge');
   });
 });
 

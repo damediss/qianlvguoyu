@@ -137,6 +137,8 @@ interface TabState {
   refreshCounters: Record<string, number>;
   softPromptVisible: boolean;
   openTab: (key: string, title?: string, path?: string) => void;
+  /** 覆盖态标签原子入口（D1）：创建/更新携带 overridePath，全程不触碰 URL（§3.7） */
+  openOverrideTab: (key: string, title: string | undefined, overridePath: string) => void;
   activateTab: (key: string) => void;
   closeTab: (key: string) => void;
   closeOthers: (key: string) => void;
@@ -180,6 +182,15 @@ export const useTabStore = create<TabState>((set, get) => ({
     const tabKey = normalized.key;
     const existing = get().tabs.find((tab) => tab.key === tabKey);
     if (existing) {
+      // 既有标签：菜单改名/补 path 后同步最新值（次要问题①），再激活
+      const merged: TabItem = {
+        ...existing,
+        title: title || existing.title,
+        path: path ?? existing.path,
+      };
+      if (merged.title !== existing.title || merged.path !== existing.path) {
+        set({ tabs: get().tabs.map((tab) => (tab.key === tabKey ? merged : tab)) });
+      }
       get().activateTab(tabKey);
       return;
     }
@@ -198,6 +209,43 @@ export const useTabStore = create<TabState>((set, get) => ({
       softPromptVisible: get().softPromptVisible || shouldRaiseSoftPrompt(tabs.length),
     });
     applyTabUrl(tab);
+    persist(get());
+  },
+
+  /**
+   * 覆盖态标签的原子入口（D1 修复）：创建/更新携带 overridePath 的标签，
+   * 全程不触碰 URL——进入覆盖态时当前 URL 就是目标 URL，绝不能用菜单 path 改写。
+   * 现有标签只更新 overridePath 并激活（不重复 pushState）。
+   */
+  openOverrideTab: (key, title, overridePath) => {
+    const tree = useAuthStore.getState().menuTree;
+    const normalized = normalizeTabKey(key, tree);
+    const tabKey = normalized.key;
+    const node = normalized.node;
+    const existing = get().tabs.find((tab) => tab.key === tabKey);
+    if (existing) {
+      const merged: TabItem = { ...existing, overridePath, title: title || existing.title };
+      set({
+        tabs: get().tabs.map((tab) => (tab.key === tabKey ? merged : tab)),
+        activeKey: tabKey,
+        visitedKeys: get().visitedKeys.includes(tabKey) ? get().visitedKeys : [...get().visitedKeys, tabKey],
+      });
+      persist(get());
+      return;
+    }
+    const tab: TabItem = {
+      key: tabKey,
+      title: title || node?.name || tabKey,
+      path: node?.path ?? '',
+      closable: tabKey !== FIXED_TAB_KEY,
+      overridePath,
+    };
+    set({
+      tabs: ensureFixedFirst([...get().tabs, tab], tree),
+      activeKey: tabKey,
+      visitedKeys: get().visitedKeys.includes(tabKey) ? get().visitedKeys : [...get().visitedKeys, tabKey],
+      softPromptVisible: get().softPromptVisible || shouldRaiseSoftPrompt(get().tabs.length + 1),
+    });
     persist(get());
   },
 
@@ -325,7 +373,8 @@ export const useTabStore = create<TabState>((set, get) => ({
     set({
       tabs,
       activeKey,
-      visitedKeys: tabs.map((tab) => tab.key),
+      // D3：仅激活标签入 visitedKeys，其余等首次激活再挂载（§3.3 首次激活才挂载，控制首屏成本）
+      visitedKeys: [activeKey],
       scrollPositions: persisted.scrollPositions || {},
     });
   },
