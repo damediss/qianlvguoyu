@@ -17,12 +17,16 @@
     "test:competition-routes": "esbuild tests/competitionRoutes.test.ts --bundle --platform=node --format=cjs --outfile=node_modules/.cache/competitionRoutes.test.cjs && node --test node_modules/.cache/competitionRoutes.test.cjs",
     "test:competition-practical-execution-config": "vitest run --config vitest.config.ts tests/competitionPracticalExecutionConfig.test.tsx",
     "test:competition-stage-planning": "vitest run --config vitest.config.ts tests/competitionStagePlanning.test.ts tests/stagePlanningComponents.test.tsx",
+    "test:admin-tabs": "vitest run --config vitest.config.ts tests/adminTabsStore.test.ts tests/adminTabsUrl.test.tsx",
     "test:e2e:stage-planning": "playwright test e2e/competition-stage-planning.spec.ts",
+    "test:e2e:admin-tabs": "playwright test e2e/adminTabs.spec.ts",
     "test:e2e:courseware": "playwright test e2e/courseware.spec.ts"
   },
   "dependencies": {
     "@ant-design/icons": "^5.6.1",
     "@ant-design/pro-components": "^2.8.10",
+    "@dnd-kit/core": "^6.3.1",
+    "@dnd-kit/sortable": "^10.0.0",
     "@tanstack/react-query": "^5.62.11",
     "@tiptap/extension-link": "^2.11.5",
     "@tiptap/extension-underline": "^2.11.5",

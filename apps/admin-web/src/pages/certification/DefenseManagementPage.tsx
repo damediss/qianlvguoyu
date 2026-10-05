@@ -25,6 +25,7 @@ import type { PreparationTaskOverview } from '../../types/certificationPreparati
 import type { DefenseAssessorScoreView, DefenseCandidateProgress, DefenseOverallStatus } from '../../types/defenseScoring';
 import { formatScore, statusLabel } from '../assessor/defenseScoreCatalog';
 import { parseContentDispositionFilename } from '../../utils/download';
+import { usePaneActive } from '../../layouts/TabKeepAlive';
 
 function overallLabel(status?: DefenseOverallStatus) {
   if (status === 'completed') return { color: 'success', text: '答辩已完成' };
@@ -45,6 +46,7 @@ function candidateStatusTag(row: DefenseCandidateProgress) {
 
 export function DefenseManagementPage() {
   const queryClient = useQueryClient();
+  const paneActive = usePaneActive(); // 标签页不可见时暂停轮询（§3.6，原为无条件常驻 5s）
   const [selectedTaskId, setSelectedTaskId] = useState<string>();
   const preferredTaskNo = useMemo(
     () => new URLSearchParams(window.location.search).get('taskNo') || '',
@@ -79,7 +81,7 @@ export function DefenseManagementPage() {
     queryKey: ['defense-scoring-progress', selectedTaskId],
     queryFn: () => getDefenseProgress(selectedTaskId!),
     enabled: Boolean(selectedTaskId),
-    refetchInterval: 5000,
+    refetchInterval: paneActive ? 5000 : false,
   });
 
   const progress = progressQuery.data;

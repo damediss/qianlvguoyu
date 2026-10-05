@@ -28,6 +28,7 @@ import {
   MakeExamPlanForm,
   buildMakeExamPlanCreatePayload,
 } from '../../exam/MakeExamPlanForm';
+import { usePaneActive } from '../../../layouts/TabKeepAlive';
 
 type Props = { classId: number };
 
@@ -102,7 +103,9 @@ export function FollowMockExamTab({ classId }: Props) {
   const [lastLiveAt, setLastLiveAt] = useState<Date | null>(null);
 
   const modalBusy = addPlanOpen || pickPlanOpen;
-  const pollMs = liveRefresh && !modalBusy ? LIVE_POLL_MS : false;
+  // 标签页不可见时暂停实时轮询（§3.6，单点门禁覆盖下方全部 4 个 useQuery）
+  const paneActive = usePaneActive();
+  const pollMs = paneActive && liveRefresh && !modalBusy ? LIVE_POLL_MS : false;
 
   const { data: usedMeta } = useQuery({
     queryKey: ['mock-used-q', classId],

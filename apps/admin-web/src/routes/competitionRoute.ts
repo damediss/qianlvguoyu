@@ -60,3 +60,34 @@ export function findCompetitionMenuCode(menuTree: MenuVO[], pathname: string) {
   visit(menuTree);
   return matched?.code;
 }
+
+/**
+ * 全站 path → 菜单码反查（标签页 URL 联动用，《admin-web标签页外壳改造方案》§3.4）。
+ * findCompetitionMenuCode 的泛化版：不限竞赛前缀，精确优先、其次最长前缀。
+ * 调用方需自行排除隐藏路由（hiddenRoutes.isHiddenRoutePath）。
+ */
+export function findMenuCodeByPath(menuTree: MenuVO[], pathname: string) {
+  const currentPath = normalizePathname(pathname);
+  if (currentPath === '/') return undefined;
+  let matched: MenuVO | undefined;
+
+  const visit = (nodes: MenuVO[]) => {
+    nodes.forEach((node) => {
+      const menuPath = normalizePathname(node.path || '');
+      if (
+        menuPath
+        && menuPath !== '/'
+        && (currentPath === menuPath || currentPath.startsWith(`${menuPath}/`))
+        && (!matched || menuPath.length > normalizePathname(matched.path || '').length)
+      ) {
+        matched = node;
+      }
+      if (node.children?.length) {
+        visit(node.children);
+      }
+    });
+  };
+
+  visit(menuTree);
+  return matched?.code;
+}

@@ -172,6 +172,60 @@ body {
   padding: 24px;
 }
 
+/* ---- TabBar（《admin-web标签页外壳改造方案》§3.1：Header 与 Content 之间的兄弟节点） ---- */
+.app-tabbar {
+  flex: 0 0 40px;
+  overflow: hidden;
+  padding: 4px 12px 0;
+  background: rgba(255, 255, 255, 0.96);
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.app-tabbar .ant-tabs {
+  height: 100%;
+}
+
+.app-tabbar .ant-tabs .ant-tabs-nav {
+  margin: 0;
+}
+
+.app-tabbar .ant-tabs .ant-tabs-nav::before {
+  border-bottom: none;
+}
+
+.app-tabbar .ant-tabs .ant-tabs-tab {
+  padding: 4px 12px;
+  font-size: 13px;
+}
+
+/* bar-only 用法：面板由 AppShell 自行保活渲染，隐藏 antd 内容区 */
+.app-tabbar .ant-tabs .ant-tabs-content-holder {
+  display: none;
+}
+
+.app-tab-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  user-select: none;
+}
+
+.app-tab-label-text {
+  max-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.app-tab-refresh {
+  color: #94a3b8;
+  font-size: 12px;
+}
+
+.app-tab-refresh:hover {
+  color: #2563eb;
+}
+
 .app-breadcrumb {
   margin-bottom: 12px;
   color: #64748b;

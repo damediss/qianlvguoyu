@@ -4,9 +4,11 @@ import { Alert, Button, Modal, Space, Typography, Upload, message } from 'antd';
 import { useEffect, useRef, useState } from 'react';
 import { getAssessorLedgerImport, startAssessorLedgerImport } from '../../../api/certificationInfo';
 import { uploadPlatformFile } from '../../../api/files';
+import { usePaneActive } from '../../../layouts/TabKeepAlive';
 
 export function AssessorLedgerImportButton() {
   const queryClient = useQueryClient();
+  const paneActive = usePaneActive(); // 标签页不可见时暂停轮询（§3.6）
   const [open, setOpen] = useState(false);
   const [batchId, setBatchId] = useState<string>();
   const notifiedStatus = useRef<string>();
@@ -14,7 +16,8 @@ export function AssessorLedgerImportButton() {
     queryKey: ['assessor-ledger-import', batchId],
     queryFn: () => getAssessorLedgerImport(batchId!),
     enabled: Boolean(batchId),
-    refetchInterval: (query) => ['queued', 'processing'].includes(query.state.data?.status || '') ? 1500 : false,
+    refetchInterval: (query) =>
+      paneActive && ['queued', 'processing'].includes(query.state.data?.status || '') ? 1500 : false,
   });
 
   useEffect(() => {

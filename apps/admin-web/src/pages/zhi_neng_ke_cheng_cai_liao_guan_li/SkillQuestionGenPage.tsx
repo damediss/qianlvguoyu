@@ -22,6 +22,7 @@ import {
 } from './skillGenApi';
 import type { SkillBlueprint, SkillDraft, SkillGenBatch, SkillScoringItem } from './skillGenApi';
 import { LEVEL_NAME, STATUS_TAG, parseCheckReport } from './workbench/constants';
+import { usePaneActive, usePaneActiveRef } from '../../layouts/TabKeepAlive';
 import './workbench/GenWorkbench.css';
 
 const LEVEL_OPTIONS = [
@@ -75,6 +76,8 @@ const failedHint = (b: SkillGenBatch) => {
 const SkillQuestionGenPage: React.FC = () => {
   const [tab, setTab] = useState('import');
   const qc = useQueryClient();
+  const paneActive = usePaneActive(); // 标签页不可见时暂停轮询/进度 tick（§3.6）
+  const paneActiveRef = usePaneActiveRef(paneActive); // 长生命周期 setInterval 闭包读 ref
 
   // ---------------- 页签1：细目表导入 ----------------
   const [workTypeId, setWorkTypeId] = useState<number | undefined>();
@@ -126,7 +129,10 @@ const SkillQuestionGenPage: React.FC = () => {
     setImportPercent(0);
     if (importTimerRef.current !== null) window.clearInterval(importTimerRef.current);
     importTimerRef.current = window.setInterval(() => {
-      setImportPercent((p) => (p >= 95 ? p : Math.min(95, p + Math.max(1, Math.round((95 - p) / 10)))));
+      // 标签不可见时计时继续、跳过 setState（§3.6 乙组口径：不中断任务）
+      if (paneActiveRef.current) {
+        setImportPercent((p) => (p >= 95 ? p : Math.min(95, p + Math.max(1, Math.round((95 - p) / 10)))));
+      }
     }, 300);
     try {
       const bp = await importSkillBlueprint(file, workTypeId, level);
@@ -342,6 +348,7 @@ interface WorkbenchProps {
 
 const SkillWorkbench: React.FC<WorkbenchProps> = ({ workTypeOptions, blueprints, presetBpId }) => {
   const qc = useQueryClient();
+  const paneActive = usePaneActive(); // 标签页不可见时暂停轮询（§3.6）
   const [blueprintId, setBlueprintId] = useState<string | undefined>(presetBpId);
   const [modelConfigId, setModelConfigId] = useState<string | undefined>();
   const [submitting, setSubmitting] = useState(false);
@@ -386,6 +393,7 @@ const SkillWorkbench: React.FC<WorkbenchProps> = ({ workTypeOptions, blueprints,
     queryKey: ['skillgen-batches-active'],
     queryFn: () => listSkillGenBatches({ status: 'pending,running', page: 1, pageSize: 50 }),
     refetchInterval: (q) => {
+      if (!paneActive) return false;
       const rows = (q.state.data as { items?: SkillGenBatch[] } | undefined)?.items ?? [];
       return rows.some((b) => b.status === 'pending' || b.status === 'running') ? 3000 : false;
     },

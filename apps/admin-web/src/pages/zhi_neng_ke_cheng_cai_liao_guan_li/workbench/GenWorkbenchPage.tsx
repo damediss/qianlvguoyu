@@ -16,6 +16,7 @@ import type { BatchAction } from './GenBatchOverviewTable';
 import DraftReviewPanel from './DraftReviewPanel';
 import { usePublishExport } from './PublishExportActions';
 import { genBatchOptionLabel } from './constants';
+import { usePaneActive } from '../../../layouts/TabKeepAlive';
 import './GenWorkbench.css';
 
 interface Props {
@@ -26,6 +27,7 @@ interface Props {
 
 const GenWorkbenchPage: React.FC<Props> = ({ workTypeOptions, preset }) => {
   const qc = useQueryClient();
+  const paneActive = usePaneActive(); // 标签页不可见时暂停轮询（§3.6）
   const [activeBatchId, setActiveBatchId] = useState<string | undefined>();
   const [historyPage, setHistoryPage] = useState(1);
   const [historyPageSize, setHistoryPageSize] = useState(10);
@@ -47,7 +49,7 @@ const GenWorkbenchPage: React.FC<Props> = ({ workTypeOptions, preset }) => {
   const activeQuery = useQuery({
     queryKey: ['theorygen-batches', 'active'],
     queryFn: () => listGenBatches({ status: 'pending,running', page: 1, pageSize: 50 }),
-    refetchInterval: (q) => ((q.state.data?.items.length ?? 0) > 0 ? 3000 : false),
+    refetchInterval: (q) => (paneActive && (q.state.data?.items.length ?? 0) > 0 ? 3000 : false),
   });
   const historyQuery = useQuery({
     queryKey: ['theorygen-batches', 'history', historyPage, historyPageSize],
@@ -64,6 +66,7 @@ const GenWorkbenchPage: React.FC<Props> = ({ workTypeOptions, preset }) => {
     queryFn: () => getGenProgress(activeBatchId!),
     enabled: !!activeBatchId,
     refetchInterval: (q) => {
+      if (!paneActive) return false;
       const s = q.state.data?.status;
       return s === 'running' || s === 'pending' ? 3000 : false;
     },

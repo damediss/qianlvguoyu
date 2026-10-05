@@ -16,6 +16,7 @@ import {
 } from '../../api/exam';
 import { treeWorkTypes, pageCourses } from '../../api/exam';
 import type { FaqBatchVO, FaqConversionVO, FaqModelConfigVO, ExamCourse } from '../../types/exam';
+import { usePaneActive, usePaneActiveRef } from '../../layouts/TabKeepAlive';
 import { FaqConfigDialog } from './FaqConfigDialog';
 
 // 题型映射
@@ -31,6 +32,7 @@ const STATUS_CONFIG: Record<string, { color: string; icon: React.ReactNode; labe
 /** 工种题库结构化问答管理主页面 */
 export function FaqConversionPage() {
   const [form] = Form.useForm();
+  const paneActiveRef = usePaneActiveRef(usePaneActive()); // 标签不可见时暂停 20s 进度轮询（§3.6）
   const [batches, setBatches] = useState<FaqBatchVO[]>([]);
   const [selectedBatchId, setSelectedBatchId] = useState<string | null>(null);
   const [records, setRecords] = useState<FaqConversionVO[]>([]);
@@ -104,6 +106,7 @@ export function FaqConversionPage() {
     if (!pollingBatchId) return;
 
     pollRef.current = setInterval(async () => {
+      if (!paneActiveRef.current) return; // 标签不可见：跳过本轮请求，服务端转换照常进行
       try {
         const progress = await getFaqBatchProgress(pollingBatchId);
         setBatches((prev) => prev.map((b) => b.id === pollingBatchId ? progress : b));

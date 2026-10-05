@@ -23,6 +23,7 @@ import * as trainApi from '../../api/training';
 import { toBrowserPublicFileSrc, downloadExportFile, downloadUrlFile, isPublicExamFileUrl } from '../../api/files';
 import type { PlatformUser, TrainSignUpPerson } from '../../types/training';
 import { SignUpPeopleEditModal } from './SignUpPeopleEditModal';
+import { usePaneActive, usePaneActiveRef } from '../../layouts/TabKeepAlive';
 import './TrainingInformationPage.css';
 
 const STATUS_MAP: Record<number, { label: string }> = {
@@ -123,6 +124,7 @@ export function ClassSignUpPeoplePanel({
   classWorkTypeId,
   onChanged,
 }: ClassSignUpPeoplePanelProps) {
+  const paneActiveRef = usePaneActiveRef(usePaneActive()); // 标签不可见时导出计时跳过 setState（§3.6）
   const [peopleKeyword, setPeopleKeyword] = useState('');
   const [peopleStatus, setPeopleStatus] = useState<number | undefined>();
   const [peoplePage, setPeoplePage] = useState(1);
@@ -318,7 +320,8 @@ export function ClassSignUpPeoplePanel({
       window.clearInterval(defaultExportTimerRef.current);
     }
     defaultExportTimerRef.current = window.setInterval(() => {
-      setExportElapsed((v) => v + 1);
+      // 标签不可见时计时继续、跳过 setState（§3.6 乙组口径：不中断任务）
+      if (paneActiveRef.current) setExportElapsed((v) => v + 1);
     }, 1000);
     try {
       const start = await trainApi.startDefaultTemplateExport({

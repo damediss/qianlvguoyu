@@ -95,6 +95,7 @@ import { CompetitionPracticalJudgeApp } from './pages/competition/CompetitionPra
 import { FormalExamPlayerApp } from './pages/formalExam/FormalExamPlayerApp';
 import { findCompetitionMenuCode, isCompetitionPath } from './routes/competitionRoute';
 import { useAuthStore } from './stores/authStore';
+import { useTabStore } from './stores/tabStore';
 import { NavigationBlockerProvider, useNavigationBlocker } from './hooks/useUnsavedChangesBlocker';
 
 // Pre-instantiate factory components for stable React references
@@ -576,6 +577,13 @@ function useBrowserPathname() {
 function CollectionManageShell({ taskId, examSessionId }: { taskId: string; examSessionId?: string }) {
   const [manageActive, setManageActive] = React.useState(true);
 
+  // §3.7 覆盖态标签：进入覆盖态 = 覆盖态标签进列表 + 记录 overridePath（覆盖态回退载体）
+  React.useEffect(() => {
+    useTabStore.getState().openTab('certification_practical_collection');
+    useTabStore.getState().setOverridePath('certification_practical_collection',
+      window.location.pathname + window.location.search);
+  }, [taskId]);
+
   return (
     <AppShell
       pageMap={pageMap}
@@ -616,7 +624,11 @@ function CompetitionEventShell({ pathname }: { pathname: string }) {
 
   React.useEffect(() => {
     setEventActive(true);
-  }, [pathname]);
+    // §3.7 覆盖态标签：进入覆盖态 = 覆盖态标签进列表 + 记录 overridePath（覆盖态回退载体）
+    useTabStore.getState().openTab(competitionMenuKey);
+    useTabStore.getState().setOverridePath(competitionMenuKey,
+      window.location.pathname + window.location.search);
+  }, [pathname, competitionMenuKey]);
 
   return (
     <AppShell
@@ -653,6 +665,10 @@ function ReviewSyncStatsShell({ pathname }: { pathname: string }) {
 
   React.useEffect(() => {
     setStatsActive(true);
+    // §3.7 覆盖态标签：进入覆盖态 = 覆盖态标签进列表 + 记录 overridePath（覆盖态回退载体）
+    useTabStore.getState().openTab('train_exam-list');
+    useTabStore.getState().setOverridePath('train_exam-list',
+      window.location.pathname + window.location.search);
   }, [pathname]);
 
   return (
@@ -684,6 +700,10 @@ function GraduationClassDetailShell({ pathname }: { pathname: string }) {
 
   React.useEffect(() => {
     setDetailActive(true);
+    // §3.7 覆盖态标签：进入覆盖态 = 覆盖态标签进列表 + 记录 overridePath（覆盖态回退载体）
+    useTabStore.getState().openTab('train_graduation_ceremony');
+    useTabStore.getState().setOverridePath('train_graduation_ceremony',
+      window.location.pathname + window.location.search);
   }, [pathname]);
 
   return (

@@ -42,6 +42,7 @@ import type { ColumnsType } from 'antd/es/table';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import dayjs from 'dayjs';
 import { hasPermission } from '../../directives/permission';
+import { usePaneActive, usePaneActiveRef } from '../../layouts/TabKeepAlive';
 import {
   createNode,
   deleteNode,
@@ -121,6 +122,8 @@ export default function XiMuBiaoGuanLiPage() {
 
 function TaskListView({ onEnter }: { onEnter: (taskId: string) => void }) {
   const queryClient = useQueryClient();
+  const paneActive = usePaneActive(); // 标签页不可见时暂停轮询/进度 tick（§3.6）
+  const paneActiveRef = usePaneActiveRef(paneActive); // 长生命周期定时器闭包读 ref
   const [page, setPage] = useState(1);
   const [keyword, setKeyword] = useState('');
   const canGenerate = hasPermission('ximubiaoguanli:generate');
@@ -148,11 +151,13 @@ function TaskListView({ onEnter }: { onEnter: (taskId: string) => void }) {
     refetchOnMount: 'always',
   });
 
-  // LLM 概括中的任务轮询状态
+  // LLM 概括中的任务轮询状态（标签不可见时定时器照常建立、仅跳过 refetch，切回后自动恢复，§3.6）
   useEffect(() => {
     const hasRunning = (data?.items || []).some((t) => t.status === 'llm_running');
     if (!hasRunning) return;
-    const timer = setInterval(() => refetch(), 5000);
+    const timer = setInterval(() => {
+      if (paneActiveRef.current) refetch();
+    }, 5000);
     return () => clearInterval(timer);
   }, [data, refetch]);
 
@@ -187,9 +192,12 @@ function TaskListView({ onEnter }: { onEnter: (taskId: string) => void }) {
     setUploadPercent(0);
     if (uploadTimerRef.current !== null) window.clearInterval(uploadTimerRef.current);
     uploadTimerRef.current = window.setInterval(() => {
-      setUploadPercent((p) =>
-        p >= 95 ? p : Math.min(95, p + Math.max(1, Math.round((95 - p) / 10))),
-      );
+      // 标签不可见时计时继续、跳过 setState（§3.6 乙组口径：不中断任务）
+      if (paneActiveRef.current) {
+        setUploadPercent((p) =>
+          p >= 95 ? p : Math.min(95, p + Math.max(1, Math.round((95 - p) / 10))),
+        );
+      }
     }, 300);
     try {
       const task = await uploadStandardDocx(file);
@@ -686,6 +694,7 @@ function SummarizeModal({ task, onClose, onStart }: {
 
 function TreeEditView({ taskId, onBack }: { taskId: string; onBack: () => void }) {
   const queryClient = useQueryClient();
+  const paneActive = usePaneActive(); // 标签页不可见时暂停轮询（§3.6）
   const canGenerate = hasPermission('ximubiaoguanli:generate');
   const canExport = hasPermission('ximubiaoguanli:export');
 
@@ -702,7 +711,7 @@ function TreeEditView({ taskId, onBack }: { taskId: string; onBack: () => void }
   const { data: task, refetch: refetchTask } = useQuery({
     queryKey: ['standard-task', taskId],
     queryFn: () => fetchTask(taskId),
-    refetchInterval: (q) => (q.state.data?.status === 'llm_running' ? 5000 : false),
+    refetchInterval: (q) => (paneActive && q.state.data?.status === 'llm_running' ? 5000 : false),
   });
 
   // 可选范围 = levels × directions，按 1.4 节工种可用等级矩阵过滤，旧任务无矩阵则保留全组合

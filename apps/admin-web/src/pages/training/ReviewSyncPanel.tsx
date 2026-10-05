@@ -6,6 +6,7 @@ import { getReviewSyncPanel } from '../../api/training';
 import type { ReviewSyncPanel } from '../../types/training';
 import { useAuthStore } from '../../stores/authStore';
 import { useNavStore } from '../../stores/navStore';
+import { usePaneActive } from '../../layouts/TabKeepAlive';
 
 /** 红绿灯阈值（方案 §4.3，集中在前端常量便于调） */
 const ACTIVE_RATE_RED = 40; // 7日活跃率 <40% 标红
@@ -57,11 +58,12 @@ export function ReviewSyncPanel() {
   const hasPerm = useAuthStore((s) => s.hasPermission);
   const canViewStats = hasPerm('exam:review-sync:stats:view');
   const setSelectedKey = useNavStore((s) => s.setSelectedKey);
+  const paneActive = usePaneActive(); // 标签页不可见时暂停 60s 轮询（§3.6）
 
   const panelQuery = useQuery<ReviewSyncPanel>({
     queryKey: ['training-dashboard-review-sync-panel'],
     queryFn: () => getReviewSyncPanel(30),
-    refetchInterval: POLL_INTERVAL_MS,
+    refetchInterval: paneActive ? POLL_INTERVAL_MS : false,
     refetchIntervalInBackground: false,
     refetchOnWindowFocus: true,
     staleTime: 0,

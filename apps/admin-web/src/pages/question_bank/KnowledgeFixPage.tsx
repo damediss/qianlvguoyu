@@ -17,6 +17,7 @@ import {
   qualityReport,
 } from './knowledgeFixApi';
 import type { AdjudicateResult, DedupStats, FixBatch, FixItem } from './knowledgeFixApi';
+import { usePaneActive } from '../../layouts/TabKeepAlive';
 
 const STATUS_TAG: Record<string, { color: string; text: string }> = {
   apply: { color: 'success', text: '改挂' },
@@ -36,6 +37,7 @@ const batchRunning = (b: FixBatch | null | undefined) =>
 
 const KnowledgeFixPage: React.FC = () => {
   const qc = useQueryClient();
+  const paneActive = usePaneActive(); // 标签页不可见时暂停轮询（§3.6）
 
   // ---------------- 去重清理 ----------------
   const [dedupGenerating, setDedupGenerating] = useState(false);
@@ -131,7 +133,7 @@ const KnowledgeFixPage: React.FC = () => {
   const progressQuery = useQuery({
     queryKey: ['knowledgefix-progress'],
     queryFn: classifyProgress,
-    refetchInterval: (q) => (batchRunning(q.state.data) ? 3000 : false),
+    refetchInterval: (q) => (paneActive && batchRunning(q.state.data) ? 3000 : false),
   });
   const batch = progressQuery.data;
   // 待写回改挂行数（实时）：人工定夺会把 flag 行翻转成 apply，批次卡的 applyCnt 是批次时点快照不更新，

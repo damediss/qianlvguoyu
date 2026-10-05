@@ -17,6 +17,7 @@ import {
 import type { ColumnsType } from 'antd/es/table';
 import { hasPermission } from '../../directives/permission';
 import { fetchPlatformFileBlob, uploadPlatformFile } from '../../api/files';
+import { usePaneActive } from '../../layouts/TabKeepAlive';
 import {
   addOutlinePage, cancelCoursewareProject, confirmCoursewareOutline, createCoursewareProject,
   deleteCoursewareProject, deleteOutlinePage, exportCoursewareProject, getCoursewareOutline,
@@ -323,6 +324,7 @@ function OutlineView({ projectId, onBack, onConfirmed }: {
   onConfirmed: (id: string) => void;
 }) {
   const queryClient = useQueryClient();
+  const paneActive = usePaneActive(); // 标签页不可见时暂停轮询（§3.6）
   const [confirming, setConfirming] = useState(false);
   const [pages, setPages] = useState<CoursewareOutlinePage[]>([]);
 
@@ -330,8 +332,10 @@ function OutlineView({ projectId, onBack, onConfirmed }: {
   const { data: project } = useQuery({
     queryKey: ['courseware-project', projectId],
     queryFn: () => getCoursewareProject(projectId),
-    refetchInterval: (q) =>
-      q.state.data && ['outline_ready', ...TERMINAL].includes(q.state.data.status) ? false : 3000,
+    refetchInterval: (q) => {
+      if (!paneActive) return false;
+      return q.state.data && ['outline_ready', ...TERMINAL].includes(q.state.data.status) ? false : 3000;
+    },
   });
 
   const outlineQuery = useQuery({
@@ -637,6 +641,7 @@ function OutlinePageCard({ page, editable, onPatch, onSave, onMove, onDelete }: 
 
 function ProgressView({ projectId, onBack }: { projectId: string; onBack: () => void }) {
   const queryClient = useQueryClient();
+  const paneActive = usePaneActive(); // 标签页不可见时暂停轮询（§3.6）
   const [detailId, setDetailId] = useState<string | null>(null);
   const [exportIssues, setExportIssues] = useState<CoursewareIssue[] | null>(null);
   const [exporting, setExporting] = useState(false);
@@ -644,8 +649,11 @@ function ProgressView({ projectId, onBack }: { projectId: string; onBack: () => 
   const { data: progress } = useQuery({
     queryKey: ['courseware-progress', projectId],
     queryFn: () => getCoursewareProgress(projectId),
-    // 终态停止轮询(方案 §14)
-    refetchInterval: (q) => (q.state.data && TERMINAL.has(q.state.data.status) ? false : 3000),
+    // 终态停止轮询(方案 §14)；标签不可见时暂停（§3.6）
+    refetchInterval: (q) => {
+      if (!paneActive) return false;
+      return q.state.data && TERMINAL.has(q.state.data.status) ? false : 3000;
+    },
   });
 
   const { data: project } = useQuery({

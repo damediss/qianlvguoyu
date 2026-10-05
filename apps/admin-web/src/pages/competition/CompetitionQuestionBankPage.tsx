@@ -51,6 +51,7 @@ import {
 import { getCompetitionQuestionBlueprintTree, pageCompetitionQuestionBlueprints } from '../../api/competitionQuestionBlueprint';
 import type { CompetitionEvent, CompetitionEventWorkType, CompetitionEventWorkTypeLevel } from '../../types/competition';
 import { SimplePracticalQuestionCreateModal } from './SimplePracticalQuestionCreateModal';
+import { usePaneActive } from '../../layouts/TabKeepAlive';
 import type {
   CompetitionQuestion,
   CompetitionQuestionContentType,
@@ -149,6 +150,7 @@ function practicalScoringMethodLabel(value?: string | null) {
 
 export function CompetitionQuestionBankPage({ contentType, simpleMode = false }: Props) {
   const queryClient = useQueryClient();
+  const paneActive = usePaneActive(); // 标签页不可见时暂停导入批次轮询（§3.6）
   const [eventId, setEventId] = useState(getEventIdFromUrl);
   const [workTypeId, setWorkTypeId] = useState('');
   const [levelId, setLevelId] = useState('');
@@ -236,7 +238,7 @@ export function CompetitionQuestionBankPage({ contentType, simpleMode = false }:
     queryKey: ['competition-question-import-batch', eventId, batchId],
     queryFn: () => getCompetitionQuestionImportBatch(eventId, batchId!),
     enabled: Boolean(eventId && batchId),
-    refetchInterval: batchId ? 1500 : false,
+    refetchInterval: paneActive && batchId ? 1500 : false,
   });
 
   useEffect(() => {
