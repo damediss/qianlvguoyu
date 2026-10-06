@@ -244,6 +244,21 @@ body {
   color: #64748b;
 }
 
+/* ---- 拖拽视觉反馈（transform 套在 .ant-tabs-tab 卡片外壳上，见 DraggableTabLabel）---- */
+/* 拖起：卡片浮起 */
+.app-tabbar-strip .ant-tabs-tab.app-tab-dragging {
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.22);
+  opacity: 0.92;
+  z-index: 5;
+  cursor: grabbing;
+}
+
+/* 拖拽全程：整个标签条 grabbing 光标 */
+.app-tabbar-strip.app-tabbar-dragging,
+.app-tabbar-strip.app-tabbar-dragging * {
+  cursor: grabbing !important;
+}
+
 /* 标签内文本与刷新按钮（DraggableTabLabel） */
 .app-tabbar-strip .app-tab-label-text {
   max-width: 160px;

@@ -3,7 +3,7 @@ import {
   Avatar, Breadcrumb, Dropdown, Layout, Menu, Tabs, Tooltip, Space, Typography, notification,
 } from 'antd';
 import type { MenuProps } from 'antd';
-import { DndContext, PointerSensor, closestCenter, useSensor, useSensors } from '@dnd-kit/core';
+import { DndContext, MeasuringStrategy, PointerSensor, closestCenter, useSensor, useSensors } from '@dnd-kit/core';
 import type { DragEndEvent } from '@dnd-kit/core';
 import { SortableContext, horizontalListSortingStrategy, useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
@@ -185,6 +185,10 @@ function safeScrollToTop(el: HTMLElement | null) {
 /**
  * 可拖拽标签（T8 拖拽排序）：dnd-kit sortable 挂在标签内容上，
  * PointerSensor distance=6 与点击切换互不干扰；固定标签禁用拖拽。
+ *
+ * 关键：sortable 的位移/过渡必须套到 antd 渲染的 `.ant-tabs-tab` 卡片外壳上——
+ * 只 transform 文字 span 时卡片纹丝不动，拖拽过程零视觉反馈（评审后用户反馈）。
+ * 测量节点仍是文字 span（同排等高，delta 一致），样式通过 closest 同步到卡片。
  */
 function DraggableTabLabel({
   tab,
@@ -201,15 +205,43 @@ function DraggableTabLabel({
     id: tab.key,
     disabled: !tab.closable,
   });
-  const style: React.CSSProperties = {
-    transform: CSS.Translate.toString(transform),
-    transition,
-    opacity: isDragging ? 0.6 : undefined,
-  };
+  const labelRef = useRef<HTMLSpanElement | null>(null);
+  const tabCardRef = useRef<HTMLElement | null>(null);
+
+  // 把 sortable 的 transform/transition/拖拽态同步到 .ant-tabs-tab 卡片外壳
+  useEffect(() => {
+    let card = tabCardRef.current;
+    // antd 重渲染可能重建 tab 节点：失联时按 closest 重新解析
+    if (!card || !card.isConnected) {
+      card = (labelRef.current?.closest('.ant-tabs-tab') as HTMLElement | null) ?? null;
+      tabCardRef.current = card;
+    }
+    if (!card) return;
+    card.style.transform = CSS.Translate.toString(transform) || '';
+    card.style.transition = transition || '';
+    if (isDragging) {
+      card.classList.add('app-tab-dragging');
+    } else {
+      card.classList.remove('app-tab-dragging');
+    }
+  }, [transform, transition, isDragging]);
+
+  // 卸载时清理卡片上的内联样式，避免残留位移
+  useEffect(() => () => {
+    const card = tabCardRef.current;
+    if (card) {
+      card.style.transform = '';
+      card.style.transition = '';
+      card.classList.remove('app-tab-dragging');
+    }
+  }, []);
+
   return (
     <span
-      ref={setNodeRef}
-      style={style}
+      ref={(node) => {
+        labelRef.current = node;
+        setNodeRef(node);
+      }}
       className="app-tab-label"
       {...attributes}
       onAuxClick={(event) => {
@@ -642,9 +674,12 @@ export function AppShell({
     [tabs, effectiveActiveKey, handleTabClose, beginTabSwitch],
   );
 
-  // 拖拽排序（T8）：PointerSensor distance=6 与点击切换互不干扰
+  // 拖拽排序（T8）：PointerSensor distance=6 与点击切换互不干扰；
+  // dragging 态驱动全局 grabbing 光标（拖拽视觉反馈，v1.4 用户反馈补强）
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }));
+  const [tabDragActive, setTabDragActive] = useState(false);
   const handleDragEnd = useCallback((event: DragEndEvent) => {
+    setTabDragActive(false);
     const { active, over } = event;
     if (!over || active.id === over.id) return;
     const toIndex = useTabStore.getState().tabs.findIndex((tab) => tab.key === over.id);
@@ -683,8 +718,15 @@ export function AppShell({
             搜索栏已删（Q1-A：原组件无交互逻辑纯占位）。灰度 off 时头部仅保留用户下拉。 */}
         <Header className={tabsEnabled ? 'app-header app-header-tabs' : 'app-header app-header-plain'}>
           {tabsEnabled && (
-            <div className="app-tabbar-strip">
-              <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+            <div className={`app-tabbar-strip${tabDragActive ? ' app-tabbar-dragging' : ''}`}>
+              <DndContext
+                sensors={sensors}
+                collisionDetection={closestCenter}
+                measuring={{ droppable: { strategy: MeasuringStrategy.Always } }}
+                onDragStart={() => setTabDragActive(true)}
+                onDragEnd={handleDragEnd}
+                onDragCancel={() => setTabDragActive(false)}
+              >
                 <SortableContext items={tabs.map((tab) => tab.key)} strategy={horizontalListSortingStrategy}>
                   <Tabs
                     className="app-tabbar-tabs"
