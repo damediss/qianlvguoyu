@@ -39,17 +39,17 @@ async function clickMenuItem(page: Page, name: string) {
 }
 
 async function expectTabCount(page: Page, count: number) {
-  await expect(page.locator('.app-tabbar .ant-tabs-tab')).toHaveCount(count);
+  await expect(page.locator('.app-tabbar-strip .ant-tabs-tab')).toHaveCount(count);
 }
 
 async function expectActiveTab(page: Page, key: string) {
-  await expect(page.locator(`.app-tabbar .ant-tabs-tab[data-node-key="${key}"]`)).toHaveClass(/ant-tabs-tab-active/);
+  await expect(page.locator(`.app-tabbar-strip .ant-tabs-tab[data-node-key="${key}"]`)).toHaveClass(/ant-tabs-tab-active/);
 }
 
 test.describe('admin-web 标签页外壳', () => {
   test('E2E-01 主流程：开 3 个标签 → 中键关 1 个 → 右键关闭其他', async ({ page }) => {
     await page.goto(PATHS.knowledge);
-    await expect(page.locator('.app-tabbar')).toBeVisible();
+    await expect(page.locator('.app-tabbar-strip')).toBeVisible();
     await expectTabCount(page, 1);
 
     await clickMenuItem(page, MENU_NAMES.knowledgeFix);
@@ -59,15 +59,15 @@ test.describe('admin-web 标签页外壳', () => {
     await expectTabCount(page, 3);
 
     // 中键关闭 knowledge_fix 标签
-    const fixTabText = page.locator(`.app-tabbar .ant-tabs-tab[data-node-key="knowledge_fix"] .app-tab-label`);
+    const fixTabText = page.locator(`.app-tabbar-strip .ant-tabs-tab[data-node-key="knowledge_fix"] .app-tab-label`);
     await fixTabText.click({ button: 'middle' });
     await expectTabCount(page, 2);
-    await expect(page.locator(`.app-tabbar .ant-tabs-tab[data-node-key="knowledge_fix"]`)).toHaveCount(0);
+    await expect(page.locator(`.app-tabbar-strip .ant-tabs-tab[data-node-key="knowledge_fix"]`)).toHaveCount(0);
 
     // 右键 knowledge_fix 重新打开后：关闭其他
     await clickMenuItem(page, MENU_NAMES.knowledgeFix);
     await expectTabCount(page, 3);
-    const fixLabel = page.locator(`.app-tabbar .ant-tabs-tab[data-node-key="knowledge_fix"] .app-tab-label`);
+    const fixLabel = page.locator(`.app-tabbar-strip .ant-tabs-tab[data-node-key="knowledge_fix"] .app-tab-label`);
     await fixLabel.click({ button: 'right' });
     await page.getByText('关闭其他标签页').click();
     await expectTabCount(page, 2);
@@ -81,7 +81,7 @@ test.describe('admin-web 标签页外壳', () => {
     await expectActiveTab(page, 'system_user');
 
     await page.reload();
-    await expect(page.locator('.app-tabbar')).toBeVisible();
+    await expect(page.locator('.app-tabbar-strip')).toBeVisible();
     await expectTabCount(page, 3);
     await expectActiveTab(page, 'system_user');
   });
@@ -90,7 +90,7 @@ test.describe('admin-web 标签页外壳', () => {
     await page.goto(PATHS.knowledge);
     await expectTabCount(page, 1);
     await page.goto(PATHS.systemUser);
-    await expect(page.locator('.app-tabbar')).toBeVisible();
+    await expect(page.locator('.app-tabbar-strip')).toBeVisible();
     await expectActiveTab(page, 'system_user');
     await expectTabCount(page, 2);
   });
@@ -98,8 +98,8 @@ test.describe('admin-web 标签页外壳', () => {
   test('E2E-04 竞赛并存：竞赛 URL 直达 → 覆盖态 → 点其他菜单出标签', async ({ page }) => {
     await page.goto(PATHS.competitionEvents);
     // 覆盖态 shell 仍渲染标签栏，且竞赛菜单标签存在
-    await expect(page.locator('.app-tabbar')).toBeVisible();
-    await expect(page.locator(`.app-tabbar .ant-tabs-tab[data-node-key="competition_event"]`)).toBeVisible();
+    await expect(page.locator('.app-tabbar-strip')).toBeVisible();
+    await expect(page.locator(`.app-tabbar-strip .ant-tabs-tab[data-node-key="competition_event"]`)).toBeVisible();
     // 从覆盖态点击普通菜单 → 退出覆盖 + 打开对应标签
     await clickMenuItem(page, MENU_NAMES.knowledgeFix);
     await expectActiveTab(page, 'knowledge_fix');
@@ -108,12 +108,12 @@ test.describe('admin-web 标签页外壳', () => {
 
   test('E2E-05 覆盖态回退：竞赛 → 知识库 → 点回竞赛标签 → URL 级状态恢复', async ({ page }) => {
     await page.goto(PATHS.competitionEvents);
-    await expect(page.locator(`.app-tabbar .ant-tabs-tab[data-node-key="competition_event"]`)).toBeVisible();
+    await expect(page.locator(`.app-tabbar-strip .ant-tabs-tab[data-node-key="competition_event"]`)).toBeVisible();
     await clickMenuItem(page, MENU_NAMES.knowledgeFix);
     await expectActiveTab(page, 'knowledge_fix');
     // 点击携带 overridePath 的竞赛标签 → pushState+popstate → 覆盖态恢复
-    await page.locator(`.app-tabbar .ant-tabs-tab[data-node-key="competition_event"] .app-tab-label`).click();
-    await expect(page.locator(`.app-tabbar .ant-tabs-tab[data-node-key="competition_event"]`)).toHaveClass(/ant-tabs-tab-active/);
+    await page.locator(`.app-tabbar-strip .ant-tabs-tab[data-node-key="competition_event"] .app-tab-label`).click();
+    await expect(page.locator(`.app-tabbar-strip .ant-tabs-tab[data-node-key="competition_event"]`)).toHaveClass(/ant-tabs-tab-active/);
     expect(new URL(page.url()).pathname).toBe(PATHS.competitionEvents);
   });
 

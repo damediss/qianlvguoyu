@@ -1,12 +1,20 @@
 # admin-web 主窗口标签页化改造方案
 
-- 日期：2026-10-04（**v1.3，软提示阈值 >15→>10 + 测试验收清单化**；v1.2 为二期前挪版、v1.1 为源码复核版、v1.0 为一版）
+- 日期：2026-10-04（**v1.4，顶栏合并与 Chrome 风格视觉修订**；v1.3 清单化、v1.2 二期前挪、v1.1 源码复核、v1.0 一版）
 - 状态：**口径全部拍板（Q1-Q10）并已实施（T1~T8 代码落地，2026-10-04）**，剩余项见 §5 实施勾选与 §5.6 人工抽查
 - 涉及范围：仅前端 `apps/admin-web`（外壳与导航层），后端零改动
 - 关联记忆/口径：管理端外壳滚动模型（b127a42，外壳锁 100vh、内容区独立滚动）
 - v1.1 修订来源：逐条核对 `src/main.tsx`、`src/layouts/AppShell.tsx`、`src/stores/navStore.ts`、`src/hooks/useUnsavedChangesBlocker.tsx` 及全站轮询点后的评审结论
 - v1.2 修订来源：① 缺陷修订——**D1** §3.7 覆盖态"不进标签列表"与"激活态=override 标签"自相矛盾（改为覆盖态也 openTab 并携带 `overridePath`，回退能力随之一期化）；**D2** §3.4 pushState 不派发 popstate 后 `App()` pathname 状态滞后的说明缺失；**D3** §3.8 守卫 scope 来源依赖 D1 解决；**D4** §1.1 守卫注册方文件名修正（实测消费方为 CompetitionEventManagementPage / CompetitionEventModulePage）。② 范围重估——二期 6 项中 5 项挪入一期（Q10）：覆盖态回退、标签刷新按钮、>10 软提示、乙组剩余 6 处 setInterval、（低优先可裁剪）拖拽排序；**全站 dirty 确认不全量挪入**（一期交付框架 + 高风险页试点，全量滚动留二期）。承重断言抽样复核通过：api/client.ts 401 clearAuth、GenWorkbenchPage.tsx:50 为真轮询点、pageMap 实测 369 键/49 连字符、单槽 guardRef、赛段编排除文案硬编码。
 - 实施记录（2026-10-04，T1~T8 全量落地）：新增 `src/stores/tabStore.ts`、`src/layouts/TabKeepAlive.tsx`、`src/hooks/useTabDirtyGuard.ts`、`src/routes/hiddenRoutes.ts`、`src/config/tabsFeature.ts`、`tests/adminTabsStore.test.ts`（20 条）、`tests/adminTabsUrl.test.tsx`（12 条）、`e2e/adminTabs.spec.ts`；改造 `AppShell.tsx`（Tabs/保活/URL 联动/恢复/下钻守卫/滚动存取/title/软提示/拖拽排序/关闭守卫/租户切换清空/灰度开关）、`navStore.ts`（委托 tabStore）、`main.tsx`（5 个隐藏路由 shell 覆盖态接线）、`useUnsavedChangesBlocker.tsx`（Map 注册表化+文案入参化）、`competitionRoute.ts`（findMenuCodeByPath 泛化）、`global.css`（.app-tabbar）、`AGENTS.md`（四条约定）、`package.json`（test:admin-tabs / test:e2e:admin-tabs + @dnd-kit 依赖）；轮询接入 25 处（甲组 refetchInterval 16 处 + 乙组 setInterval 9 处，含附录 B 之外实测多出的 XiMuBiao:705/GenWorkbench:66/CompetitionQuestionBank 竞赛题库导入）。`npm run build` 0 error；`npm run test:admin-tabs` 32/32 绿；全量 vitest 198 过（= 既有 166 + 新 32），失败集与改造前基线完全一致（2 条既有失败 + 并发 flaky 3 文件单跑全过 + 3 个 node-test 风格文件本就不属 vitest）——**零新增回归**。e2e/量化门禁/附录 C SQL 待环境执行（见 §5 实施勾选）。
+- v1.4 修订（2026-10-06，UI 拍板 Q1A~Q4A）：见 §3.10 顶栏合并与 Chrome 风格视觉。依赖修复 `7c98d9ae`（@dnd-kit/utilities 显式声明，三 lockfile 同步）；评审修复轮 `aefe07e7`（openOverrideTab 原子入口修 D1 覆盖态 URL 改写、visitedKeys 收敛修 D3 全量挂载、openTab 同步 title/path、恢复用 visibleMenuTree、竞赛 shell menuTree 守卫，+6 回归用例 38/38）。
+- v1.4 新增 §3.10 顶栏合并与 Chrome 风格视觉（Q1-Q4 owner 已拍板 2026-10-06）：
+  - **Q1-A 搜索栏删除**：Header 内的搜索 Input 无任何交互逻辑（无 onSearch/onPressEnter，纯占位），连同 `.top-search` 样式一并移除。
+  - **Q2-A Chrome 同款单行**：标签条与"平台管理员"下拉合并为唯一头部行（高 44px）——标签占左侧弹性宽度，下拉固定右侧（功能完整保留：平板考评端/综合答辩端/退出登录）。比旧两行（58+40）省 54px 纵向空间，内容区自动吃回。
+  - **Q3-A Chrome 浅色原味**：标签栏灰底（#dee1e6 系）；**激活标签=白色卡片浮起**（顶部圆角 8px、与底部分隔断开、轻阴影），**未激活标签与栏同色、hover 提亮**（rgba 白 60%）——选中/未选中颜色区分即此。
+  - **Q4-A 关闭按钮仿 Chrome**：未激活标签 hover 才显示 ×（opacity 过渡），激活标签常显 ×。
+  - 默认口径（未另问）：不加"+"新建按钮（标签只能由菜单打开）；溢出沿用 antd 左右箭头；固定"管理概览"不可关；灰度 off 的旧分支头部仅保留用户下拉（右对齐）。
+  - 影响面：纯布局+样式（`AppShell.tsx` Header 结构、`global.css` 标签条样式重写、`.app-tabbar` 类更名为 `.app-tabbar-strip`），不动 tabStore 任何逻辑；测试/ e2e 选择器同步更名。
 - v1.3 修订来源：owner 指令——软提示阈值 >15 改为 **>10**（第 11 个标签触发；Q10 行、§3.9、§5、§6、§8、v1.2 修订行同步）；§5 测试与验收重写为**清单化结构**（5.1 单测 UT-01~20 / 5.2 组件 RTL-01~12 / 5.3 e2e E2E-01~08 / 5.4 量化门禁 / 5.5 手工回归 / 5.6 验收流程），验收时逐项勾选；§5.6 补**角色分工**（owner 指令：手工回归执行主力=实施者，owner 只抽查两类体感项）。
 
 ---
@@ -73,7 +81,7 @@
 - 标签页三元组：`{ key: 菜单码, title: 菜单名(menuDisplayName), path: 菜单path, closable }`。
 - **一个菜单码一个标签**：点已打开的菜单 → 激活既有标签（不重复开）；点新菜单 → 追加新标签并激活。
 - 面包屑保留在内容区（提供层级上下文，与标签叶名互补）。
-- **布局口径**：`.app-main` 是 `height:100vh; overflow:hidden` 的 antd Layout（默认 flex column），TabBar 作为 Header 与 Content 之间的**兄弟节点**插入，取值 `flex: 0 0 40px; overflow: hidden`；`.app-content` 维持 `flex: 1 1 auto; min-height: 0; overflow-y: auto`（global.css:168）继续吃掉剩余高度。
+- **布局口径（v1.4 修订）**：`.app-main` 是 `height:100vh; overflow:hidden` 的 antd Layout（默认 flex column）；标签条并入头部行（`.app-header-tabs`，高 44px）——标签 `.app-tabbar-strip` 占左侧弹性宽度、用户下拉固定右侧；`.app-content` 维持 `flex: 1 1 auto; min-height: 0; overflow-y: auto`（global.css）继续吃掉剩余高度。灰度 off 时头部为 `.app-header-plain`（仅用户下拉，右对齐）。
 
 ### 3.2 数据层：新增 `tabStore`（zustand + persist）
 
@@ -193,7 +201,7 @@ interface TabState {
 | `workbench/GenWorkbenchPage.tsx`（**替代 v1.0 误列的 TheoryQuestionGenPage**）、`SkillQuestionGenPage.tsx`、`pages/question_bank/KnowledgeFixPage.tsx` | 轮询接 `useIsTabActive`。SkillQuestionGenPage 另需收 300ms 导入定时器 |
 | 其余甲组轮询点（附录 B，12 处） | `refetchInterval: isActive ? N : false` |
 | `pages/zhi_neng_ke_cheng_cai_liao_guan_li/XiMuBiaoGuanLiPage.tsx` | 乙组唯一随一期改造项：`refetch()` 轮询接 `useIsTabActive` |
-| `styles/global.css` | 新增 `.app-tabbar { flex: 0 0 40px; overflow: hidden; }`；`.app-content` 取值不变（§3.1 布局口径） |
+| `styles/global.css` | 标签条样式重写为 Chrome 风格（v1.4：`.app-tabbar-strip` 灰底、激活白卡片浮起、未激活 hover 提亮、× 按 Q4-A 显隐）；`.app-header-tabs`/`.app-header-plain` 头部行；移除 `.top-search`。`.app-content` 取值不变（§3.1 布局口径） |
 | `package.json` | 新增 `test:admin-tabs` script（`vitest run tests/adminTabs*.test.ts(x)`），与主构建解耦 |
 | `apps/admin-web/AGENTS.md` | 新增约定：① 新页面轮询必须接 `useIsTabActive`，且**禁止裸写 `setInterval` 轮询**；② 页面内跳转继续用 `setSelectedKey`（语义已变为开标签）；③ 隐藏路由 shell 必须传 `selectedMenuKeyOverride`；④ 新增隐藏路由须同步登记附录 A |
 

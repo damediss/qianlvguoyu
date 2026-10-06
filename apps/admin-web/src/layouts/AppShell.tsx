@@ -1,6 +1,6 @@
 import * as Icons from '@ant-design/icons';
 import {
-  Avatar, Breadcrumb, Dropdown, Input, Layout, Menu, Tabs, Tooltip, Space, Typography, notification,
+  Avatar, Breadcrumb, Dropdown, Layout, Menu, Tabs, Tooltip, Space, Typography, notification,
 } from 'antd';
 import type { MenuProps } from 'antd';
 import { DndContext, PointerSensor, closestCenter, useSensor, useSensors } from '@dnd-kit/core';
@@ -679,14 +679,35 @@ export function AppShell({
         />
       </Sider>
       <Layout className="app-main">
-        <Header className="app-header">
-          <Input
-            className="top-search"
-            prefix={<Icons.SearchOutlined />}
-            placeholder="搜索课程、资料、任务"
-            variant="filled"
-          />
-          <Space size={12}>
+        {/* v1.4：Chrome 同款单行头部——标签条（左，弹性）+ 平台管理员下拉（右，固定）。
+            搜索栏已删（Q1-A：原组件无交互逻辑纯占位）。灰度 off 时头部仅保留用户下拉。 */}
+        <Header className={tabsEnabled ? 'app-header app-header-tabs' : 'app-header app-header-plain'}>
+          {tabsEnabled && (
+            <div className="app-tabbar-strip">
+              <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+                <SortableContext items={tabs.map((tab) => tab.key)} strategy={horizontalListSortingStrategy}>
+                  <Tabs
+                    className="app-tabbar-tabs"
+                    type="editable-card"
+                    hideAdd
+                    activeKey={effectiveActiveKey}
+                    onChange={(key) => {
+                      if (key === effectiveActiveKey) return;
+                      beginTabSwitch();
+                      activateTab(key);
+                    }}
+                    onEdit={(targetKey, action) => {
+                      if (action === 'remove') {
+                        void handleTabClose(String(targetKey));
+                      }
+                    }}
+                    items={tabBarItems}
+                  />
+                </SortableContext>
+              </DndContext>
+            </div>
+          )}
+          <Space size={12} className="app-header-user">
             <Dropdown menu={{ items: userDropdownItems }} placement="bottomRight" trigger={['click']}>
               <Space style={{ cursor: 'pointer' }}>
                 <Avatar icon={<Icons.UserOutlined />} />
@@ -698,31 +719,6 @@ export function AppShell({
             </Dropdown>
           </Space>
         </Header>
-        {tabsEnabled && (
-          <div className="app-tabbar">
-            <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
-              <SortableContext items={tabs.map((tab) => tab.key)} strategy={horizontalListSortingStrategy}>
-                <Tabs
-                  className="app-tabbar-tabs"
-                  type="editable-card"
-                  hideAdd
-                  activeKey={effectiveActiveKey}
-                  onChange={(key) => {
-                    if (key === effectiveActiveKey) return;
-                    beginTabSwitch();
-                    activateTab(key);
-                  }}
-                  onEdit={(targetKey, action) => {
-                    if (action === 'remove') {
-                      void handleTabClose(String(targetKey));
-                    }
-                  }}
-                  items={tabBarItems}
-                />
-              </SortableContext>
-            </DndContext>
-          </div>
-        )}
         <Content className="app-content" ref={contentRef}>
           <TabActiveProvider value={menuHighlightKey}>
             {!hideBreadcrumb && breadcrumbItems.length > 0 && (

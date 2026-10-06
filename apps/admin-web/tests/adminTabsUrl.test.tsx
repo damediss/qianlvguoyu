@@ -274,7 +274,7 @@ describe('灰度开关（RTL-12，§7）', () => {
     localStorage.setItem('guoyu_admin_tabs_switch', 'off');
     renderShell();
     await screen.findByText('管理概览内容');
-    expect(document.querySelector('.app-tabbar')).toBeNull();
+    expect(document.querySelector('.app-tabbar-strip')).toBeNull();
     // 旧分支内容区直接渲染 pageMap[selectedKey]
     expect(screen.getByText('管理概览内容')).toBeTruthy();
     localStorage.removeItem('guoyu_admin_tabs_switch');
