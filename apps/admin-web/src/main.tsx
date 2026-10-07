@@ -668,13 +668,13 @@ function ReviewSyncStatsShell({ pathname }: { pathname: string }) {
     setStatsActive(true);
     // §3.7 覆盖态标签（D1）：先取当前完整 URL 再入 store，原子记录 overridePath 不触碰 URL
     const overrideUrl = window.location.pathname + window.location.search;
-    useTabStore.getState().openOverrideTab('train_exam-list', undefined, overrideUrl);
+    useTabStore.getState().openOverrideTab('kao_shi_ji_hua', undefined, overrideUrl);
   }, [pathname]);
 
   return (
     <AppShell
       pageMap={pageMap}
-      selectedMenuKeyOverride={statsActive ? 'train_exam-list' : undefined}
+      selectedMenuKeyOverride={statsActive ? 'kao_shi_ji_hua' : undefined}
       contentOverride={statsActive ? (
         <React.Fragment key={pathname}>
           {planId
