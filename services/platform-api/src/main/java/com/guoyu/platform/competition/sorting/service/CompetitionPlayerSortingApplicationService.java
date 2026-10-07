@@ -9,6 +9,9 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.guoyu.platform.common.api.PageResponse;
 import com.guoyu.platform.common.exception.BusinessException;
 import com.guoyu.platform.common.exception.ErrorCode;
+import com.guoyu.platform.common.util.SensitiveMaskUtils;
+import com.guoyu.platform.competition.entity.CompetitionPlayerIdentityEntity;
+import com.guoyu.platform.competition.mapper.CompetitionPlayerIdentityMapper;
 import com.guoyu.platform.competition.service.CompetitionStageApplicationService;
 import com.guoyu.platform.competition.service.CompetitionStagePaperAssignmentApplicationService;
 import com.guoyu.platform.competition.sorting.dto.CompetitionPlayerSortingTaskCreateReq;
@@ -52,6 +55,7 @@ public class CompetitionPlayerSortingApplicationService {
   private final CompetitionStagePaperAssignmentApplicationService stagePlayerService;
   private final CompetitionPlayerSortingTaskMapper taskMapper;
   private final CompetitionPlayerSortingWorkbookExportService workbookExportService;
+  private final CompetitionPlayerIdentityMapper identityMapper;
   private final ObjectMapper objectMapper;
 
   public CompetitionPlayerSortingApplicationService(
@@ -59,11 +63,13 @@ public class CompetitionPlayerSortingApplicationService {
       CompetitionStagePaperAssignmentApplicationService stagePlayerService,
       CompetitionPlayerSortingTaskMapper taskMapper,
       CompetitionPlayerSortingWorkbookExportService workbookExportService,
+      CompetitionPlayerIdentityMapper identityMapper,
       ObjectMapper objectMapper) {
     this.stageService = stageService;
     this.stagePlayerService = stagePlayerService;
     this.taskMapper = taskMapper;
     this.workbookExportService = workbookExportService;
+    this.identityMapper = identityMapper;
     this.objectMapper = objectMapper;
   }
 
@@ -212,6 +218,7 @@ public class CompetitionPlayerSortingApplicationService {
     Map<Integer, String> workstationByGroup = assignWorkstations(
         entity.getGroupCount(), entity.getWorkstationCount());
     Collections.shuffle(selected, RANDOM);
+    Map<Long, String> mobileByProfileId = maskedMobileByProfileId(selected, new HashSet<>(selectedIds));
     List<CompetitionPlayerSortingAssignmentVO> assignments = new ArrayList<>(selected.size());
     int baseGroupSize = selected.size() / entity.getGroupCount();
     int largerGroupCount = selected.size() % entity.getGroupCount();
@@ -222,6 +229,7 @@ public class CompetitionPlayerSortingApplicationService {
         CompetitionStagePaperAssignmentPlayerVO candidate = selected.get(selectedIndex++);
         assignments.add(new CompetitionPlayerSortingAssignmentVO(
             candidate.contestantProfileId(), candidate.contestantNo(), candidate.name(),
+            mobileByProfileId.get(parseId(candidate.contestantProfileId())),
             groupNo, groupOrder, workstationByGroup.get(groupNo)));
       }
     }
@@ -241,7 +249,8 @@ public class CompetitionPlayerSortingApplicationService {
   public CompetitionPlayerSortingTaskVO get(Long taskId) {
     CompetitionPlayerSortingTaskEntity entity = requireTask(taskId);
     stageService.assertCanManage(entity.getStageId());
-    return toVO(entity, readAssignments(entity.getResultSnapshotJson()));
+    return toVO(entity, withMobile(entity.getStageId(),
+        readAssignments(entity.getResultSnapshotJson())));
   }
 
   @Transactional(readOnly = true)
@@ -251,8 +260,8 @@ public class CompetitionPlayerSortingApplicationService {
     if (!SORTED.equals(entity.getStatus())) {
       throw new BusinessException(ErrorCode.UNPROCESSABLE_ENTITY, "请先完成随机排序再导出名单");
     }
-    List<CompetitionPlayerSortingAssignmentVO> assignments =
-        readAssignments(entity.getResultSnapshotJson());
+    List<CompetitionPlayerSortingAssignmentVO> assignments = withMobile(entity.getStageId(),
+        readAssignments(entity.getResultSnapshotJson()));
     if (assignments.size() != entity.getPlayerCount()) {
       throw new BusinessException(ErrorCode.UNPROCESSABLE_ENTITY, "排序结果不完整，无法导出名单");
     }
@@ -287,6 +296,94 @@ public class CompetitionPlayerSortingApplicationService {
       }
     }
     return result;
+  }
+
+  /** 把名单行的手机号按选手档案批量回填（脱敏），旧快照与新快照统一以 identity 表当前值为准。 */
+  private List<CompetitionPlayerSortingAssignmentVO> withMobile(
+      Long stageId, List<CompetitionPlayerSortingAssignmentVO> assignments) {
+    if (assignments == null || assignments.isEmpty()) {
+      return assignments;
+    }
+    Set<Long> profileIds = new HashSet<>();
+    for (CompetitionPlayerSortingAssignmentVO assignment : assignments) {
+      Long profileId = parseId(assignment.contestantProfileId());
+      if (profileId != null) {
+        profileIds.add(profileId);
+      }
+    }
+    Map<Long, String> mobileByProfileId = maskedMobileByProfileId(candidates(stageId), profileIds);
+    if (mobileByProfileId.isEmpty()) {
+      return assignments;
+    }
+    List<CompetitionPlayerSortingAssignmentVO> result = new ArrayList<>(assignments.size());
+    for (CompetitionPlayerSortingAssignmentVO assignment : assignments) {
+      Long profileId = parseId(assignment.contestantProfileId());
+      result.add(new CompetitionPlayerSortingAssignmentVO(
+          assignment.contestantProfileId(), assignment.contestantNo(), assignment.name(),
+          profileId == null ? null : mobileByProfileId.get(profileId),
+          assignment.groupNo(), assignment.groupOrder(), assignment.workstation()));
+    }
+    return result;
+  }
+
+  /** 档案 ID → 脱敏手机号。手机号来源 competition_player_identity，经候选行的 playerId 关联。 */
+  private Map<Long, String> maskedMobileByProfileId(
+      List<CompetitionStagePaperAssignmentPlayerVO> candidates, Set<Long> profileIds) {
+    if (candidates == null || candidates.isEmpty() || profileIds == null || profileIds.isEmpty()) {
+      return Map.of();
+    }
+    Map<Long, Long> playerIdByProfileId = new HashMap<>();
+    for (CompetitionStagePaperAssignmentPlayerVO candidate : candidates) {
+      if (candidate == null || candidate.contestantProfileId() == null || candidate.playerId() == null) {
+        continue;
+      }
+      Long profileId = parseId(candidate.contestantProfileId());
+      if (profileId == null || !profileIds.contains(profileId)) {
+        continue;
+      }
+      Long playerId = parseId(candidate.playerId());
+      if (playerId != null) {
+        playerIdByProfileId.put(profileId, playerId);
+      }
+    }
+    if (playerIdByProfileId.isEmpty()) {
+      return Map.of();
+    }
+    List<Long> playerIds = playerIdByProfileId.values().stream().distinct().toList();
+    Map<Long, String> mobileByPlayerId = new HashMap<>();
+    final int chunk = 500;
+    for (int i = 0; i < playerIds.size(); i += chunk) {
+      List<Long> part = playerIds.subList(i, Math.min(i + chunk, playerIds.size()));
+      List<CompetitionPlayerIdentityEntity> rows = identityMapper.selectBatchIds(part);
+      if (rows == null) {
+        continue;
+      }
+      for (CompetitionPlayerIdentityEntity row : rows) {
+        if (row != null && row.getId() != null
+            && row.getMobile() != null && !row.getMobile().isBlank()) {
+          mobileByPlayerId.put(row.getId(), SensitiveMaskUtils.maskPhone(row.getMobile()));
+        }
+      }
+    }
+    Map<Long, String> result = new HashMap<>();
+    for (Map.Entry<Long, Long> entry : playerIdByProfileId.entrySet()) {
+      String mobile = mobileByPlayerId.get(entry.getValue());
+      if (mobile != null) {
+        result.put(entry.getKey(), mobile);
+      }
+    }
+    return result;
+  }
+
+  private Long parseId(String value) {
+    if (value == null || value.isBlank()) {
+      return null;
+    }
+    try {
+      return Long.valueOf(value);
+    } catch (NumberFormatException ex) {
+      return null;
+    }
   }
 
   private void validateSelectedContestants(Long stageId, List<Long> contestantProfileIds,

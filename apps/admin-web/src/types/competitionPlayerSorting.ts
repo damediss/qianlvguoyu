@@ -18,6 +18,7 @@ export interface CompetitionPlayerSortingAssignment {
   contestantProfileId: CompetitionId;
   contestantNo?: string | null;
   name?: string | null;
+  mobile?: string | null;
   groupNo: number;
   groupOrder: number;
   workstation: string;

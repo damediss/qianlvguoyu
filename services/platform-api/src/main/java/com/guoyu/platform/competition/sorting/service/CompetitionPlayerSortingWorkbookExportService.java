@@ -79,7 +79,7 @@ public class CompetitionPlayerSortingWorkbookExportService {
       setNumber(row, 1, assignment.groupOrder());
       setString(row, 2, assignment.workstation());
       setString(row, 3, assignment.name());
-      setString(row, 4, "");
+      setString(row, 4, assignment.mobile());
       setString(row, 5, "");
       setString(row, 6, "");
       rowIndex++;
@@ -92,12 +92,11 @@ public class CompetitionPlayerSortingWorkbookExportService {
       return;
     }
     setString(headerRow, 3, "考生姓名");
-    setString(headerRow, 4, "现场签到");
-    setString(headerRow, 5, "备注");
-    setString(headerRow, 6, "");
-    sheet.setColumnWidth(4, sheet.getColumnWidth(5));
-    sheet.setColumnWidth(5, sheet.getColumnWidth(6));
-    sheet.setColumnHidden(6, true);
+    setString(headerRow, 4, "手机号");
+    setString(headerRow, 5, "现场签到");
+    setString(headerRow, 6, "备注");
+    sheet.setColumnWidth(4, sheet.getColumnWidth(3));
+    sheet.setColumnHidden(6, false);
   }
 
   private void fillWorkstations(

@@ -250,6 +250,7 @@ export function CompetitionPlayerSortingPage({
     { title: '抽签组别', dataIndex: 'groupNo', width: 130, render: (value: number) => `第${value}组` },
     { title: '组内顺序', dataIndex: 'groupOrder', width: 110 },
     { title: '对应工位', dataIndex: 'workstation', width: 240 },
+    { title: '手机号', dataIndex: 'mobile', width: 180, render: (value?: string | null) => value || '-' },
     { title: '考生姓名', dataIndex: 'name', width: 140, render: (value: string) => value || '-' },
   ], []);
 
