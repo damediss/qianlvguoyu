@@ -34,6 +34,9 @@ public class ExamFaqModelConfigEntity {
   private BigDecimal jevTheta2;
   private Integer jevConcurrency;
   private Integer jevReadTimeoutSeconds;
+  /** 关键词剪枝开关（v1.3 附一：默认 0=关=既有路径；stage2 作用于两通道、stage1 仅 JEV 通道） */
+  private Integer jevPruneStage2;
+  private Integer jevPruneStage1;
   private LocalDateTime createdAt;
   private LocalDateTime updatedAt;
   private Long createdBy;
@@ -78,6 +81,10 @@ public class ExamFaqModelConfigEntity {
   public void setJevConcurrency(Integer jevConcurrency) { this.jevConcurrency = jevConcurrency; }
   public Integer getJevReadTimeoutSeconds() { return jevReadTimeoutSeconds; }
   public void setJevReadTimeoutSeconds(Integer jevReadTimeoutSeconds) { this.jevReadTimeoutSeconds = jevReadTimeoutSeconds; }
+  public Integer getJevPruneStage2() { return jevPruneStage2; }
+  public void setJevPruneStage2(Integer jevPruneStage2) { this.jevPruneStage2 = jevPruneStage2; }
+  public Integer getJevPruneStage1() { return jevPruneStage1; }
+  public void setJevPruneStage1(Integer jevPruneStage1) { this.jevPruneStage1 = jevPruneStage1; }
   public LocalDateTime getCreatedAt() { return createdAt; }
   public void setCreatedAt(LocalDateTime createdAt) { this.createdAt = createdAt; }
   public LocalDateTime getUpdatedAt() { return updatedAt; }

@@ -1,7 +1,9 @@
 package com.guoyu.platform.trainingdepartment.controller;
 
 import com.guoyu.platform.common.api.ApiResponse;
+import com.guoyu.platform.trainingdepartment.service.ReviewSyncPanelApplicationService;
 import com.guoyu.platform.trainingdepartment.service.TrainDashboardApplicationService;
+import com.guoyu.platform.trainingdepartment.vo.ReviewSyncPanelVO;
 import com.guoyu.platform.trainingdepartment.vo.TrainDashboardVO;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.validation.annotation.Validated;
@@ -19,9 +21,12 @@ import java.util.Map;
 public class TrainDashboardController {
 
   private final TrainDashboardApplicationService trainDashboardApplicationService;
+  private final ReviewSyncPanelApplicationService reviewSyncPanelApplicationService;
 
-  public TrainDashboardController(TrainDashboardApplicationService trainDashboardApplicationService) {
+  public TrainDashboardController(TrainDashboardApplicationService trainDashboardApplicationService,
+      ReviewSyncPanelApplicationService reviewSyncPanelApplicationService) {
     this.trainDashboardApplicationService = trainDashboardApplicationService;
+    this.reviewSyncPanelApplicationService = reviewSyncPanelApplicationService;
   }
 
   /** 获取看板数据 */
@@ -29,6 +34,14 @@ public class TrainDashboardController {
   @PreAuthorize("hasAuthority('train:dashboard:view')")
   public ApiResponse<TrainDashboardVO> getDashboard() {
     return ApiResponse.ok(trainDashboardApplicationService.getDashboard());
+  }
+
+  /** 同步练习（AI 同步学）统计面板：一次拿全，默认近 30 天口径 */
+  @GetMapping("/dashboard/review-sync")
+  @PreAuthorize("hasAuthority('train:dashboard:view')")
+  public ApiResponse<ReviewSyncPanelVO> getReviewSyncPanel(
+      @RequestParam(required = false) Integer days) {
+    return ApiResponse.ok(reviewSyncPanelApplicationService.getPanel(days));
   }
 
   /** 获取里程碑 */

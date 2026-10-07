@@ -44,6 +44,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
 import org.springframework.dao.DuplicateKeyException;
+import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 
 /**
  * 每日任务物化的并发幂等（线上事故：App 并发调 overview/today，
@@ -78,6 +79,10 @@ class ReviewPlanDayMaterializeConcurrencyTest {
   private ReviewLlmAssistService llmAssistService;
   @Mock
   private DictMapper dictMapper;
+  @Mock
+  private AiGradeApplicationService aiGradeService;
+  @Mock
+  private ThreadPoolTaskExecutor aiGradeMockExecutor;
 
   private ReviewPlanApplicationService service;
 
@@ -96,7 +101,9 @@ class ReviewPlanDayMaterializeConcurrencyTest {
   void setUp() {
     service = new ReviewPlanApplicationService(planMapper, dayMapper, answerMapper, wrongMapper,
         mockPaperMapper, mockItemMapper, grayWhitelistMapper, reviewQuery, examResultWriteRepository,
-        llmAssistService, dictMapper, new ObjectMapper());
+        llmAssistService, dictMapper, new ObjectMapper(), aiGradeService, aiGradeMockExecutor);
+    // 纯单测无 Spring 代理：self 注入自身
+    service.setSelf(service);
   }
 
   private static AiReviewPlanEntity activePlan() {

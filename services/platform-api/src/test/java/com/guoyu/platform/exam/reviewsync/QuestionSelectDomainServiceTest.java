@@ -132,4 +132,53 @@ class QuestionSelectDomainServiceTest {
     // Z 重要度 + cal 题型 + 最高难度 → 先删 2 号
     assertThat(dropped).containsExactly(2L);
   }
+
+  // ------------------------------------------------------------------
+  // 模考卷主观题数量上限（《简答题作答与AI判分方案》Q2-A）
+  // ------------------------------------------------------------------
+
+  @Test
+  void capSubjectiveCountUntouchedWhenUnderLimit() {
+    Map<Long, ReviewQuestion> byId = Map.of(
+        1L, new ReviewQuestion(1, 1000L, "single", 1, BigDecimal.ONE),
+        2L, new ReviewQuestion(2, 1000L, "answer", 1, BigDecimal.ONE));
+    List<Long> ids = List.of(1L, 2L);
+    assertThat(QuestionSelectDomainService.capSubjectiveCount(ids, byId, 5)).isSameAs(ids);
+  }
+
+  @Test
+  void capSubjectiveCountDropsComplexSubjectiveFirstAndKeepsObjectives() {
+    // 3 客观 + 6 主观（cal/answer/essay 复杂档 + analysis/fill/short），上限 5 → 裁 1 个复杂档
+    Map<Long, ReviewQuestion> byId = Map.of(
+        1L, new ReviewQuestion(1, 1000L, "single", 1, BigDecimal.ONE),
+        2L, new ReviewQuestion(2, 1000L, "multi", 1, BigDecimal.ONE),
+        3L, new ReviewQuestion(3, 1000L, "judge", 1, BigDecimal.ONE),
+        4L, new ReviewQuestion(4, 1000L, "cal", 1, BigDecimal.ONE),
+        5L, new ReviewQuestion(5, 1000L, "answer", 1, BigDecimal.ONE),
+        6L, new ReviewQuestion(6, 1000L, "essay", 1, BigDecimal.ONE),
+        7L, new ReviewQuestion(7, 1000L, "analysis", 1, BigDecimal.ONE),
+        8L, new ReviewQuestion(8, 1000L, "fill", 1, BigDecimal.ONE),
+        9L, new ReviewQuestion(9, 1000L, "short", 1, BigDecimal.ONE));
+    List<Long> ids = List.of(1L, 2L, 3L, 4L, 5L, 6L, 7L, 8L, 9L);
+
+    List<Long> kept = QuestionSelectDomainService.capSubjectiveCount(ids, byId, 5);
+
+    // 复杂档 cal/answer/essay 优先裁、同档内从尾部裁（essay 先出局）；客观题全保留，组卷原顺序不变
+    assertThat(kept).containsExactly(1L, 2L, 3L, 4L, 5L, 7L, 8L, 9L);
+    // 上限再收紧到 3：复杂档 3 题全部裁掉，保留 analysis/fill/short
+    assertThat(QuestionSelectDomainService.capSubjectiveCount(ids, byId, 3))
+        .containsExactly(1L, 2L, 3L, 7L, 8L, 9L);
+  }
+
+  @Test
+  void capSubjectiveCountDropsTailWithinSamePriority() {
+    // 同档（非复杂）主观题超上限：按组卷原顺序裁尾部
+    Map<Long, ReviewQuestion> byId = new HashMap<>();
+    for (long i = 1; i <= 6; i++) {
+      byId.put(i, new ReviewQuestion(i, 1000L, "analysis", 1, BigDecimal.ONE));
+    }
+    List<Long> kept = QuestionSelectDomainService.capSubjectiveCount(
+        List.of(1L, 2L, 3L, 4L, 5L, 6L), byId, 5);
+    assertThat(kept).containsExactly(1L, 2L, 3L, 4L, 5L);
+  }
 }

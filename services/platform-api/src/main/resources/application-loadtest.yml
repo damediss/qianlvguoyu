@@ -59,6 +59,8 @@ platform:
         enabled: true
       scoring:
         enabled: true
+      scoring-messaging:
+        enabled: ${COMPETITION_FORMAL_EXAM_SCORING_MESSAGING_ENABLED:true}
   security:
     # jwt-secret 已作为死配置删除（见 application.yml 同名注释）
     permit-test-apis: false

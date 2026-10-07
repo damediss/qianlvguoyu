@@ -147,8 +147,133 @@ body {
   backdrop-filter: blur(10px);
 }
 
-.top-search {
-  width: 340px;
+/* 灰度 off 旧分支：头部仅保留用户下拉，右对齐（v1.4 Q2-A 默认口径） */
+.app-header-plain {
+  justify-content: flex-end;
+}
+
+/* ---- Chrome 同款单行头部（v1.4，Q1A~Q4A）---- */
+.app-header-tabs {
+  flex: 0 0 44px;
+  height: 44px;
+  padding: 0 8px 0 0;
+  align-items: stretch;
+  background: #dee1e6; /* Chrome 标签栏灰 */
+  border-bottom: none;
+  backdrop-filter: none;
+}
+
+.app-tabbar-strip {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  align-items: flex-end;
+  overflow: hidden;
+  padding: 6px 4px 0 8px;
+}
+
+.app-header-user {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  padding: 0 12px 0 8px;
+  border-left: 1px solid rgba(0, 0, 0, 0.08);
+}
+
+/* 标签条内 Tabs：去卡片化，仿 Chrome 圆角标签 */
+.app-tabbar-strip .ant-tabs {
+  width: 100%;
+}
+
+.app-tabbar-strip .ant-tabs .ant-tabs-nav {
+  margin: 0;
+  background: transparent;
+}
+
+.app-tabbar-strip .ant-tabs .ant-tabs-nav::before {
+  border-bottom: none;
+}
+
+.app-tabbar-strip .ant-tabs .ant-tabs-tab {
+  border: none !important;
+  border-radius: 8px 8px 0 0 !important;
+  margin: 0 2px !important;
+  padding: 6px 12px !important;
+  background: transparent; /* 未激活：与栏同色（Q3-A） */
+  color: #4b5563;
+  transition: background 0.15s ease;
+}
+
+/* 未激活 hover 提亮（Q3-A） */
+.app-tabbar-strip .ant-tabs .ant-tabs-tab:not(.ant-tabs-tab-active):hover {
+  background: rgba(255, 255, 255, 0.6);
+}
+
+/* 激活标签：白色卡片浮起，与底部分隔断开（Q3-A） */
+.app-tabbar-strip .ant-tabs .ant-tabs-tab-active {
+  background: #f8f9fa;
+  box-shadow: 0 -1px 3px rgba(0, 0, 0, 0.08);
+  color: #1e293b;
+}
+
+.app-tabbar-strip .ant-tabs .ant-tabs-tab-active .ant-tabs-tab-btn {
+  color: #1e293b;
+}
+
+/* 关闭按钮：未激活 hover 才显示，激活常显（Q4-A） */
+.app-tabbar-strip .ant-tabs .ant-tabs-tab-remove {
+  opacity: 0;
+  width: 16px;
+  margin-left: 6px;
+  color: #64748b;
+  transition: opacity 0.12s ease, color 0.12s ease;
+}
+
+.app-tabbar-strip .ant-tabs .ant-tabs-tab:hover .ant-tabs-tab-remove,
+.app-tabbar-strip .ant-tabs .ant-tabs-tab-active .ant-tabs-tab-remove {
+  opacity: 1;
+}
+
+.app-tabbar-strip .ant-tabs .ant-tabs-tab-remove:hover {
+  color: #ef4444;
+}
+
+/* 溢出滚动箭头：低调 */
+.app-tabbar-strip .ant-tabs .ant-tabs-nav-more,
+.app-tabbar-strip .ant-tabs .ant-tabs-tab .anticon {
+  color: #64748b;
+}
+
+/* ---- 拖拽视觉反馈（transform 套在 .ant-tabs-tab 卡片外壳上，见 DraggableTabLabel）---- */
+/* 拖起：卡片浮起 */
+.app-tabbar-strip .ant-tabs-tab.app-tab-dragging {
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.22);
+  opacity: 0.92;
+  z-index: 5;
+  cursor: grabbing;
+}
+
+/* 拖拽全程：整个标签条 grabbing 光标 */
+.app-tabbar-strip.app-tabbar-dragging,
+.app-tabbar-strip.app-tabbar-dragging * {
+  cursor: grabbing !important;
+}
+
+/* 标签内文本与刷新按钮（DraggableTabLabel） */
+.app-tabbar-strip .app-tab-label-text {
+  max-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.app-tabbar-strip .app-tab-refresh {
+  color: #94a3b8;
+  font-size: 12px;
+}
+
+.app-tabbar-strip .app-tab-refresh:hover {
+  color: #2563eb;
 }
 
 .user-meta {
@@ -609,10 +734,6 @@ body {
 
   .app-header {
     padding: 0 12px;
-  }
-
-  .top-search {
-    display: none;
   }
 
   .app-content {

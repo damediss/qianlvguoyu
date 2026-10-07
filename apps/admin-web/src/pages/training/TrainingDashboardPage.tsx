@@ -26,6 +26,8 @@ import ReactECharts from 'echarts-for-react';
 import { useEffect, useMemo, useState } from 'react';
 import * as trainApi from '../../api/training';
 import { PermissionGate } from '../../directives/permission';
+import { usePaneActive, usePaneActiveRef } from '../../layouts/TabKeepAlive';
+import { ReviewSyncPanel } from './ReviewSyncPanel';
 import type {
   DashboardAlertItem,
   DashboardCompanyOverview,
@@ -80,38 +82,45 @@ function stageTag(stage: string) {
 
 const LIVE_INTERVAL_MS = 10_000;
 
-const liveQueryOptions = {
-  refetchInterval: LIVE_INTERVAL_MS,
-  refetchIntervalInBackground: false,
-  refetchOnWindowFocus: true,
-  staleTime: 0,
-} as const;
+const liveQueryOptions = (paneActive: boolean) =>
+  ({
+    // 标签页不可见时暂停 10s 轮询（§3.6）
+    refetchInterval: paneActive ? LIVE_INTERVAL_MS : false,
+    refetchIntervalInBackground: false,
+    refetchOnWindowFocus: true,
+    staleTime: 0,
+  }) as const;
 
 export function TrainingDashboardPage() {
+  const paneActive = usePaneActive(); // 标签页不可见时暂停轮询与时钟 tick（§3.6）
+  const paneActiveRef = usePaneActiveRef(paneActive);
   const [companyKeyword, setCompanyKeyword] = useState('');
   const [now, setNow] = useState(() => Date.now());
 
   useEffect(() => {
-    const timer = window.setInterval(() => setNow(Date.now()), 1000);
+    const timer = window.setInterval(() => {
+      // 标签不可见时计时继续、跳过 setState（§3.6 乙组口径：渲染类 tick 省 CPU）
+      if (paneActiveRef.current) setNow(Date.now());
+    }, 1000);
     return () => window.clearInterval(timer);
   }, []);
 
   const dashboardQuery = useQuery({
     queryKey: ['training-dashboard'],
     queryFn: () => trainApi.getDashboard(),
-    ...liveQueryOptions,
+    ...liveQueryOptions(paneActive),
   });
 
   const milestonesQuery = useQuery<DashboardMilestoneItem[]>({
     queryKey: ['training-dashboard-milestones'],
     queryFn: () => trainApi.getDashboardMilestones(),
-    ...liveQueryOptions,
+    ...liveQueryOptions(paneActive),
   });
 
   const stageQuery = useQuery<DashboardStageDistribution>({
     queryKey: ['training-dashboard-stage'],
     queryFn: () => trainApi.getDashboardStageDistribution(),
-    ...liveQueryOptions,
+    ...liveQueryOptions(paneActive),
   });
 
   const handleRefresh = () => {
@@ -364,6 +373,8 @@ export function TrainingDashboardPage() {
             </div>
           ))}
         </div>
+
+        <ReviewSyncPanel />
 
         <Card title="培训全流程模块概览" size="small">
           <div className="training-dashboard-modules">

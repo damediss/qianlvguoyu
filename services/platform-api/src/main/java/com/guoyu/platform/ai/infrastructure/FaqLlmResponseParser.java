@@ -90,6 +90,40 @@ public class FaqLlmResponseParser {
     return new MergedResult(similar, negative);
   }
 
+  /**
+   * 从 LLM 返回的 content 字符串中提取 JSON 对象（剥 ```json 包裹、二次截取，与
+   * {@link #extractMergedResult} 同一容错口径）。
+   *
+   * @return 解析后的根节点（保证是 Object）；解析失败返回 null（确定性失败，由调用方决定是否重试）
+   */
+  public JsonNode extractJsonObject(String llmContent) {
+    if (llmContent == null || llmContent.isBlank()) {
+      return null;
+    }
+    String jsonStr = stripMarkdownCodeBlock(llmContent.trim());
+    JsonNode root = tryParseObject(jsonStr);
+    if (root == null) {
+      int start = jsonStr.indexOf('{');
+      int end = jsonStr.lastIndexOf('}');
+      if (start >= 0 && end > start) {
+        root = tryParseObject(jsonStr.substring(start, end + 1));
+      }
+    }
+    if (root == null) {
+      log.warn("LLM 响应 JSON 对象解析失败：content={}", jsonStr);
+    }
+    return root;
+  }
+
+  private JsonNode tryParseObject(String jsonStr) {
+    try {
+      JsonNode root = objectMapper.readTree(jsonStr);
+      return root != null && root.isObject() ? root : null;
+    } catch (JsonProcessingException e) {
+      return null;
+    }
+  }
+
   /** 合并 prompt 解析结果（similar + negative） */
   public record MergedResult(List<String> similarQuestions, List<String> negativeQuestions) {
     /** 任一字段为空数组 → 瞬时失败，可重试 */

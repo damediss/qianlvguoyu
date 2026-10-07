@@ -16,6 +16,7 @@ import { AuthImage } from '../../components/ApiAuthImage';
 import { fileNameFromUrl, downloadExportFile } from '../../api/files';
 import { SignUpPeopleEditModal } from './SignUpPeopleEditModal';
 import { TrainingProcessSteps } from './TrainingProcessSteps';
+import { usePaneActive, usePaneActiveRef } from '../../layouts/TabKeepAlive';
 import './TrainingInformationPage.css';
 
 const { RangePicker } = DatePicker;
@@ -209,6 +210,7 @@ const SIGN_UP_FORM_INITIAL: Partial<SignUpPlanFormValues> = {
 
 export function TrainingInformationPage() {
   const queryClient = useQueryClient();
+  const paneActiveRef = usePaneActiveRef(usePaneActive()); // 标签不可见时暂停导出计时/轮询 setState（§3.6）
   const [form] = Form.useForm<SignUpPlanFormValues>();
   const [keyword, setKeyword] = useState('');
   const [page, setPage] = useState(1);
@@ -587,7 +589,10 @@ export function TrainingInformationPage() {
       setExportElapsed(0);
       return undefined;
     }
-    const tick = window.setInterval(() => setExportElapsed((v) => v + 1), 1000);
+    const tick = window.setInterval(() => {
+      // 标签不可见时计时继续、跳过 setState（§3.6 乙组口径）
+      if (paneActiveRef.current) setExportElapsed((v) => v + 1);
+    }, 1000);
     return () => window.clearInterval(tick);
   }, [defaultExportOpen]);
 
@@ -639,6 +644,7 @@ export function TrainingInformationPage() {
           }
           return;
         }
+        if (!paneActiveRef.current) return; // 标签不可见：跳过本轮进度请求，服务端导出照常进行
         pollCount += 1;
         try {
           const check = await trainApi.checkDefaultTemplateExport({

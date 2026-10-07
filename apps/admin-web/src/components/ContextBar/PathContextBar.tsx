@@ -16,7 +16,7 @@ const { Text } = Typography;
  */
 export interface PathContextBarProps {
   breadcrumb: { workType?: string; course?: string; knowledge?: string };
-  stats: { total: number; internal: number; external: number; selected: number };
+  stats: { total: number; internal: number; external: number; preCompetition?: number; selected: number };
   filters: { source?: string; type?: string; difficulty?: string };
   onFilterRemove: (key: 'source' | 'type' | 'difficulty') => void;
 }
@@ -24,6 +24,7 @@ export interface PathContextBarProps {
 const SOURCE_LABEL: Record<string, string> = {
   '0': '内部',
   '1': '外部',
+  '3': '赛前复习',
 };
 
 function renderChip(
@@ -94,7 +95,14 @@ export function PathContextBar({ breadcrumb, stats, filters, onFilterRemove }: P
           <Text>
             共 <Text strong>{stats.total}</Text> 题 · 内部{' '}
             <Text strong>{stats.internal}</Text> · 外部{' '}
-            <Text strong>{stats.external}</Text> · 已选{' '}
+            <Text strong>{stats.external}</Text>
+            {stats.preCompetition !== undefined && (
+              <>
+                {' '}· 赛前复习{' '}
+                <Text strong>{stats.preCompetition}</Text>
+              </>
+            )}
+            {' '}· 已选{' '}
             <Text strong style={{ color: stats.selected > 0 ? '#1677ff' : undefined }}>
               {stats.selected}
             </Text>

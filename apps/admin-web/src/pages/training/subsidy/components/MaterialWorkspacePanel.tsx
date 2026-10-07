@@ -358,7 +358,9 @@ export function MaterialWorkspacePanel({
                 void downloadUrlFile(
                   downloadTarget.filePath!,
                   downloadTarget.fileName || item.fileName || 'material-file',
-                ).catch(() => undefined)
+                ).catch((e: Error) => {
+                  message.error(e?.message || '下载失败');
+                })
               }
             >
               下载

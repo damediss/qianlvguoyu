@@ -3301,3 +3301,62 @@ export interface ExamScoreImportBatchItem {
   newRealScore?: number | null;
   theoryFallback?: boolean;
 }
+
+// ==================== 同步练习（AI 同步学）统计面板 ====================
+/** 比率为百分数（0-100，两位小数）；分母为 0 时后端返回 null，页面显示 "--" */
+export interface ReviewSyncPanelScale {
+  totalPlans: number;
+  active: number;
+  completed: number;
+  newPlans7d: number;
+  active7d: number;
+  activeRate7d: number | null;
+  interruptPlans: number;
+}
+
+export interface ReviewSyncPanelEffort {
+  totalAnswers: number;
+  avgAnswersPerPlan: number | null;
+  dayCompletionRate: number | null;
+  todayActive: number;
+  todayAnswers: number;
+}
+
+export interface ReviewSyncPanelEffect {
+  correctRate: number | null;
+  removedWrongs: number;
+  redWrongs: number;
+  yellowWrongs: number;
+  mockDone: number;
+  mockAvgScore: number | null;
+  mockPassRate: number | null;
+}
+
+export interface ReviewSyncPanelTrendPoint {
+  date: string;
+  answers: number;
+  activeUsers: number;
+  correctRate: number | null;
+}
+
+export interface ReviewSyncPanelWrongTrendPoint {
+  date: string;
+  newCnt: number;
+  removedCnt: number;
+}
+
+export interface ReviewSyncPanelWeakItem {
+  knowledgeId: number | null;
+  title: string;
+  answers: number;
+  correctRate: number | null;
+}
+
+export interface ReviewSyncPanel {
+  scale: ReviewSyncPanelScale;
+  effort: ReviewSyncPanelEffort;
+  effect: ReviewSyncPanelEffect;
+  trend30d: ReviewSyncPanelTrendPoint[];
+  wrongTrend30d: ReviewSyncPanelWrongTrendPoint[];
+  weakTop5: ReviewSyncPanelWeakItem[];
+}

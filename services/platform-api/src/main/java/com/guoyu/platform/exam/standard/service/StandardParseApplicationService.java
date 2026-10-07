@@ -156,6 +156,12 @@ public class StandardParseApplicationService {
     Map<String, Long> idByKey = new HashMap<>();
     for (StandardTreeDraft draft : drafts) {
       String mapKey = treeMapKey(draft.levelCode(), draft.direction(), draft.nodeKey());
+      // 兜底防御：同 key 重复说明解析层产出了重复的 等级×方向 树，直接插入会撞主键
+      // （炭素成型工选考说明被误判为等级标题事故）；显式报错优于 500
+      if (idByKey.containsKey(mapKey)) {
+        throw new BusinessException(ErrorCode.BAD_REQUEST,
+            "文档解析出重复的等级结构，无法建立细目表骨架，请核对文档内容后重新上传");
+      }
       idByKey.put(mapKey, IdWorker.getId());
     }
     for (StandardTreeDraft draft : drafts) {

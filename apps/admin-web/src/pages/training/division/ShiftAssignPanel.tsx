@@ -55,7 +55,26 @@ export function ShiftAssignPanel({ planId, trainInfoId, shiftFileName }: Props) 
 
   const classesQuery = useQuery({
     queryKey: ['shift-assign-info-classes', trainInfoId],
-    queryFn: () => trainApi.pageInfoClasses({ trainInfoId: trainInfoId!, page: 1, pageSize: 100 }),
+    queryFn: async () => {
+      const pageSize = 200;
+      const maxPages = 50;
+      const items: NonNullable<Awaited<ReturnType<typeof trainApi.pageInfoClasses>>['items']> = [];
+      let page = 1;
+      let total = Number.POSITIVE_INFINITY;
+      while (items.length < total && page <= maxPages) {
+        const res = await trainApi.pageInfoClasses({
+          trainInfoId: trainInfoId!,
+          page,
+          pageSize,
+        });
+        const batch = res.items ?? [];
+        items.push(...batch);
+        total = typeof res.total === 'number' ? res.total : items.length;
+        if (batch.length === 0) break;
+        page += 1;
+      }
+      return { items, total: items.length };
+    },
     enabled: !!trainInfoId,
   });
 

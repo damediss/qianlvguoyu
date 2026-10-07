@@ -19,6 +19,7 @@ import {
 import type { TheoryBlueprint } from './theoryGenApi';
 import GenWorkbenchPage from './workbench/GenWorkbenchPage';
 import { LEVEL_NAME, bpOptionLabel, parseCheckReport } from './workbench/constants';
+import { usePaneActive, usePaneActiveRef } from '../../layouts/TabKeepAlive';
 import './XiMuBiaoGuanLiPage.css';
 
 const LEVEL_OPTIONS = [
@@ -31,6 +32,8 @@ const LEVEL_OPTIONS = [
 
 const TheoryQuestionGenPage: React.FC = () => {
   const [tab, setTab] = useState('import');
+  const paneActive = usePaneActive(); // 标签页不可见时暂停导入进度 tick（§3.6）
+  const paneActiveRef = usePaneActiveRef(paneActive); // 长生命周期定时器闭包读 ref
 
   // ---------------- 页签1：细目表导入 ----------------
   const [workTypeId, setWorkTypeId] = useState<number | undefined>();
@@ -88,9 +91,12 @@ const TheoryQuestionGenPage: React.FC = () => {
     setImportPercent(0);
     if (importTimerRef.current !== null) window.clearInterval(importTimerRef.current);
     importTimerRef.current = window.setInterval(() => {
-      setImportPercent((p) =>
-        p >= 95 ? p : Math.min(95, p + Math.max(1, Math.round((95 - p) / 10))),
-      );
+      // 标签不可见时计时继续、跳过 setState（§3.6 乙组口径：不中断任务）
+      if (paneActiveRef.current) {
+        setImportPercent((p) =>
+          p >= 95 ? p : Math.min(95, p + Math.max(1, Math.round((95 - p) / 10))),
+        );
+      }
     }, 300);
     try {
       const bp = await importBlueprint(file, workTypeId, level);

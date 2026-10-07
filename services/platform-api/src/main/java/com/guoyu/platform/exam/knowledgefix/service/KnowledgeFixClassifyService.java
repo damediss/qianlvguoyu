@@ -78,6 +78,12 @@ public class KnowledgeFixClassifyService {
   private static final int MAX_JEV_CRITERIA = 255;
   /** θ₂ 硬底线（§7.1）：配置低于 0.3 拒绝提交 */
   private static final BigDecimal JEV_MIN_THETA2 = new BigDecimal("0.3");
+  /**
+   * Jev 422 细分标记（v1.4 补充，2026-10-04 生产实测）：TokenDance 对候选做展开后校验
+   * expanded_input_tokens ≤ 32,768——候选过多（实测 53 个 L2 全量展开 33,480）必 422。
+   * 该类 422 该行由 LLM 可正常分类 → 降级 LLM；其余 422 = 请求构造 bug → SKIP_ROW（§5）。
+   */
+  private static final String JEV_BUDGET_EXCEEDED_MARKER = "token_budget_exceeded";
   private static final BigDecimal DEFAULT_JEV_THETA = new BigDecimal("0.5");
   private static final int DEFAULT_JEV_CONCURRENCY = 5;
   private static final int DEFAULT_JEV_READ_TIMEOUT_SECONDS = 30;
@@ -105,6 +111,20 @@ public class KnowledgeFixClassifyService {
   /** Jev 通道运行时配置（submit 时解析固化，改配置对下一批次生效 §8.2）；包内可见供单测构造 */
   record JevChannel(ExamFaqModelConfigEntity cfg, BigDecimal theta1, BigDecimal theta2,
       int concurrency, int readTimeoutSeconds) {
+  }
+
+  /**
+   * 关键词剪枝开关（v1.3 附一，§13 步骤 11）：submit 时从 knowledge-fix-jev 配置行读取固化，
+   * 改配置对下一批次生效。两个开关独立（KP-19）：stage1 宽剪仅 JEV 通道、stage2 剪枝两通道共享。
+   * OFF = 双关 = 既有路径（回退即原路径，KP-12）。
+   */
+  record PruneConfig(boolean stage1, boolean stage2) {
+
+    static final PruneConfig OFF = new PruneConfig(false, false);
+  }
+
+  /** 剪枝归因（KP-22）：随调用审计落库，供 A4 错 L2 归因回查——缺此无法区分"选错"与"被剪掉" */
+  record PruneAudit(int candidates, boolean weakFallback, boolean reservedOld) {
   }
 
   /**
@@ -193,6 +213,8 @@ public class KnowledgeFixClassifyService {
     // Jev 通道开关（§3/§5 首行）：配置行缺失/status≠enabled/api_key 未回填 → null（0 次 Jev 安静全走 LLM）；
     // 启用但 θ₂ < 0.3 属硬底线违规（§7.1）→ 配置校验拒绝
     JevChannel jev = resolveJevChannel();
+    // 关键词剪枝开关（v1.3 附一）：读同一配置行但不看 status——通道关闭时剪枝对 LLM 路径独立生效（KP-11）
+    PruneConfig prune = resolvePruneConfig();
 
     int populated = queryMapper.populateFixList();
     List<PendingFixRow> pending = scopePending(fixMapper.selectPendingWithContent(), courseId, limit);
@@ -218,7 +240,7 @@ public class KnowledgeFixClassifyService {
     final Integer fCourseId = courseId;
     final Integer fLimit = limit;
     knowledgeFixExecutor.submit(() -> processBatch(batch.getId(), batchNo, tenantId, userId,
-        cfgFlash, cfgPro, jev, fCourseId, fLimit));
+        cfgFlash, cfgPro, jev, prune, fCourseId, fLimit));
     log.info("知识修正批次已提交：batchNo={}, total={}, 新装入={}, scope={}",
         batchNo, pending.size(), populated,
         (courseId != null ? "courseId=" + courseId : "全课程") + (limit != null ? " limit=" + limit : ""));
@@ -295,23 +317,32 @@ public class KnowledgeFixClassifyService {
     return list == null || list.isEmpty() ? null : list.get(0);
   }
 
-  /** 编排线程（兼容入口，Jev 通道关闭）：两阶段分类 + 三采样自一致 + 旗舰升级 + 自动补跑 */
+  /** 编排线程（兼容入口，Jev 通道关闭 + 剪枝关闭）：两阶段分类 + 三采样自一致 + 旗舰升级 + 自动补跑 */
   public void processBatch(Long batchId, Long batchNo, Long tenantId, Long userId,
       ExamFaqModelConfigEntity cfgFlash, ExamFaqModelConfigEntity cfgPro) {
-    processBatch(batchId, batchNo, tenantId, userId, cfgFlash, cfgPro, null, null, null);
+    processBatch(batchId, batchNo, tenantId, userId, cfgFlash, cfgPro, null, PruneConfig.OFF, null, null);
   }
 
-  /** 编排线程（兼容入口）：Jev 分层快速通道 + LLM 全流程兜底，全量口径 */
+  /** 编排线程（兼容入口）：Jev 分层快速通道 + LLM 全流程兜底，全量口径，剪枝开关关闭 */
   public void processBatch(Long batchId, Long batchNo, Long tenantId, Long userId,
       ExamFaqModelConfigEntity cfgFlash, ExamFaqModelConfigEntity cfgPro, JevChannel jev) {
-    processBatch(batchId, batchNo, tenantId, userId, cfgFlash, cfgPro, jev, null, null);
+    processBatch(batchId, batchNo, tenantId, userId, cfgFlash, cfgPro, jev, PruneConfig.OFF, null, null);
   }
 
-  /** 编排线程：Jev 分层快速通道 + LLM 全流程兜底（方案 §3）+ 三采样自一致 + 旗舰升级 + 自动补跑；
-   *  scopeCourseId/scopeLimit 非空时只处理范围内行（§13 步骤 8 小批次），范围外行保持 pending */
+  /** 编排线程（兼容入口）：Jev 分层快速通道 + LLM 全流程兜底 + 范围小批次，剪枝开关关闭 */
   public void processBatch(Long batchId, Long batchNo, Long tenantId, Long userId,
       ExamFaqModelConfigEntity cfgFlash, ExamFaqModelConfigEntity cfgPro, JevChannel jev,
       Integer scopeCourseId, Integer scopeLimit) {
+    processBatch(batchId, batchNo, tenantId, userId, cfgFlash, cfgPro, jev, PruneConfig.OFF,
+        scopeCourseId, scopeLimit);
+  }
+
+  /** 编排线程：Jev 分层快速通道 + LLM 全流程兜底（方案 §3）+ 三采样自一致 + 旗舰升级 + 自动补跑；
+   *  scopeCourseId/scopeLimit 非空时只处理范围内行（§13 步骤 8 小批次），范围外行保持 pending；
+   *  prune 非空时按开关执行关键词剪枝（v1.3 附一：stage1 仅 JEV 通道、stage2 两通道共享） */
+  public void processBatch(Long batchId, Long batchNo, Long tenantId, Long userId,
+      ExamFaqModelConfigEntity cfgFlash, ExamFaqModelConfigEntity cfgPro, JevChannel jev,
+      PruneConfig prune, Integer scopeCourseId, Integer scopeLimit) {
     TenantContextHolder.setTenantId(tenantId);
     try {
       ExamKnowledgeFixBatchEntity batch = batchMapper.selectById(batchId);
@@ -340,6 +371,10 @@ public class KnowledgeFixClassifyService {
               .computeIfAbsent(n.getParentId(), x -> new ArrayList<>()).add(n);
         }
       }
+      // 关键词剪枝索引（v1.3 附一 KP-08）：批次级构建一次、构建后只读，Worker 并发读安全。
+      // 任一开关关闭时 prune 标志使 classifyRow 不走剪枝分支，索引构建成本仍是一次性的（可忽略）。
+      KnowledgeFixKeywordPruner pruner = new KnowledgeFixKeywordPruner(courseL2, courseL3ByParent);
+      PruneConfig effPrune = prune == null ? PruneConfig.OFF : prune;
 
       Semaphore slots = new Semaphore(Math.max(1, llmConcurrency));
       // Jev 通道运行时状态（§3/§5）：独立并发信号量 + 双级熔断 + 行级统计。
@@ -422,7 +457,7 @@ public class KnowledgeFixClassifyService {
               try {
                 classifyRow(row, batchNo, tenantId, cfgFlash, cfgPro, courseL2, courseL3ByParent,
                     nodeById, consecutiveFailures, guardCnt, classified, unanimous, l2Direct,
-                    jevCtx);
+                    jevCtx, pruner, effPrune);
               } finally {
                 slots.release();
               }
@@ -534,14 +569,16 @@ public class KnowledgeFixClassifyService {
     }
   }
 
-  /** 单行分类：Jev 分层快速通道（§3）→ LLM 全流程兜底（两阶段三采样自一致 + 旗舰升级 + 卫兵，KF-09~15） */
+  /** 单行分类：Jev 分层快速通道（§3）→ LLM 全流程兜底（两阶段三采样自一致 + 旗舰升级 + 卫兵，KF-09~15）；
+   *  v1.3 剪枝：stage1 宽剪仅作用于本方法内 JEV 通道的 stage1 criteria（KP-18），
+   *  stage2 剪枝作用于 JEV stage2 与 LLM stage2/escalate（两通道同口径，KP-10） */
   private void classifyRow(PendingFixRow row, Long batchNo, Long tenantId,
       ExamFaqModelConfigEntity cfgFlash, ExamFaqModelConfigEntity cfgPro,
       Map<Integer, List<KnowledgeNodeRow>> courseL2,
       Map<Integer, Map<Integer, List<KnowledgeNodeRow>>> courseL3ByParent,
       Map<Integer, KnowledgeNodeRow> nodeById, AtomicInteger consecutiveFailures,
       AtomicInteger guardCnt, AtomicInteger classified, AtomicInteger unanimous,
-      AtomicInteger l2Direct, JevRowCtx jevCtx)
+      AtomicInteger l2Direct, JevRowCtx jevCtx, KnowledgeFixKeywordPruner pruner, PruneConfig prune)
       throws InterruptedException {
     TenantContextHolder.setTenantId(tenantId);
     try {
@@ -550,7 +587,7 @@ public class KnowledgeFixClassifyService {
       if (jevCtx.ch() != null && !jevCtx.openPermanent().get() && !jevCtx.openRound().get()) {
         jevAttempted = true;
         JevOutcome outcome = tryClassifyViaJev(row, batchNo, tenantId, jevCtx, courseL2,
-            courseL3ByParent, nodeById);
+            courseL3ByParent, nodeById, pruner, prune);
         if (outcome == JevOutcome.RESOLVED || outcome == JevOutcome.SKIP_ROW) {
           return; // RESOLVED=已出结论；SKIP_ROW=422 记失败跳过，行保持 pending（§5）
         }
@@ -566,9 +603,10 @@ public class KnowledgeFixClassifyService {
       String questionText = buildQuestionText(row.getContent(), row.getAnswer(), row.getResolve());
       KnowledgeNodeRow oldNode = nodeById.get(row.getOldKnowledgeId());
 
-      // 阶段 1：L2 粗分（1 次）
+      // 阶段 1：L2 粗分（1 次）——LLM 全流程 stage1 恒全量候选，不做剪枝（附一 KP-18：
+      // stage1 召回仅 ~77%，强加给安全网等于砍其正确率天花板；宽剪只属于 JEV 通道）
       String s1 = callLlm(cfgFlash, tenantId, batchNo, row.getDetailId(), "stage1",
-          buildStage1Prompt(questionText, l2List), 1024).content();
+          buildStage1Prompt(questionText, l2List), 1024, null).content();
       int l2Id = extractIntField(s1, "l2_id");
       boolean l2Valid = l2List.stream().anyMatch(n -> n.getId() != null && n.getId() == l2Id);
       if (!l2Valid) {
@@ -589,19 +627,31 @@ public class KnowledgeFixClassifyService {
         consecutiveFailures.set(0);
         return;
       }
+      // v1.3 stage2 剪枝（两通道同口径，KP-10）：兄弟集收窄 top-8，弱信号/小集合回退全量；
+      // 审计记录剪枝后候选数与回退/保位标志（KP-22）
+      List<KnowledgeNodeRow> l3Candidates = l3List;
+      PruneAudit stage2Audit = null;
+      if (prune.stage2()) {
+        KnowledgeFixKeywordPruner.PruneResult stage2Prune =
+            pruner.pruneSiblings(courseId, l3List, row.getOldKnowledgeId(), questionText);
+        l3Candidates = stage2Prune.candidates();
+        stage2Audit = new PruneAudit(l3Candidates.size(), stage2Prune.weakFallback(),
+            stage2Prune.reservedOld());
+      }
 
       // 阶段 2：三采样自一致
       // FIX-11/v1.7：候选顺序每行随机一次（种子=detailId），3 次采样共用同一顺序——
       // 第 2、3 次采样 prompt 与第 1 次逐字节一致，可整段命中前缀缓存（同课程行亦共享候选清单前缀）。
       // 代价：行内位置偏差检测退化为行间（全批顺序仍随机）；位置偏差兜底 = 确定性卫兵。
-      List<KnowledgeNodeRow> ordered = new ArrayList<>(l3List);
+      // v1.3：随机化作用于剪枝后的候选集（l3Candidates）。
+      List<KnowledgeNodeRow> ordered = new ArrayList<>(l3Candidates);
       Collections.shuffle(ordered, new java.util.Random(row.getDetailId()));
       List<Integer> nodeVotes = new ArrayList<>();
       List<Double> confVotes = new ArrayList<>();
       List<String> reasons = new ArrayList<>();
       for (int i = 0; i < SAMPLES; i++) {
         String s2 = callLlm(cfgFlash, tenantId, batchNo, row.getDetailId(), "stage2",
-            buildStage2Prompt(questionText, ordered, oldNode), 1024).content();
+            buildStage2Prompt(questionText, ordered, oldNode), 1024, stage2Audit).content();
         JsonNode json = parseObject(s2);
         int nodeId = json.path("node_id").asInt(-1);
         double conf = json.path("confidence").asDouble(0);
@@ -650,7 +700,7 @@ public class KnowledgeFixClassifyService {
       } else {
         // 三方各不同 → 旗舰复判（basis=llm-pro）
         String s3 = callLlm(cfgPro, tenantId, batchNo, row.getDetailId(), "escalate",
-            buildStage2Prompt(questionText, ordered, oldNode), 2048).content();
+            buildStage2Prompt(questionText, ordered, oldNode), 2048, stage2Audit).content();
         JsonNode json = parseObject(s3);
         finalNodeId = json.path("node_id").asInt(-1);
         finalConf = json.path("confidence").asDouble(0);
@@ -712,19 +762,30 @@ public class KnowledgeFixClassifyService {
   private JevOutcome tryClassifyViaJev(PendingFixRow row, Long batchNo, Long tenantId,
       JevRowCtx ctx, Map<Integer, List<KnowledgeNodeRow>> courseL2,
       Map<Integer, Map<Integer, List<KnowledgeNodeRow>>> courseL3ByParent,
-      Map<Integer, KnowledgeNodeRow> nodeById)
+      Map<Integer, KnowledgeNodeRow> nodeById, KnowledgeFixKeywordPruner pruner, PruneConfig prune)
       throws InterruptedException {
     Integer courseId = row.getCourseId();
     List<KnowledgeNodeRow> l2List = courseL2.getOrDefault(courseId, List.of());
     String questionText = buildQuestionText(row.getContent(), row.getAnswer(), row.getResolve());
 
+    // v1.3 stage1 宽剪（附一硬约束：仅 JEV 通道；KP-18~21）：L2 候选按 L3 证据聚合收窄 top-5，
+    // 老 L2 强制保位（keep 语义不被剪枝消灭）。剪后校验 MIN/MAX——宽剪使超大课程（L2>255）
+    // 也满足 Jev criteria 上限，这正是本开关存在的目的之一；开关关闭时保持既有全量校验。
+    List<KnowledgeNodeRow> l2Candidates = l2List;
+    PruneAudit stage1Audit = null;
+    if (prune.stage1()) {
+      KnowledgeFixKeywordPruner.PruneResult p1 =
+          pruner.pruneL2Shortlist(courseId, l2List, row.getOldKnowledgeId(), questionText);
+      l2Candidates = p1.candidates();
+      stage1Audit = new PruneAudit(p1.candidates().size(), p1.weakFallback(), p1.reservedOld());
+    }
     // 前置拦截（§5）：criteria <2（实测 min_length=2）或 >255（实测上限）均必 422，不发请求直接降级
-    if (l2List.size() < MIN_JEV_CRITERIA || l2List.size() > MAX_JEV_CRITERIA) {
+    if (l2Candidates.size() < MIN_JEV_CRITERIA || l2Candidates.size() > MAX_JEV_CRITERIA) {
       countLlmFallback(ctx, row.getRowId());
       return JevOutcome.FALLBACK_LLM;
     }
     Map<String, String> l2Criteria = new LinkedHashMap<>();
-    for (KnowledgeNodeRow n : l2List) {
+    for (KnowledgeNodeRow n : l2Candidates) {
       l2Criteria.put(String.valueOf(n.getId()), n.getTitle());
     }
     JevDecisionResult r1;
@@ -741,18 +802,27 @@ public class KnowledgeFixClassifyService {
       // 401=配置错误：立即熔断整批转 LLM 并 warn 告警（密钥错不会因重试变好，§5）
       ctx.openPermanent().set(true);
       log.warn("[Jev] 401 鉴权失败，整批熔断转 LLM：batchNo={}, err={}", batchNo, e.getMessage());
-      logJevCall(tenantId, batchNo, row.getDetailId(), "jev-stage1", ctx.ch(), null, questionText, e);
+      logJevCall(tenantId, batchNo, row.getDetailId(), "jev-stage1", ctx.ch(), null, questionText, e, stage1Audit);
       countLlmFallback(ctx, row.getRowId());
       return JevOutcome.FALLBACK_LLM;
     } catch (JevValidationException e) {
-      // 422=请求构造 bug：该行记失败并跳过（不走 LLM），连续 ≥5 熔断（§5）；行保持 pending 供下轮
+      // 422 细分（v1.4，2026-10-04 生产实测）：token_budget_exceeded = 候选超展开预算
+      // （expanded_input_tokens ≤ 32,768，53 个 L2 全量展开 33,480 即超）——该行 LLM 可正常分类
+      // → 降级 LLM 全流程；其余 422 = 请求构造 bug，重试无用 → SKIP_ROW（§5）
+      if (e.getMessage() != null && e.getMessage().contains(JEV_BUDGET_EXCEEDED_MARKER)) {
+        log.warn("[Jev] 422 候选超展开预算，行降级 LLM：batchNo={}, detailId={}, err={}",
+            batchNo, row.getDetailId(), e.getMessage());
+        logJevCall(tenantId, batchNo, row.getDetailId(), "jev-stage1", ctx.ch(), null, questionText, e, stage1Audit);
+        countLlmFallback(ctx, row.getRowId());
+        return JevOutcome.FALLBACK_LLM;
+      }
       batchMapper.incrementFailed(batchNo);
       if (ctx.consecutiveFailures().incrementAndGet() >= MAX_CONSECUTIVE_FAILURES) {
         ctx.openRound().set(true);
       }
       log.warn("[Jev] 422 请求构造失败，行记失败跳过：batchNo={}, detailId={}, err={}",
           batchNo, row.getDetailId(), e.getMessage());
-      logJevCall(tenantId, batchNo, row.getDetailId(), "jev-stage1", ctx.ch(), null, questionText, e);
+      logJevCall(tenantId, batchNo, row.getDetailId(), "jev-stage1", ctx.ch(), null, questionText, e, stage1Audit);
       return JevOutcome.SKIP_ROW;
     } catch (JevDecisionException e) {
       // 超时/5xx/解析失败：该行降级 LLM 全流程；连续失败计入熔断（§5）
@@ -761,12 +831,12 @@ public class KnowledgeFixClassifyService {
       }
       log.warn("[Jev] 调用失败，行降级 LLM：batchNo={}, detailId={}, err={}",
           batchNo, row.getDetailId(), e.getMessage());
-      logJevCall(tenantId, batchNo, row.getDetailId(), "jev-stage1", ctx.ch(), null, questionText, e);
+      logJevCall(tenantId, batchNo, row.getDetailId(), "jev-stage1", ctx.ch(), null, questionText, e, stage1Audit);
       countLlmFallback(ctx, row.getRowId());
       return JevOutcome.FALLBACK_LLM;
     }
     ctx.consecutiveFailures().set(0);
-    logJevCall(tenantId, batchNo, row.getDetailId(), "jev-stage1", ctx.ch(), r1, questionText, null);
+    logJevCall(tenantId, batchNo, row.getDetailId(), "jev-stage1", ctx.ch(), r1, questionText, null, stage1Audit);
 
     int l2Id;
     try {
@@ -776,7 +846,8 @@ public class KnowledgeFixClassifyService {
       countLlmFallback(ctx, row.getRowId());
       return JevOutcome.FALLBACK_LLM;
     }
-    boolean l2Valid = l2List.stream().anyMatch(n -> n.getId() != null && n.getId() == l2Id);
+    // 越界校验对齐实际下发的候选集（宽剪后为短名单，KP-18）
+    boolean l2Valid = l2Candidates.stream().anyMatch(n -> n.getId() != null && n.getId() == l2Id);
     if (!l2Valid) {
       countLlmFallback(ctx, row.getRowId());
       return JevOutcome.FALLBACK_LLM;
@@ -800,13 +871,22 @@ public class KnowledgeFixClassifyService {
       ctx.confSum().add(L2_DIRECT_CONFIDENCE.doubleValue());
       return JevOutcome.RESOLVED;
     }
-    if (l3List.size() < MIN_JEV_CRITERIA || l3List.size() > MAX_JEV_CRITERIA) {
+    // v1.3 stage2 剪枝（两通道同口径 KP-10；对 JEV 而言候选收窄直接抬高 maxP 下限，附四）
+    List<KnowledgeNodeRow> l3Candidates = l3List;
+    PruneAudit stage2Audit = null;
+    if (prune.stage2()) {
+      KnowledgeFixKeywordPruner.PruneResult p2 =
+          pruner.pruneSiblings(courseId, l3List, row.getOldKnowledgeId(), questionText);
+      l3Candidates = p2.candidates();
+      stage2Audit = new PruneAudit(l3Candidates.size(), p2.weakFallback(), p2.reservedOld());
+    }
+    if (l3Candidates.size() < MIN_JEV_CRITERIA || l3Candidates.size() > MAX_JEV_CRITERIA) {
       // 单候选（<2）或超上限（>255）无法构成合法 choice，降级 LLM 全流程
       countLlmFallback(ctx, row.getRowId());
       return JevOutcome.FALLBACK_LLM;
     }
     Map<String, String> l3Criteria = new LinkedHashMap<>();
-    for (KnowledgeNodeRow n : l3List) {
+    for (KnowledgeNodeRow n : l3Candidates) {
       l3Criteria.put(String.valueOf(n.getId()), n.getTitle());
     }
     JevDecisionResult r2;
@@ -822,17 +902,25 @@ public class KnowledgeFixClassifyService {
     } catch (JevUnauthorizedException e) {
       ctx.openPermanent().set(true);
       log.warn("[Jev] 401 鉴权失败，整批熔断转 LLM：batchNo={}, err={}", batchNo, e.getMessage());
-      logJevCall(tenantId, batchNo, row.getDetailId(), "jev-stage2", ctx.ch(), null, questionText, e);
+      logJevCall(tenantId, batchNo, row.getDetailId(), "jev-stage2", ctx.ch(), null, questionText, e, stage2Audit);
       countLlmFallback(ctx, row.getRowId());
       return JevOutcome.FALLBACK_LLM;
     } catch (JevValidationException e) {
+      // 422 细分同 stage1（v1.4）：预算超限 → 降级 LLM；构造 bug → SKIP_ROW
+      if (e.getMessage() != null && e.getMessage().contains(JEV_BUDGET_EXCEEDED_MARKER)) {
+        log.warn("[Jev] 422 候选超展开预算，行降级 LLM：batchNo={}, detailId={}, err={}",
+            batchNo, row.getDetailId(), e.getMessage());
+        logJevCall(tenantId, batchNo, row.getDetailId(), "jev-stage2", ctx.ch(), null, questionText, e, stage2Audit);
+        countLlmFallback(ctx, row.getRowId());
+        return JevOutcome.FALLBACK_LLM;
+      }
       batchMapper.incrementFailed(batchNo);
       if (ctx.consecutiveFailures().incrementAndGet() >= MAX_CONSECUTIVE_FAILURES) {
         ctx.openRound().set(true);
       }
       log.warn("[Jev] 422 请求构造失败，行记失败跳过：batchNo={}, detailId={}, err={}",
           batchNo, row.getDetailId(), e.getMessage());
-      logJevCall(tenantId, batchNo, row.getDetailId(), "jev-stage2", ctx.ch(), null, questionText, e);
+      logJevCall(tenantId, batchNo, row.getDetailId(), "jev-stage2", ctx.ch(), null, questionText, e, stage2Audit);
       return JevOutcome.SKIP_ROW;
     } catch (JevDecisionException e) {
       if (ctx.consecutiveFailures().incrementAndGet() >= MAX_CONSECUTIVE_FAILURES) {
@@ -840,12 +928,12 @@ public class KnowledgeFixClassifyService {
       }
       log.warn("[Jev] 调用失败，行降级 LLM：batchNo={}, detailId={}, err={}",
           batchNo, row.getDetailId(), e.getMessage());
-      logJevCall(tenantId, batchNo, row.getDetailId(), "jev-stage2", ctx.ch(), null, questionText, e);
+      logJevCall(tenantId, batchNo, row.getDetailId(), "jev-stage2", ctx.ch(), null, questionText, e, stage2Audit);
       countLlmFallback(ctx, row.getRowId());
       return JevOutcome.FALLBACK_LLM;
     }
     ctx.consecutiveFailures().set(0);
-    logJevCall(tenantId, batchNo, row.getDetailId(), "jev-stage2", ctx.ch(), r2, questionText, null);
+    logJevCall(tenantId, batchNo, row.getDetailId(), "jev-stage2", ctx.ch(), r2, questionText, null, stage2Audit);
 
     int nodeId;
     try {
@@ -901,7 +989,7 @@ public class KnowledgeFixClassifyService {
 
   /** Jev 调用审计落库（§8.8）：stage/响应 model（记现有 model_id 列）/tokens/耗时/confidence_definition/top1/top2；失败调用也留痕 */
   private void logJevCall(Long tenantId, Long batchNo, Integer detailId, String stage,
-      JevChannel ch, JevDecisionResult result, String state, Exception error) {
+      JevChannel ch, JevDecisionResult result, String state, Exception error, PruneAudit pruneAudit) {
     try {
       ExamKnowledgeFixLlmLogEntity logRow = new ExamKnowledgeFixLlmLogEntity();
       logRow.setId(com.baomidou.mybatisplus.core.toolkit.IdWorker.getId());
@@ -921,6 +1009,11 @@ public class KnowledgeFixClassifyService {
       logRow.setTotalTokens((int) (in + out));
       logRow.setCachedTokens(0);
       logRow.setDurationMs(result == null ? 0 : result.durationMs());
+      if (pruneAudit != null) {
+        logRow.setPrunedCandidates(pruneAudit.candidates());
+        logRow.setPruneWeakFallback(pruneAudit.weakFallback() ? 1 : 0);
+        logRow.setPruneReservedOld(pruneAudit.reservedOld() ? 1 : 0);
+      }
       if (result != null) {
         logRow.setConfidenceDefinition(result.confidenceDefinition());
         List<Double> tops = result.probabilities().values().stream()
@@ -1017,6 +1110,31 @@ public class KnowledgeFixClassifyService {
     return new JevChannel(cfg, theta1, theta2, concurrency, readTimeout);
   }
 
+  /**
+   * 关键词剪枝开关解析（v1.3 附一）：读 knowledge-fix-jev 配置行但不看 status——
+   * 通道关闭（disabled）时剪枝对 LLM 路径独立生效（KP-11）；配置行缺失 → OFF（=既有路径）。
+   * 批次启动时固化，改配置对下一批次生效。
+   */
+  private PruneConfig resolvePruneConfig() {
+    List<ExamFaqModelConfigEntity> list = modelConfigMapper.selectList(
+        new LambdaQueryWrapper<ExamFaqModelConfigEntity>()
+            .eq(ExamFaqModelConfigEntity::getModelCode, JEV_MODEL_CODE)
+            .orderByDesc(ExamFaqModelConfigEntity::getId)
+            .last("LIMIT 1"));
+    if (list == null || list.isEmpty()) {
+      return PruneConfig.OFF;
+    }
+    ExamFaqModelConfigEntity cfg = list.get(0);
+    boolean stage1 = cfg.getJevPruneStage1() != null && cfg.getJevPruneStage1() == 1;
+    boolean stage2 = cfg.getJevPruneStage2() != null && cfg.getJevPruneStage2() == 1;
+    if (!stage1 && !stage2) {
+      return PruneConfig.OFF;
+    }
+    log.info("[Prune] 剪枝开关：stage1={}, stage2={}（来自 {} 配置行，status={}，通道开关独立判定）",
+        stage1, stage2, JEV_MODEL_CODE, cfg.getStatus());
+    return new PruneConfig(stage1, stage2);
+  }
+
   private void failBatch(ExamKnowledgeFixBatchEntity batch, String reason) {
     batch.setStatus(ExamKnowledgeFixBatchEntity.STATUS_FAILED);
     batch.setFailReason(reason);
@@ -1062,7 +1180,7 @@ public class KnowledgeFixClassifyService {
   /** LLM 调用 + 审计落库（LLM 规范 #10，KF-19）：usage/耗时/摘要写入审计表，落库失败不影响主流程 */
   private com.guoyu.platform.ai.dto.LlmChatCompletionResult callLlm(
       ExamFaqModelConfigEntity cfg, Long tenantId, Long batchNo, Integer detailId,
-      String stage, String prompt, int maxTokens) {
+      String stage, String prompt, int maxTokens, PruneAudit pruneAudit) {
     long t0 = System.currentTimeMillis();
     var result = llmClient.chatCompletionDetailed(cfg.getBaseUrl(), cfg.getApiKey(),
         cfg.getModelId(), SYSTEM_PROMPT, prompt, maxTokens, cfg.getThinking(),
@@ -1083,6 +1201,11 @@ public class KnowledgeFixClassifyService {
       logRow.setTotalTokens((int) result.totalTokens());
       logRow.setCachedTokens((int) result.cachedTokens());
       logRow.setDurationMs(duration);
+      if (pruneAudit != null) {
+        logRow.setPrunedCandidates(pruneAudit.candidates());
+        logRow.setPruneWeakFallback(pruneAudit.weakFallback() ? 1 : 0);
+        logRow.setPruneReservedOld(pruneAudit.reservedOld() ? 1 : 0);
+      }
       logRow.setCreatedAt(LocalDateTime.now());
       logRow.setCreatedBy(0L);
       logRow.setUpdatedBy(0L);

@@ -48,6 +48,7 @@ import {
   savePracticalQuestion,
 } from '../../../api/practicalScoring';
 import { parseContentDispositionFilename } from '../../../utils/download';
+import { usePaneActive } from '../../../layouts/TabKeepAlive';
 import type {
   PreparationCandidate,
 } from '../../../types/certificationPreparation';
@@ -76,6 +77,7 @@ export function PracticalScoringConfig({
   showProgress = true,
 }: Props) {
   const queryClient = useQueryClient();
+  const paneActive = usePaneActive(); // 标签页不可见时暂停轮询（§3.6）
   const [selectedScopeId, setSelectedScopeId] = useState<string>();
   const [selectedCandidateIds, setSelectedCandidateIds] = useState<string[]>([]);
   const [configModalOpen, setConfigModalOpen] = useState(false);
@@ -106,7 +108,7 @@ export function PracticalScoringConfig({
     queryKey: ['practical-scoring-progress', taskId],
     queryFn: () => getPracticalScoringProgress(taskId!),
     enabled: Boolean(taskId && (showConfig || showProgress)),
-    refetchInterval: showProgress ? 5000 : false,
+    refetchInterval: paneActive && showProgress ? 5000 : false,
   });
   const adjustingTaskQuery = useQuery({
     queryKey: ['practical-scoring-admin-task', adjustingTask?.assessorTaskId],

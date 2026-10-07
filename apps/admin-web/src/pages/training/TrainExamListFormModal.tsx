@@ -164,7 +164,7 @@ export function TrainExamListFormModal({ open, editingId, onClose }: Props) {
             <Select options={[{ value: 0, label: '线上' }, { value: 1, label: '线下' }]} />
           </Form.Item>
           <Form.Item name="source" label="来源" style={{ width: '25%', marginLeft: 8 }}>
-            <Select options={[{ value: 0, label: '内部' }, { value: 1, label: '外部' }]} />
+            <Select options={[{ value: 0, label: '内部' }, { value: 1, label: '外部' }, { value: 3, label: '赛前复习' }]} />
           </Form.Item>
           <Form.Item name="sortNumber" label="排序号" style={{ width: '20%', marginLeft: 8 }}>
             <InputNumber min={0} style={{ width: '100%' }} />

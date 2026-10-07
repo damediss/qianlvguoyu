@@ -5,6 +5,7 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.guoyu.platform.common.exception.BusinessException;
 import com.guoyu.platform.common.exception.ErrorCode;
+import com.guoyu.platform.common.tenant.TenantContextHolder;
 import com.guoyu.platform.exam.reviewsync.entity.AiReviewAnswerEntity;
 import com.guoyu.platform.exam.reviewsync.entity.AiReviewGrayWhitelistEntity;
 import com.guoyu.platform.exam.reviewsync.entity.AiReviewMockPaperEntity;
@@ -25,6 +26,8 @@ import com.guoyu.platform.exam.reviewsync.dto.ReviewExamPlanInfo;
 import com.guoyu.platform.exam.reviewsync.dto.ReviewKnowledgeNode;
 import com.guoyu.platform.exam.reviewsync.dto.ReviewQuestion;
 import com.guoyu.platform.exam.reviewsync.dto.ReviewQuestionDetail;
+import com.guoyu.platform.exam.reviewsync.service.AiGradeApplicationService.SubjectiveGradeResult;
+import com.guoyu.platform.exam.reviewsync.support.SubjectiveAnswerExtractor;
 import com.guoyu.platform.system.entity.DictEntity;
 import com.guoyu.platform.system.mapper.DictMapper;
 import java.math.BigDecimal;
@@ -41,8 +44,16 @@ import java.util.List;
 import java.util.Map;
 import java.util.Random;
 import java.util.Set;
+import java.util.concurrent.Future;
+import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.dao.DuplicateKeyException;
+import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -59,6 +70,9 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 public class ReviewPlanApplicationService {
 
+  /** 模考单题 LLM 判分超时（秒）：超时取消 + 失败重试 1 次，仍失败该题 0 分兜底（方案 §3.4） */
+  private static final int MOCK_GRADE_TIMEOUT_SECONDS = 20;
+
   private final AiReviewPlanMapper planMapper;
   private final AiReviewPlanDayMapper dayMapper;
   private final AiReviewAnswerMapper answerMapper;
@@ -71,6 +85,15 @@ public class ReviewPlanApplicationService {
   private final ReviewLlmAssistService llmAssistService;
   private final DictMapper dictMapper;
   private final ObjectMapper objectMapper;
+  private final AiGradeApplicationService aiGradeService;
+  /** 模考主观题并行判分专用池（踩坑 #14：注入端 @Qualifier 对齐 @Bean 名） */
+  private final ThreadPoolTaskExecutor aiGradeMockExecutor;
+
+  /**
+   * 自注入代理：主观题 AI 判分（秒级 LLM 调用）禁止持有 DB 事务——判分在无事务段完成后，
+   * 落库走代理开启短事务（参照 TrainFollowEvidenceApplicationService 的 self 拆分惯例）。
+   */
+  private ReviewPlanApplicationService self;
 
   public ReviewPlanApplicationService(
       AiReviewPlanMapper planMapper,
@@ -84,7 +107,9 @@ public class ReviewPlanApplicationService {
       ExamResultWriteRepository examResultWriteRepository,
       ReviewLlmAssistService llmAssistService,
       DictMapper dictMapper,
-      ObjectMapper objectMapper) {
+      ObjectMapper objectMapper,
+      AiGradeApplicationService aiGradeService,
+      @Qualifier("aiGradeMockExecutor") ThreadPoolTaskExecutor aiGradeMockExecutor) {
     this.planMapper = planMapper;
     this.dayMapper = dayMapper;
     this.answerMapper = answerMapper;
@@ -97,6 +122,13 @@ public class ReviewPlanApplicationService {
     this.llmAssistService = llmAssistService;
     this.dictMapper = dictMapper;
     this.objectMapper = objectMapper;
+    this.aiGradeService = aiGradeService;
+    this.aiGradeMockExecutor = aiGradeMockExecutor;
+  }
+
+  @Autowired
+  public void setSelf(@Lazy ReviewPlanApplicationService self) {
+    this.self = self;
   }
 
   // ==================================================================
@@ -252,13 +284,41 @@ public class ReviewPlanApplicationService {
   // 7.4 单题作答
   // ==================================================================
 
-  @Transactional
+  /**
+   * 单题作答入口（本身不开事务）：查题后按题型分流——
+   * 客观题走原大事务路径（{@link #answerObjectiveInTx}，自注入代理开启，判分/落库逻辑一行未动）；
+   * 白名单主观题走 {@link #answerSubjective}（AI 判分在事务外完成，落库另开短事务，
+   * LLM 调用期间禁止持有 DB 事务——《简答题作答与AI判分方案》§3.4）。
+   */
   public Map<String, Object> answer(long platformUserId, long examId, long dayId, long questionId,
       String roundType, String userAnswer, Integer useTimeSec, Long tenantId) {
+    return answer(platformUserId, examId, dayId, questionId, roundType, userAnswer, useTimeSec,
+        tenantId, null, null);
+  }
+
+  public Map<String, Object> answer(long platformUserId, long examId, long dayId, long questionId,
+      String roundType, String userAnswer, Integer useTimeSec, Long tenantId,
+      Integer selfAssessed, Integer selfCorrect) {
     gateGrayRelease(examId, platformUserId, tenantId);
     AiReviewPlanEntity plan = requirePlan(platformUserId, examId);
     AiReviewPlanDayEntity day = requireDay(plan.getId(), dayId);
+    ReviewQuestionDetail detail = reviewQuery.loadQuestionDetail(questionId);
+    if (detail == null) {
+      throw new BusinessException(ErrorCode.NOT_FOUND, "题目不存在");
+    }
+    if (AiGradeApplicationService.isSubjective(detail.type())) {
+      return answerSubjective(plan, day, detail, platformUserId, examId, dayId, questionId,
+          roundType, userAnswer, useTimeSec, tenantId, selfAssessed, selfCorrect);
+    }
+    return self.answerObjectiveInTx(plan, day, detail, platformUserId, examId, dayId, questionId,
+        roundType, userAnswer, useTimeSec, tenantId);
+  }
 
+  /** 客观题作答（原 answer() 大事务路径，自注入代理开启事务；判分/落库/计数逻辑与原实现一致） */
+  @Transactional
+  public Map<String, Object> answerObjectiveInTx(AiReviewPlanEntity plan, AiReviewPlanDayEntity day,
+      ReviewQuestionDetail detail, long platformUserId, long examId, long dayId, long questionId,
+      String roundType, String userAnswer, Integer useTimeSec, Long tenantId) {
     // 幂等与改答案语义：
     //  - 答案相同 或 此前已答对 → 纯回放（防双击/倒退刷分，不写库不计数）
     //  - 此前答错 + 新答案不同 → 改答案（新尝试：重判分、驱动错题卡、计数只加差额）
@@ -269,10 +329,6 @@ public class ReviewPlanApplicationService {
         .eq(AiReviewAnswerEntity::getRoundType, roundType)
         .orderByDesc(AiReviewAnswerEntity::getAttemptSeq)
         .last("LIMIT 1"));
-    ReviewQuestionDetail detail = reviewQuery.loadQuestionDetail(questionId);
-    if (detail == null) {
-      throw new BusinessException(ErrorCode.NOT_FOUND, "题目不存在");
-    }
     List<AnswerJudgeDomainService.AnswerOption> options = parseOptions(detail.answerJson());
     boolean correction = false;
     if (existing != null) {
@@ -348,6 +404,236 @@ public class ReviewPlanApplicationService {
     return result;
   }
 
+  // ==================================================================
+  // 7.4-主观题 单题作答（AI 判分在事务外，落库短事务；方案 §3.4 / §5-5）
+  // ==================================================================
+
+  /**
+   * 主观题作答编排（无事务段）：提取参考答案 → 幂等预检 → 判分（自评/AI）→ 短事务落库。
+   *
+   * <ul>
+   *   <li>无参考答案（exam_exam_detail.answer 兼容提取为空）→ 直接回 ungradeable=1，
+   *       不调 LLM 不落判分，前端走自评（Q4-A）；</li>
+   *   <li>selfAssessed=1 → 采信前端自评结论（correct=selfCorrect==1，gradeSource='self'），
+   *       不调 LLM、不进判分缓存，照常落库+答错入错题本（Q6）；</li>
+   *   <li>否则调 {@link AiGradeApplicationService#grade}（同步秒级；限流/失败抛业务异常，
+   *       前端按约定转自评兜底，§6）。</li>
+   * </ul>
+   * 幂等语义与客观题对齐：同答案或此前已答对 → 纯回放；改答案 → 重判（判分缓存键含答案
+   * md5，自然 miss）。最终幂等裁决留在短事务内（防并发同题同文本双提交双落库）。
+   */
+  private Map<String, Object> answerSubjective(AiReviewPlanEntity plan, AiReviewPlanDayEntity day,
+      ReviewQuestionDetail detail, long platformUserId, long examId, long dayId, long questionId,
+      String roundType, String userAnswer, Integer useTimeSec, Long tenantId,
+      Integer selfAssessed, Integer selfCorrect) {
+    String reference = SubjectiveAnswerExtractor.extract(detail.answerJson());
+
+    // 幂等预检（无事务）：同答案或此前已答对 → 纯回放，不调 LLM
+    AiReviewAnswerEntity existing = findLatestAnswer(plan.getId(), dayId, questionId, roundType);
+    if (existing != null && (sameAnswer(existing, userAnswer) || wasCorrect(existing))) {
+      return subjectiveReplayView(existing, reference, detail.resolve());
+    }
+
+    // 自评通道优先于"无参考答案"早退：自评不需要参考答案且必须落库——否则无参考答案题
+    // 永卡当日任务（评审 #1；Q4 口径"自评结果照常落库"）
+    if (selfAssessed != null && selfAssessed == 1) {
+      boolean selfRight = selfCorrect != null && selfCorrect == 1;
+      SubjectiveGradeResult graded = new SubjectiveGradeResult(true, selfRight ? fullScoreOf(detail) : 0,
+          selfRight, null, "self");
+      return persistSubjectiveWithDupReplay(plan, day, detail, platformUserId, examId, dayId,
+          questionId, roundType, userAnswer, useTimeSec, graded, reference);
+    }
+
+    if (reference == null) {
+      log.info("[AI判分] 参考答案提取为空，返回不可判分（前端走自评）：questionId={}", questionId);
+      return subjectiveAnswerView(false, null, detail.resolve(), null, null, null, 1);
+    }
+
+    SubjectiveGradeResult graded;
+    try {
+      graded = aiGradeService.grade(tenantId, platformUserId, questionId, detail.content(),
+          reference, userAnswer, detail.type(), fullScoreOf(detail));
+    } catch (BusinessException e) {
+      // AI 判分失败（限流/超时/解析失败/模型配置缺失）：不中断练习、不落库，
+      // 返回 gradeFailed=1 + 参考答案，前端转自评兜底（§6）——自评经 selfAssessed=1 再次提交落库
+      log.warn("[AI判分] 判分失败转自评兜底：questionId={}, err={}", questionId, e.getMessage());
+      Map<String, Object> view = subjectiveAnswerView(false, reference, detail.resolve(),
+          null, null, null, 0);
+      view.put("gradeFailed", 1);
+      view.put("gradeFailMsg", e.getMessage());
+      return view;
+    } catch (Exception e) {
+      log.error("[AI判分] 判分异常转自评兜底：questionId={}", questionId, e);
+      Map<String, Object> view = subjectiveAnswerView(false, reference, detail.resolve(),
+          null, null, null, 0);
+      view.put("gradeFailed", 1);
+      view.put("gradeFailMsg", "AI 判分暂不可用，请自评");
+      return view;
+    }
+
+    return persistSubjectiveWithDupReplay(plan, day, detail, platformUserId, examId, dayId,
+        questionId, roundType, userAnswer, useTimeSec, graded, reference);
+  }
+
+  /**
+   * 短事务落库 + 真并发撞 uk 兜底：RR 快照读防不住未提交行，后到者 insert 撞
+   * uk_ai_review_answer_once → 本方法捕获后当前读回放先到者结果（评审 #3，不再吃 500）
+   */
+  private Map<String, Object> persistSubjectiveWithDupReplay(AiReviewPlanEntity plan,
+      AiReviewPlanDayEntity day, ReviewQuestionDetail detail, long platformUserId, long examId,
+      long dayId, long questionId, String roundType, String userAnswer, Integer useTimeSec,
+      SubjectiveGradeResult graded, String reference) {
+    try {
+      return self.persistSubjectiveAnswer(plan, day, detail, platformUserId, examId, dayId,
+          questionId, roundType, userAnswer, useTimeSec, graded, reference);
+    } catch (DuplicateKeyException e) {
+      log.warn("[AI判分] 并发双提交撞唯一键，回放先到者结果：planId={} questionId={}",
+          plan.getId(), questionId);
+      AiReviewAnswerEntity winner = findLatestAnswer(plan.getId(), dayId, questionId, roundType);
+      if (winner != null) {
+        return subjectiveReplayView(winner, reference, detail.resolve());
+      }
+      throw e;
+    }
+  }
+
+  /**
+   * 主观题判分结果落库（短事务，自注入代理开启）：
+   * 最终幂等裁决（事务内当前读）→ ai_review_answer（correct 按得分率≥60%口径；AI 判分
+   * earnedScore=AI 比例分，自评 earnedScore 留空回退"对=题分/错=0"）→ 答错走错题卡 →
+   * 计数差额（与客观题 :315 同款）→ exam_result 同事务直写。
+   */
+  @Transactional
+  public Map<String, Object> persistSubjectiveAnswer(AiReviewPlanEntity plan, AiReviewPlanDayEntity day,
+      ReviewQuestionDetail detail, long platformUserId, long examId, long dayId, long questionId,
+      String roundType, String userAnswer, Integer useTimeSec, SubjectiveGradeResult graded,
+      String reference) {
+    // 最终幂等裁决：并发同题同文本双提交，后到者回放先到者已落库结果（防双落库）
+    AiReviewAnswerEntity existing = findLatestAnswer(plan.getId(), dayId, questionId, roundType);
+    boolean correction = false;
+    if (existing != null) {
+      if (sameAnswer(existing, userAnswer) || wasCorrect(existing)) {
+        return subjectiveReplayView(existing, reference, detail.resolve());
+      }
+      correction = true;
+    }
+
+    int attemptSeq = countAttempts(plan.getId(), questionId) + 1;
+    AiReviewAnswerEntity answer = new AiReviewAnswerEntity();
+    answer.setPlanId(plan.getId());
+    answer.setDayId(dayId);
+    answer.setPlatformUserId(platformUserId);
+    answer.setExamPlanId(examId);
+    answer.setQuestionId(questionId);
+    answer.setQuestionScore(detail.score());
+    if ("ai".equals(graded.gradeSource())) {
+      answer.setEarnedScore(BigDecimal.valueOf(graded.score()));
+    }
+    answer.setKnowledgeId(detail.knowledgeId());
+    answer.setQuestionType(detail.type());
+    answer.setRoundType(roundType);
+    answer.setUserAnswer(userAnswer);
+    answer.setIsCorrect(graded.correct() ? 1 : 0);
+    answer.setUseTimeSec(useTimeSec != null ? useTimeSec : 0);
+    answer.setAttemptSeq(attemptSeq);
+    // 单库化：exam_result 同事务同步直写成功即置 1（与客观题同口径）
+    answer.setPhpSynced(1);
+    answerMapper.insert(answer);
+
+    // 错题状态机（答错入册，与客观题同一机制）
+    Map<String, Object> cardChange = applyWrongCard(plan, platformUserId, detail, graded.correct());
+
+    // 计数：改答案不重复计 done，只补作答次数与对错差额（与客观题同款）
+    bumpDayCounters(day, roundType, graded.correct(), correction);
+    touchLastActiveDate(plan, day);
+    planMapper.updateById(plan);
+
+    // exam_result 事务内同步直写（exam_type=5，沿用客观题机位；失败回滚整个作答事务）
+    examResultWriteRepository.insertExamResult(
+        answer.getQuestionType(),
+        answer.getExamPlanId() == null ? 0 : answer.getExamPlanId(),
+        answer.getQuestionId(),
+        answer.getPlatformUserId(),
+        answer.getUserAnswer(),
+        examResultScoreOf(answer));
+
+    Map<String, Object> result = subjectiveAnswerView(graded.correct(), reference, detail.resolve(),
+        cardChange, graded.comment(), graded.gradeSource(), 0);
+    if (cardChange != null && Boolean.TRUE.equals(cardChange.get("explainAvailable"))) {
+      result.put("explainAvailable", 1);
+    }
+
+    // D9 连对/连错即时鼓励（与客观题 answerObjectiveInTx 同款口径，回放路径不触发）
+    StreakEncourageDomainService.Streak streak = computeDayStreak(day.getId());
+    int tier = StreakEncourageDomainService.tierOf(streak);
+    if (StreakEncourageDomainService.shouldFire(streak, tier)) {
+      String text = llmAssistService.streakEncouragement(plan.getId(), day.getDayIndex(),
+          streak.type(), tier, day.getAnswerCount() != null ? day.getAnswerCount() : 0);
+      if (text != null) {
+        Map<String, Object> streakView = new LinkedHashMap<>();
+        streakView.put("type", streak.type());
+        streakView.put("count", streak.count());
+        result.put("streak", streakView);
+        result.put("encourageText", text);
+      }
+    }
+    return result;
+  }
+
+  /** 该（计划+天+题+轮次）最近一次作答（主观题幂等预检/裁决共用） */
+  private AiReviewAnswerEntity findLatestAnswer(long planId, long dayId, long questionId, String roundType) {
+    return answerMapper.selectOne(new LambdaQueryWrapper<AiReviewAnswerEntity>()
+        .eq(AiReviewAnswerEntity::getPlanId, planId)
+        .eq(AiReviewAnswerEntity::getDayId, dayId)
+        .eq(AiReviewAnswerEntity::getQuestionId, questionId)
+        .eq(AiReviewAnswerEntity::getRoundType, roundType)
+        .orderByDesc(AiReviewAnswerEntity::getAttemptSeq)
+        .last("LIMIT 1"));
+  }
+
+  private static boolean sameAnswer(AiReviewAnswerEntity existing, String userAnswer) {
+    return java.util.Objects.equals(existing.getUserAnswer(), userAnswer);
+  }
+
+  private static boolean wasCorrect(AiReviewAnswerEntity existing) {
+    return existing.getIsCorrect() != null && existing.getIsCorrect() == 1;
+  }
+
+  private static int fullScoreOf(ReviewQuestionDetail detail) {
+    return detail.score() != null ? detail.score().intValue() : 0;
+  }
+
+  private static int fullScoreOf(AiReviewMockPaperItemEntity item) {
+    return item.getScore() != null ? item.getScore().intValue() : 0;
+  }
+
+  /** 主观题作答回放视图：已存结果 + 恒返回参考答案；aiComment/gradeSource 未落库，回放为 null（口径见交棒说明） */
+  private Map<String, Object> subjectiveReplayView(AiReviewAnswerEntity existing, String reference,
+      String resolve) {
+    return subjectiveAnswerView(existing.getIsCorrect() != null && existing.getIsCorrect() == 1,
+        reference, resolve, null, null, null, 0);
+  }
+
+  /**
+   * 主观题作答响应视图（在现有结构上扩展，前端已按此对齐）：
+   * correctAnswer 恒返回（答对也返回，不可判分为 null）；aiComment=AI 点评；
+   * gradeSource=ai/self；ungradeable=1 表示无参考答案不可判分（前端走自评）。
+   */
+  private Map<String, Object> subjectiveAnswerView(boolean correct, String reference, String resolve,
+      Map<String, Object> cardChange, String aiComment, String gradeSource, int ungradeable) {
+    Map<String, Object> result = new LinkedHashMap<>();
+    result.put("correct", correct ? 1 : 0);
+    result.put("correctAnswer", reference);
+    result.put("correctOptions", List.of());
+    result.put("resolve", resolve);
+    result.put("cardChange", cardChange);
+    result.put("encourageText", null);
+    result.put("aiComment", aiComment);
+    result.put("gradeSource", gradeSource);
+    result.put("ungradeable", ungradeable);
+    return result;
+  }
+
   /** 当日作答流水（含改错重答，按时间序）计算当前连对/连错（D9） */
   private StreakEncourageDomainService.Streak computeDayStreak(long dayId) {
     List<AiReviewAnswerEntity> dayAnswers = answerMapper.selectList(new LambdaQueryWrapper<AiReviewAnswerEntity>()
@@ -400,7 +686,13 @@ public class ReviewPlanApplicationService {
   // 7.6 模考交卷
   // ==================================================================
 
-  @Transactional
+  /**
+   * 模考交卷入口（本身不开事务），拆三段（《简答题作答与AI判分方案》§3.4 Q2-A + v1.2 事务边界）：
+   * ① 客观题判分（现状口径，纯 CPU）→ ② 主观题并行判分（事务外专用池，题干+参考答案由
+   * HTTP 线程随卷一次性预载，Worker 只调 LLM）→ ③ 短事务落库
+   * （{@link #persistMockSubmit}，自注入代理开启；并发双交在事务内裁决回放）。
+   * LLM 判分期间禁止持有 DB 事务。
+   */
   public Map<String, Object> mockSubmit(long platformUserId, long examId, long mockPaperId,
       List<Map<String, Object>> answers, Integer useTimeSec, Long tenantId) {
     gateGrayRelease(examId, platformUserId, tenantId);
@@ -416,10 +708,8 @@ public class ReviewPlanApplicationService {
         new LambdaQueryWrapper<AiReviewMockPaperItemEntity>()
             .eq(AiReviewMockPaperItemEntity::getPaperId, mockPaperId));
     Map<Long, BigDecimal> scoreByQid = new HashMap<>();
-    Map<Long, String> typeByQid = new HashMap<>();
     for (AiReviewMockPaperItemEntity item : items) {
       scoreByQid.put(item.getQuestionId(), item.getScore());
-      typeByQid.put(item.getQuestionId(), item.getQuestionType());
     }
     Map<Long, String> userAnswerByQid = new LinkedHashMap<>();
     if (answers != null) {
@@ -431,10 +721,165 @@ public class ReviewPlanApplicationService {
         }
       }
     }
+    // HTTP 线程随卷一次性预载全部题的题干+参考答案（主观题判分不再回库查题）
     Map<Long, ReviewQuestionDetail> details = reviewQuery.loadQuestionDetails(new ArrayList<>(scoreByQid.keySet()));
 
     // O7：模考多选严格判分开关（错选 0 分、少选按选项 score 部分给分）；练习轮仍与 PHP 宽松口径一致
     boolean strictJudge = dictInt("ai_review_mock_strict_judge", 1, tenantId) == 1;
+
+    // ① 客观题判分（现状口径，纯 CPU 无 LLM）；主观题收集待判
+    Map<Long, MockJudgedItem> judgedByQid = new HashMap<>();
+    List<AiReviewMockPaperItemEntity> subjectiveItems = new ArrayList<>();
+    for (AiReviewMockPaperItemEntity item : items) {
+      ReviewQuestionDetail detail = details.get(item.getQuestionId());
+      if (detail == null) {
+        continue;
+      }
+      if (AiGradeApplicationService.isSubjective(detail.type())) {
+        subjectiveItems.add(item);
+        continue;
+      }
+      String userAnswer = userAnswerByQid.getOrDefault(item.getQuestionId(), "");
+      judgedByQid.put(item.getQuestionId(), judgeObjectiveMockItem(item, detail, userAnswer, strictJudge));
+    }
+
+    // ② 主观题并行判分（事务外）：先一次性全部提交专用池，再逐个收结果（单题超时 20s + 失败重试 1 次）
+    if (!subjectiveItems.isEmpty()) {
+      Map<Long, Future<SubjectiveGradeResult>> firstAttemptByQid = new LinkedHashMap<>();
+      for (AiReviewMockPaperItemEntity item : subjectiveItems) {
+        ReviewQuestionDetail detail = details.get(item.getQuestionId());
+        firstAttemptByQid.put(item.getQuestionId(), submitMockGrade(tenantId, platformUserId,
+            item.getQuestionId(), detail.content(), detail.answerJson(),
+            userAnswerByQid.getOrDefault(item.getQuestionId(), ""), detail.type(), fullScoreOf(item)));
+      }
+      for (AiReviewMockPaperItemEntity item : subjectiveItems) {
+        ReviewQuestionDetail detail = details.get(item.getQuestionId());
+        String userAnswer = userAnswerByQid.getOrDefault(item.getQuestionId(), "");
+        SubjectiveGradeResult graded = awaitMockGrade(firstAttemptByQid.get(item.getQuestionId()),
+            () -> submitMockGrade(tenantId, platformUserId, item.getQuestionId(), detail.content(),
+                detail.answerJson(), userAnswer, detail.type(), fullScoreOf(item)));
+        judgedByQid.put(item.getQuestionId(), toJudgedSubjective(item, detail, userAnswer, graded));
+      }
+    }
+
+    // ③ 短事务落库（答案/错题/成绩/exam_result 沿用现有机位）；
+    // 并发双交撞 uk → 回放已落库结果（评审 #3，与既有 DuplicateKeyException 兜底同口径）
+    try {
+      return self.persistMockSubmit(plan, examId, mockPaperId, platformUserId, items, details, judgedByQid);
+    } catch (DuplicateKeyException e) {
+      log.warn("[AI复习] 模考并发双交撞唯一键，回放结果：mockPaperId={}", mockPaperId);
+      return mockResultView(plan, paper);
+    }
+  }
+
+  /** 模考单题判分结果（①②段产出，③段只负责落库与视图组装） */
+  private record MockJudgedItem(
+      boolean subjective,
+      boolean correct,
+      BigDecimal earned,
+      String correctAnswerText,
+      String userAnswer,
+      /** 主观题：AI 点评 / 失败标注；客观题 null */
+      String aiComment) {
+  }
+
+  /** ① 客观题判分（原交卷循环内的判分口径原样抽取：严格多选给 earnedScore，其余 对=题分/错=0） */
+  private MockJudgedItem judgeObjectiveMockItem(AiReviewMockPaperItemEntity item,
+      ReviewQuestionDetail detail, String userAnswer, boolean strictJudge) {
+    List<AnswerJudgeDomainService.AnswerOption> options = parseOptions(detail.answerJson());
+    AnswerJudgeDomainService.JudgeResult judged;
+    if (strictJudge && "multi".equals(detail.type())) {
+      judged = AnswerJudgeDomainService.judgeStrictMulti(options, parseUserMultiAnswer(userAnswer),
+          item.getScore());
+    } else {
+      judged = AnswerJudgeDomainService.judge(detail.type(), options, userAnswer,
+          parseUserMultiAnswer(userAnswer));
+    }
+    BigDecimal earned;
+    if (judged.earnedScore() != null) {
+      earned = judged.earnedScore();
+    } else {
+      earned = judged.correct() ? (item.getScore() != null ? item.getScore() : BigDecimal.ZERO)
+          : BigDecimal.ZERO;
+    }
+    return new MockJudgedItem(false, judged.correct(), earned, judged.correctAnswerText(),
+        userAnswer, null);
+  }
+
+  /** ② 主观题判分结果映射：失败/池拒绝/超时 → 0 分兜底并诚实标注；无参考答案（Q4）模考无自评交互按 0 分计 */
+  private MockJudgedItem toJudgedSubjective(AiReviewMockPaperItemEntity item,
+      ReviewQuestionDetail detail, String userAnswer, SubjectiveGradeResult graded) {
+    String reference = SubjectiveAnswerExtractor.extract(detail.answerJson());
+    if (graded == null) {
+      return new MockJudgedItem(true, false, BigDecimal.ZERO, reference, userAnswer,
+          "AI 判分失败，本题按 0 分计");
+    }
+    if (!graded.gradable()) {
+      return new MockJudgedItem(true, false, BigDecimal.ZERO, null, userAnswer,
+          "本题无参考答案，按 0 分计");
+    }
+    // 模考口径（Q5）：earned = AI 比例分计入总分；correct 按得分率≥60%
+    return new MockJudgedItem(true, graded.correct(), BigDecimal.valueOf(graded.score()),
+        reference, userAnswer, graded.comment());
+  }
+
+  /** 提交一题判分任务到专用池；AbortPolicy 拒绝返回 null（池满立即重试只会再撞，按失败兜底） */
+  private Future<SubjectiveGradeResult> submitMockGrade(Long tenantId, long platformUserId,
+      long questionId, String stem, String rawAnswer, String userAnswer, String type, int fullScore) {
+    try {
+      return aiGradeMockExecutor.submit(() -> {
+        // Worker 线程：tenantId/userId 由 HTTP 线程预捕获传参，整条调用链禁止 SecurityContext；
+        // 租户上下文每 Worker 线程独立 set + finally clear（异步红线）
+        TenantContextHolder.setTenantId(tenantId);
+        try {
+          return aiGradeService.grade(tenantId, platformUserId, questionId, stem, rawAnswer,
+              userAnswer, type, fullScore);
+        } finally {
+          TenantContextHolder.clear();
+        }
+      });
+    } catch (RejectedExecutionException e) {
+      log.warn("[AI判分] 模考判分线程池拒绝（AbortPolicy），本题按 0 分计：questionId={}", questionId);
+      return null;
+    }
+  }
+
+  /** 收取判分结果：单题超时 20s；失败/超时重试 1 次；仍失败返回 null（调用方 0 分兜底） */
+  private SubjectiveGradeResult awaitMockGrade(Future<SubjectiveGradeResult> firstAttempt,
+      java.util.function.Supplier<Future<SubjectiveGradeResult>> retrySubmit) {
+    Future<SubjectiveGradeResult> future = firstAttempt;
+    for (int attempt = 1; attempt <= 2 && future != null; attempt++) {
+      try {
+        return future.get(MOCK_GRADE_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+      } catch (TimeoutException e) {
+        future.cancel(true);
+        log.warn("[AI判分] 模考单题判分超时（第 {}/2 次）", attempt);
+      } catch (Exception e) {
+        log.warn("[AI判分] 模考单题判分失败（第 {}/2 次）：{}", attempt, e.getMessage());
+      }
+      if (attempt < 2) {
+        future = retrySubmit.get();
+      }
+    }
+    return null;
+  }
+
+  /**
+   * 模考交卷落库（短事务，自注入代理开启）：并发双交最终裁决（事务内当前读卷状态）→
+   * 逐题写作答（同卷幂等跳过）+ 错题卡 + exam_result 同事务直写 → 卷成绩/计划活跃日落库。
+   */
+  @Transactional
+  public Map<String, Object> persistMockSubmit(AiReviewPlanEntity plan, long examId, long mockPaperId,
+      long platformUserId, List<AiReviewMockPaperItemEntity> items,
+      Map<Long, ReviewQuestionDetail> details, Map<Long, MockJudgedItem> judgedByQid) {
+    AiReviewMockPaperEntity paper = mockPaperMapper.selectById(mockPaperId);
+    if (paper == null || !paper.getPlanId().equals(plan.getId())) {
+      throw new BusinessException(ErrorCode.NOT_FOUND, "模考卷不存在");
+    }
+    if ("done".equals(paper.getStatus())) {
+      // 并发/重复交卷：回放（不含 wrongList，Q-E 接受现状）
+      return mockResultView(plan, paper);
+    }
 
     AiReviewPlanDayEntity todayDay = findDay(plan.getId(), plan.getCurrentDayIndex());
     BigDecimal score = BigDecimal.ZERO;
@@ -443,38 +888,25 @@ public class ReviewPlanApplicationService {
     LocalDate today = LocalDate.now();
     for (AiReviewMockPaperItemEntity item : items) {
       ReviewQuestionDetail detail = details.get(item.getQuestionId());
-      if (detail == null) {
+      MockJudgedItem judged = judgedByQid.get(item.getQuestionId());
+      if (detail == null || judged == null) {
         continue;
-      }
-      String userAnswer = userAnswerByQid.getOrDefault(item.getQuestionId(), "");
-      List<AnswerJudgeDomainService.AnswerOption> options = parseOptions(detail.answerJson());
-      AnswerJudgeDomainService.JudgeResult judged;
-      if (strictJudge && "multi".equals(detail.type())) {
-        judged = AnswerJudgeDomainService.judgeStrictMulti(options, parseUserMultiAnswer(userAnswer),
-            item.getScore());
-      } else {
-        judged = AnswerJudgeDomainService.judge(detail.type(), options, userAnswer,
-            parseUserMultiAnswer(userAnswer));
-      }
-      // 实得分：严格多选判分给 earnedScore；其余 对=题分/错=0
-      BigDecimal earned;
-      if (judged.earnedScore() != null) {
-        earned = judged.earnedScore();
-      } else {
-        earned = judged.correct() ? (item.getScore() != null ? item.getScore() : BigDecimal.ZERO)
-            : BigDecimal.ZERO;
       }
       if (judged.correct()) {
         correctCount++;
       }
-      score = score.add(earned);
+      score = score.add(judged.earned());
       if (!judged.correct()) {
         Map<String, Object> wrong = new LinkedHashMap<>();
         wrong.put("questionId", item.getQuestionId());
         wrong.put("correctAnswer", judged.correctAnswerText());
         wrong.put("resolve", detail.resolve());
-        if (earned.compareTo(BigDecimal.ZERO) > 0) {
-          wrong.put("partialScore", earned); // 少选部分分（展示用）
+        if (judged.earned().compareTo(BigDecimal.ZERO) > 0) {
+          wrong.put("partialScore", judged.earned()); // 少选/主观题比例分（展示用）
+        }
+        if (judged.subjective()) {
+          wrong.put("myAnswer", judged.userAnswer());
+          wrong.put("aiComment", judged.aiComment());
         }
         wrongList.add(wrong);
       }
@@ -494,11 +926,11 @@ public class ReviewPlanApplicationService {
         answer.setExamPlanId(examId);
         answer.setQuestionId(item.getQuestionId());
         answer.setQuestionScore(item.getScore());
-        answer.setEarnedScore(earned);
+        answer.setEarnedScore(judged.earned());
         answer.setKnowledgeId(detail.knowledgeId());
         answer.setQuestionType(detail.type());
         answer.setRoundType("mock");
-        answer.setUserAnswer(userAnswer);
+        answer.setUserAnswer(judged.userAnswer());
         answer.setIsCorrect(judged.correct() ? 1 : 0);
         answer.setUseTimeSec(0);
         answer.setAttemptSeq(countAttempts(plan.getId(), item.getQuestionId()) + 1);
@@ -1296,6 +1728,11 @@ public class ReviewPlanApplicationService {
     int mockSize = dictInt("ai_review_mock_size", 100, tenantId);
     List<Long> questionIds = QuestionSelectDomainService.composeMockPaper(
         pool, weights, mockSize, wrongRateByL3, new Random());
+    // 主观题数量上限（Q2-A，sys_dict ai_review_mock_subjective_max 默认 5）：同步交卷的墙钟
+    // 预算约束（单题 20s + 重试 1 次）。超过按题型优先级裁（cal/answer/essay 复杂主观题优先，
+    // 详见 capSubjectiveCount 注释）；被裁名额不回补客观题，总分/及格分按实际入卷题重算。
+    int subjectiveMax = dictInt("ai_review_mock_subjective_max", 5, tenantId);
+    questionIds = QuestionSelectDomainService.capSubjectiveCount(questionIds, metaById, subjectiveMax);
 
     int paperNo = mockPaperMapper.selectCount(new LambdaQueryWrapper<AiReviewMockPaperEntity>()
         .eq(AiReviewMockPaperEntity::getPlanId, plan.getId())).intValue() + 1;

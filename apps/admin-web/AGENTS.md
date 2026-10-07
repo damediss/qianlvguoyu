@@ -56,3 +56,9 @@ apiClient 响应拦截器必须覆盖三种错误码：
 7. 需兼容局域网 HTTP 访问
 8. 下载文件：`apiClient.get(url, { responseType: 'blob' })` 返回 `AxiosResponse`，blob 数据在 `.data` 里；API 函数签名应 `return (await apiClient.get(...)).data` 并声明 `Promise<Blob>`（踩坑 #10）
 9. 外壳滚动模型（2026-09-14 起）：外壳锁 100vh、侧栏与内容区各自独立滚动、切菜单内容区回顶；页面内 sticky/100vh 取值按新容器口径
+10. **标签页外壳（2026-10-04 起，《admin-web标签页外壳改造方案》）**，四条约定：
+    - 新页面轮询必须接 `usePaneActive()`（`layouts/TabKeepAlive`）：`refetchInterval: active ? N : false`；**禁止裸写 `setInterval` 轮询**；确需 setInterval 的短定时器，隐藏时跳过 setState、不得中断进行中任务
+    - 页面内跨页跳转继续用 `navStore.setSelectedKey(code)`（语义已是"激活/新建标签页"，勿自行 pushState）
+    - 隐藏路由 shell（contentOverride 覆盖态）必须传真实菜单码作 `selectedMenuKeyOverride`，并在进入覆盖态时 `tabStore.openTab(code)` + `setOverridePath(code, 当前URL)`（覆盖态回退载体）
+    - 新增隐藏路由必须同步登记改造方案附录 A（`src/routes/hiddenRoutes.ts`）
+    - 专项测试：`npm run test:admin-tabs`（标签层单测）/ `npm run test:e2e:admin-tabs`（标签页 e2e）

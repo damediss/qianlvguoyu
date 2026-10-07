@@ -17,12 +17,14 @@ import com.guoyu.platform.security.SecurityContext;
 import com.guoyu.platform.trainingdepartment.dto.TrainExamListCreateReq;
 import com.guoyu.platform.trainingdepartment.dto.TrainExamListQueryReq;
 import com.guoyu.platform.trainingdepartment.dto.TrainExamListUpdateReq;
+import com.guoyu.platform.trainingdepartment.entity.TrainClassReviewSyncEntity;
 import com.guoyu.platform.trainingdepartment.entity.TrainExamListEntity;
 import com.guoyu.platform.trainingdepartment.entity.TrainExamPeopleListEntity;
 import com.guoyu.platform.trainingdepartment.entity.TrainExamWorkTypeListEntity;
 import com.guoyu.platform.trainingdepartment.entity.TrainInfoClassEntity;
 import com.guoyu.platform.trainingdepartment.entity.TrainInfoListEntity;
 import com.guoyu.platform.trainingdepartment.entity.TrainPeopleListEntity;
+import com.guoyu.platform.trainingdepartment.mapper.TrainClassReviewSyncMapper;
 import com.guoyu.platform.trainingdepartment.mapper.TrainExamListMapper;
 import com.guoyu.platform.trainingdepartment.mapper.TrainExamPeopleListMapper;
 import com.guoyu.platform.trainingdepartment.mapper.TrainExamWorkTypeListMapper;
@@ -57,6 +59,7 @@ public class TrainExamListApplicationService {
   private final ExamExamDetailMapper examDetailMapper;
   private final TrainInfoListMapper trainInfoListMapper;
   private final TrainPeopleListMapper trainPeopleListMapper;
+  private final TrainClassReviewSyncMapper reviewSyncMapper;
   private final TrainingOperatorScopeService operatorScopeService;
 
   public TrainExamListApplicationService(TrainExamListMapper mapper,
@@ -67,6 +70,7 @@ public class TrainExamListApplicationService {
       ExamExamDetailMapper examDetailMapper,
       TrainInfoListMapper trainInfoListMapper,
       TrainPeopleListMapper trainPeopleListMapper,
+      TrainClassReviewSyncMapper reviewSyncMapper,
       TrainingOperatorScopeService operatorScopeService) {
     this.mapper = mapper;
     this.workTypeListMapper = workTypeListMapper;
@@ -76,6 +80,7 @@ public class TrainExamListApplicationService {
     this.examDetailMapper = examDetailMapper;
     this.trainInfoListMapper = trainInfoListMapper;
     this.trainPeopleListMapper = trainPeopleListMapper;
+    this.reviewSyncMapper = reviewSyncMapper;
     this.operatorScopeService = operatorScopeService;
   }
 
@@ -174,7 +179,7 @@ public class TrainExamListApplicationService {
   /**
    * 试题配置自动开通同步学：创建本班考试计划。
    * 不导入全培训考生（由班级 enroll-roster 按花名册写入）。
-   * <p>同培训下若已存在标题「{班级名}-同步学」则直接复用，禁止重复插入。
+   * <p>幂等优先本班已绑定 exam；新建标题带 classId，避免同名班级共用一个 examId。
    */
   @Transactional
   public Long createForClassReviewSync(TrainInfoClassEntity clazz, List<Integer> courseIds) {
@@ -184,37 +189,64 @@ public class TrainExamListApplicationService {
     Long tenantId = SecurityContext.currentUser().getTenantId();
     Long userId = SecurityContext.currentUser().getUserId();
     String classTitle = StringUtils.hasText(clazz.getTitle()) ? clazz.getTitle().trim() : ("班级" + clazz.getId());
-    String title = classTitle + "-同步学";
-    if (title.length() > 255) {
-      title = title.substring(0, 255);
+    // 唯一标题：班级名 + classId，杜绝同培训同名班串考计划
+    String titleUnique = classTitle + "-同步学-" + clazz.getId();
+    if (titleUnique.length() > 255) {
+      titleUnique = titleUnique.substring(0, 255);
+    }
+    String titleLegacy = classTitle + "-同步学";
+    if (titleLegacy.length() > 255) {
+      titleLegacy = titleLegacy.substring(0, 255);
     }
 
-    // 幂等：同培训同标题已存在则复用最早一条，避免保存试题配置反复新建
+    // 1) 本班已有同步学绑定 → 直接复用
+    TrainClassReviewSyncEntity bound = reviewSyncMapper.selectOne(new LambdaQueryWrapper<TrainClassReviewSyncEntity>()
+        .eq(TrainClassReviewSyncEntity::getClassId, clazz.getId())
+        .last("LIMIT 1"));
+    if (bound != null && bound.getExamId() != null && bound.getExamId() > 0) {
+      syncCoursesQuietly(bound.getExamId(), courseIds);
+      log.info("[班级同步学] 复用本班已绑定考试计划 examId={} classId={}", bound.getExamId(), clazz.getId());
+      return bound.getExamId();
+    }
+
+    // 2) 幂等：标题含 classId 的已存在记录
     if (clazz.getTrainInfoId() != null && clazz.getTrainInfoId() > 0) {
-      TrainExamListEntity existed = mapper.selectOne(new LambdaQueryWrapper<TrainExamListEntity>()
+      TrainExamListEntity byUnique = mapper.selectOne(new LambdaQueryWrapper<TrainExamListEntity>()
           .eq(TrainExamListEntity::getTrainId, clazz.getTrainInfoId())
-          .eq(TrainExamListEntity::getTitle, title)
+          .eq(TrainExamListEntity::getTitle, titleUnique)
           .eq(TrainExamListEntity::getDeleted, 0)
           .orderByAsc(TrainExamListEntity::getId)
           .last("LIMIT 1"));
-      if (existed != null && existed.getId() != null) {
-        List<Long> courseIdList = courseIds == null ? List.of() : courseIds.stream()
-            .filter(id -> id != null && id > 0)
-            .map(Integer::longValue)
-            .distinct()
-            .toList();
-        if (!courseIdList.isEmpty()) {
-          try {
-            syncCoursesForReviewSync(existed.getId(), courseIds);
-          } catch (Exception e) {
-            log.warn("[班级同步学] 复用已有计划时同步科目失败 examId={}: {}", existed.getId(), e.getMessage());
-          }
+      if (byUnique != null && byUnique.getId() != null) {
+        syncCoursesQuietly(byUnique.getId(), courseIds);
+        log.info("[班级同步学] 复用唯一标题考试计划 examId={} title={} classId={}",
+            byUnique.getId(), titleUnique, clazz.getId());
+        return byUnique.getId();
+      }
+
+      // 3) 旧标题「{班名}-同步学」：仅当未被其他班绑定时才复用（兼容历史）
+      TrainExamListEntity legacy = mapper.selectOne(new LambdaQueryWrapper<TrainExamListEntity>()
+          .eq(TrainExamListEntity::getTrainId, clazz.getTrainInfoId())
+          .eq(TrainExamListEntity::getTitle, titleLegacy)
+          .eq(TrainExamListEntity::getDeleted, 0)
+          .orderByAsc(TrainExamListEntity::getId)
+          .last("LIMIT 1"));
+      if (legacy != null && legacy.getId() != null) {
+        Long otherBound = reviewSyncMapper.selectCount(new LambdaQueryWrapper<TrainClassReviewSyncEntity>()
+            .eq(TrainClassReviewSyncEntity::getExamId, legacy.getId())
+            .ne(TrainClassReviewSyncEntity::getClassId, clazz.getId()));
+        if (otherBound == null || otherBound == 0) {
+          syncCoursesQuietly(legacy.getId(), courseIds);
+          log.info("[班级同步学] 复用未占用旧标题考试计划 examId={} title={} classId={}",
+              legacy.getId(), titleLegacy, clazz.getId());
+          return legacy.getId();
         }
-        log.info("[班级同步学] 复用已有考试计划 examId={} title={} classId={}",
-            existed.getId(), title, clazz.getId());
-        return existed.getId();
+        log.info("[班级同步学] 旧标题已被其他班占用 examId={}，将为本班新建 title={}",
+            legacy.getId(), titleUnique);
       }
     }
+
+    String title = titleUnique;
 
     Long orgId = clazz.getCompanyId() != null && clazz.getCompanyId() > 0 ? clazz.getCompanyId() : null;
     String orgName = null;
@@ -281,6 +313,22 @@ public class TrainExamListApplicationService {
     log.info("[班级同步学] 已为 classId={} 创建考试计划 examId={} source={}",
         clazz.getId(), entity.getId(), entity.getSource());
     return entity.getId();
+  }
+
+  private void syncCoursesQuietly(Long examId, List<Integer> courseIds) {
+    List<Long> courseIdList = courseIds == null ? List.of() : courseIds.stream()
+        .filter(id -> id != null && id > 0)
+        .map(Integer::longValue)
+        .distinct()
+        .toList();
+    if (courseIdList.isEmpty()) {
+      return;
+    }
+    try {
+      syncCoursesForReviewSync(examId, courseIds);
+    } catch (Exception e) {
+      log.warn("[班级同步学] 复用已有计划时同步科目失败 examId={}: {}", examId, e.getMessage());
+    }
   }
 
   /**

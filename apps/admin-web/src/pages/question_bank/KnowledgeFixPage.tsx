@@ -17,6 +17,7 @@ import {
   qualityReport,
 } from './knowledgeFixApi';
 import type { AdjudicateResult, DedupStats, FixBatch, FixItem } from './knowledgeFixApi';
+import { usePaneActive } from '../../layouts/TabKeepAlive';
 
 const STATUS_TAG: Record<string, { color: string; text: string }> = {
   apply: { color: 'success', text: '改挂' },
@@ -36,6 +37,7 @@ const batchRunning = (b: FixBatch | null | undefined) =>
 
 const KnowledgeFixPage: React.FC = () => {
   const qc = useQueryClient();
+  const paneActive = usePaneActive(); // 标签页不可见时暂停轮询（§3.6）
 
   // ---------------- 去重清理 ----------------
   const [dedupGenerating, setDedupGenerating] = useState(false);
@@ -131,9 +133,17 @@ const KnowledgeFixPage: React.FC = () => {
   const progressQuery = useQuery({
     queryKey: ['knowledgefix-progress'],
     queryFn: classifyProgress,
-    refetchInterval: (q) => (batchRunning(q.state.data) ? 3000 : false),
+    refetchInterval: (q) => (paneActive && batchRunning(q.state.data) ? 3000 : false),
   });
   const batch = progressQuery.data;
+  // 待写回改挂行数（实时）：人工定夺会把 flag 行翻转成 apply，批次卡的 applyCnt 是批次时点快照不更新，
+  // 写回按钮必须按当前行数判断（否则定夺后按钮恒灰）
+  const applyCountQuery = useQuery({
+    queryKey: ['knowledgefix-apply-count'],
+    queryFn: () => fixList({ status: 'apply', page: 1, pageSize: 1 }),
+    enabled: !!batch,
+  });
+  const applyCount = applyCountQuery.data?.total ?? 0;
 
   const reportQuery = useQuery({
     queryKey: ['knowledgefix-report'],
@@ -143,9 +153,10 @@ const KnowledgeFixPage: React.FC = () => {
 
   const [fixStatus, setFixStatus] = useState<string | undefined>();
   const [fixPage, setFixPage] = useState(1);
+  const [fixPageSize, setFixPageSize] = useState(20);
   const fixQuery = useQuery({
-    queryKey: ['knowledgefix-fix-list', fixStatus, fixPage],
-    queryFn: () => fixList({ status: fixStatus, page: fixPage, pageSize: 20 }),
+    queryKey: ['knowledgefix-fix-list', fixStatus, fixPage, fixPageSize],
+    queryFn: () => fixList({ status: fixStatus, page: fixPage, pageSize: fixPageSize }),
   });
 
   const doSubmitClassify = async (scope?: { courseId?: number; limit?: number }) => {
@@ -201,6 +212,7 @@ const KnowledgeFixPage: React.FC = () => {
       message.success(`知识修正写回完成：${r.affectedRows} 行（备份表 ${r.backupTable ?? '-'}）`);
       qc.invalidateQueries({ queryKey: ['knowledgefix-fix-list'] });
       qc.invalidateQueries({ queryKey: ['knowledgefix-report'] });
+      qc.invalidateQueries({ queryKey: ['knowledgefix-apply-count'] });
     } catch {
       /* 拦截器统一提示 */
     } finally {
@@ -218,6 +230,7 @@ const KnowledgeFixPage: React.FC = () => {
     }
     setSelectedRowKeys([]);
     qc.invalidateQueries({ queryKey: ['knowledgefix-fix-list'] });
+    qc.invalidateQueries({ queryKey: ['knowledgefix-apply-count'] });
   };
 
   const doAdjudicate = async (rowId: string, action: 'apply' | 'keep') => {
@@ -425,10 +438,10 @@ const KnowledgeFixPage: React.FC = () => {
                   title="确认执行知识修正写回？"
                   description="仅改挂行更新 knowledge_id（已自动备份，可回滚）"
                   onConfirm={doApplyFix}
-                  disabled={fixApplying || !batch || batch.status !== 'done' || (batch.applyCnt ?? 0) === 0}
+                  disabled={fixApplying || !batch || batch.status !== 'done' || applyCount === 0}
                 >
                   <Button danger loading={fixApplying}
-                    disabled={fixApplying || !batch || batch.status !== 'done' || (batch.applyCnt ?? 0) === 0}>
+                    disabled={fixApplying || !batch || batch.status !== 'done' || applyCount === 0}>
                     执行写回（仅改挂行）
                   </Button>
                 </Popconfirm>
@@ -531,8 +544,16 @@ const KnowledgeFixPage: React.FC = () => {
                   onChange: (keys) => setSelectedRowKeys(keys as string[]),
                 } : undefined}
                 pagination={{
-                  current: fixPage, pageSize: 20, total: fixQuery.data?.total ?? 0,
-                  onChange: (p) => setFixPage(p),
+                  current: fixPage, pageSize: fixPageSize, total: fixQuery.data?.total ?? 0,
+                  showSizeChanger: true,
+                  onChange: (p, ps) => {
+                    if (ps !== fixPageSize) {
+                      setFixPageSize(ps);
+                      setFixPage(1);
+                    } else {
+                      setFixPage(p);
+                    }
+                  },
                 }} />
             </>
           ),

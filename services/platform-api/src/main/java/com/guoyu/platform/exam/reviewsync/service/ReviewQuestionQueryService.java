@@ -18,6 +18,7 @@ import com.guoyu.platform.exam.reviewsync.dto.ReviewExamPlanInfo;
 import com.guoyu.platform.exam.reviewsync.dto.ReviewKnowledgeNode;
 import com.guoyu.platform.exam.reviewsync.dto.ReviewQuestion;
 import com.guoyu.platform.exam.reviewsync.dto.ReviewQuestionDetail;
+import com.guoyu.platform.exam.reviewsync.support.QuestionTypes;
 import com.guoyu.platform.trainingdepartment.entity.TrainExamListEntity;
 import com.guoyu.platform.trainingdepartment.entity.TrainExamPeopleListEntity;
 import com.guoyu.platform.trainingdepartment.entity.TrainExamWorkTypeListEntity;
@@ -161,7 +162,12 @@ public class ReviewQuestionQueryService {
     return ids;
   }
 
-  /** 题目全集（步骤 5）：source 一致 + knowledge_id IN + final_check_status=1 */
+  /** 入池题型白名单（《简答题作答与AI判分方案》§3.4 选题硬过滤）：口径收敛在
+   * {@link QuestionTypes#SCOPE_TYPES}（客观三型 + 主观题 8 白名单，唯一来源）。
+   * 空 type（存量 16,918 题）与未知题型不入池——这些题被选中即卡死，排除是修 bug */
+  private static final List<String> QUESTION_SCOPE_TYPES = QuestionTypes.SCOPE_TYPES;
+
+  /** 题目全集（步骤 5）：source 一致 + knowledge_id IN + final_check_status=1 + 题型白名单 */
   public List<ReviewQuestion> loadQuestionScope(int source, List<Long> l3KnowledgeIds) {
     if (l3KnowledgeIds == null || l3KnowledgeIds.isEmpty()) {
       return List.of();
@@ -171,7 +177,8 @@ public class ReviewQuestionQueryService {
       for (ExamExamDetailEntity row : examDetailMapper.selectList(questionMetaWrapper()
           .eq(ExamExamDetailEntity::getFinalCheckStatus, 1)
           .eq(ExamExamDetailEntity::getSource, source)
-          .in(ExamExamDetailEntity::getKnowledgeId, chunk))) {
+          .in(ExamExamDetailEntity::getKnowledgeId, chunk)
+          .in(ExamExamDetailEntity::getType, QUESTION_SCOPE_TYPES))) {
         ReviewQuestion question = toQuestion(row);
         if (question != null) {
           result.add(question);

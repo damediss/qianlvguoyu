@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, Button, Card, Descriptions, Space, Tag, Typography, message } from 'antd';
 import { SettingOutlined } from '@ant-design/icons';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -6,6 +6,7 @@ import * as trainApi from '../../../api/training';
 import type { ClassReviewSyncConfig } from '../../../api/training';
 import { ClassReviewSyncModal } from '../ClassReviewSyncModal';
 import { StatsOverviewPage } from '../../exam/reviewSyncStats/StatsOverviewPage';
+import { useAuthStore } from '../../../stores/authStore';
 
 type ApiId = number | string;
 
@@ -23,9 +24,14 @@ type Props = {
  */
 export function FollowReviewSyncTab({ classId, classTitle, active }: Props) {
   const queryClient = useQueryClient();
+  const hasPerm = useAuthStore((s) => s.hasPermission);
+  const canViewStats = hasPerm('exam:review-sync:stats:view');
   const [modalOpen, setModalOpen] = useState(false);
   const [ensureState, setEnsureState] = useState<'idle' | 'loading' | 'done' | 'error'>('idle');
   const [ensureMessage, setEnsureMessage] = useState<string | null>(null);
+  const ensureInflightRef = useRef<Map<string, Promise<Awaited<ReturnType<typeof trainApi.ensureClassReviewSyncRoster>>>>>(
+    new Map(),
+  );
 
   const configQuery = useQuery({
     queryKey: ['class-review-sync-config', classId],
@@ -36,9 +42,21 @@ export function FollowReviewSyncTab({ classId, classTitle, active }: Props) {
   useEffect(() => {
     if (!active || classId == null) return;
     let cancelled = false;
+    const key = String(classId);
     setEnsureState('loading');
     setEnsureMessage(null);
-    void trainApi.ensureClassReviewSyncRoster(classId)
+
+    let inflight = ensureInflightRef.current.get(key);
+    if (!inflight) {
+      inflight = trainApi
+        .ensureClassReviewSyncRoster(classId)
+        .finally(() => {
+          ensureInflightRef.current.delete(key);
+        });
+      ensureInflightRef.current.set(key, inflight);
+    }
+
+    void inflight
       .then((r) => {
         if (cancelled) return;
         if (r.config?.configured) {
@@ -52,8 +70,14 @@ export function FollowReviewSyncTab({ classId, classTitle, active }: Props) {
         const removedStale = r.enroll?.removedStale ?? 0;
         if (r.ok === false) {
           setEnsureState('error');
-          setEnsureMessage(r.message || '自动同步学员失败，请打开同步学配置处理');
-          message.warning(r.message || '自动同步学员失败，请打开同步学配置处理');
+          const tip =
+            r.action === 'forbidden'
+              ? r.message || '当前账号无法自动开通同步学，请联系教务配置'
+              : r.action === 'mismatch' || r.action === 'exam_gone'
+                ? r.message || '当前绑定异常，请打开同步学配置手动处理'
+                : r.message || '自动同步学员失败，请打开同步学配置处理';
+          setEnsureMessage(tip);
+          message.warning(tip);
           return;
         }
         setEnsureState('done');
@@ -102,6 +126,8 @@ export function FollowReviewSyncTab({ classId, classTitle, active }: Props) {
   const stillProvisioning = !cfg?.configured && (ensureState === 'idle' || ensureState === 'loading' || configQuery.isLoading);
   const provisionFailed = !cfg?.configured && ensureState === 'error';
   const provisionEmpty = !cfg?.configured && ensureState === 'done' && !configQuery.isFetching;
+  /** 已配置但错绑/计划失效：仍展示配置摘要，并置顶告警引导手动改绑 */
+  const bindingNeedsManualFix = !!cfg?.configured && ensureState === 'error' && !!ensureMessage;
 
   return (
     <div>
@@ -110,7 +136,7 @@ export function FollowReviewSyncTab({ classId, classTitle, active }: Props) {
           <div>
             <Typography.Text strong>通道 C · AI 同步学</Typography.Text>
             <Typography.Paragraph type="secondary" style={{ marginBottom: 0, marginTop: 4 }}>
-              打开本 Tab 或保存配置时，会自动把本班有账号学员写入同步学考生名单。
+              打开本 Tab 时：已正确绑定则自动同步名单；尚未绑定则自动开通。若发现错绑不会自动改绑，请点右上角手动处理。
             </Typography.Paragraph>
           </div>
           <Button type="primary" icon={<SettingOutlined />} onClick={() => setModalOpen(true)}>
@@ -134,6 +160,14 @@ export function FollowReviewSyncTab({ classId, classTitle, active }: Props) {
           style={{ marginBottom: 12 }}
           message="自动开通同步学失败"
           description={ensureMessage || '请打开「同步学配置」手动绑定考试计划（可选择已有「班级名-同步学」）。'}
+        />
+      ) : bindingNeedsManualFix ? (
+        <Alert
+          type="warning"
+          showIcon
+          style={{ marginBottom: 12 }}
+          message="当前同步学绑定异常，未自动改绑"
+          description={ensureMessage || '请打开「同步学配置」手动选择正确考试计划，避免学情被悄悄换掉。'}
         />
       ) : provisionEmpty ? (
         <Alert
@@ -178,20 +212,47 @@ export function FollowReviewSyncTab({ classId, classTitle, active }: Props) {
               )}
             </Descriptions.Item>
             <Descriptions.Item label="学情">
-              {showStats ? '见下方' : '—'}
+              {!showStats
+                ? '—'
+                : canViewStats
+                  ? '见下方'
+                  : '无查看权限（需 exam:review-sync:stats:view）'}
             </Descriptions.Item>
           </Descriptions>
         </Card>
       )}
 
+      {bindingNeedsManualFix && cfg?.configured ? (
+        <Card size="small" loading={configQuery.isLoading} style={{ marginBottom: 12 }}>
+          <Descriptions column={2} size="small">
+            <Descriptions.Item label="当前绑定">
+              {cfg?.examTitle || cfg?.examId || '—'}
+              {cfg?.examGone ? <Tag color="error" style={{ marginLeft: 8 }}>已失效</Tag> : null}
+            </Descriptions.Item>
+            <Descriptions.Item label="状态">
+              {cfg?.enabled ? <Tag color="success">启用</Tag> : <Tag>停用</Tag>}
+            </Descriptions.Item>
+          </Descriptions>
+        </Card>
+      ) : null}
+
       {showStats ? (
         <Card size="small" style={{ marginBottom: 12 }} title={null}>
-          <StatsOverviewPage
-            examId={examIdNum}
-            examTitle={cfg?.examTitle ?? undefined}
-            embedded
-            enabled={active}
-          />
+          {canViewStats ? (
+            <StatsOverviewPage
+              examId={examIdNum}
+              examTitle={cfg?.examTitle ?? undefined}
+              embedded
+              enabled={active}
+            />
+          ) : (
+            <Alert
+              type="info"
+              showIcon
+              message="暂无同步学学情查看权限"
+              description="请联系管理员开通权限码 exam:review-sync:stats:view。"
+            />
+          )}
         </Card>
       ) : cfg?.configured && cfg?.examGone ? (
         <Alert

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Alert,
   Button,
@@ -89,6 +89,56 @@ function classSubsidyStatus(s?: TrainSubsidy | null): 'none' | 'open' | 'done' {
   return 'open';
 }
 
+/** 拉全部分页补贴单，供班级状态/看板（避免单页截断） */
+async function fetchAllSubsidyItems(): Promise<{
+  items: TrainSubsidy[];
+  total: number;
+  truncated: boolean;
+}> {
+  const pageSize = 200;
+  const maxPages = 500; // 最多约 10 万条
+  const items: TrainSubsidy[] = [];
+  let page = 1;
+  let total = Number.POSITIVE_INFINITY;
+  while (items.length < total && page <= maxPages) {
+    const res = await trainApi.pageSubsidies({ page, pageSize });
+    const batch = res.items ?? [];
+    items.push(...batch);
+    total = typeof res.total === 'number' ? res.total : items.length;
+    if (batch.length === 0) break;
+    page += 1;
+  }
+  const truncated = items.length < total;
+  return { items, total, truncated };
+}
+
+/** 状态筛选开启时拉全部分页班级再本地过滤，避免服务端分页 + 前端滤后 total 错乱 */
+async function fetchAllInfoClasses(params: {
+  keyword?: string;
+  certFilter?: 'certified' | 'uncertified' | 'all';
+}): Promise<{ list: TrainInfoClassListItem[]; total: number; truncated: boolean }> {
+  const pageSize = 200;
+  const maxPages = 500;
+  const list: TrainInfoClassListItem[] = [];
+  let page = 1;
+  let total = Number.POSITIVE_INFINITY;
+  while (list.length < total && page <= maxPages) {
+    const res = await trainApi.pageInfoClassList({
+      page,
+      pageSize,
+      keyword: params.keyword || undefined,
+      certFilter: params.certFilter,
+    });
+    const batch = res.list ?? [];
+    list.push(...batch);
+    total = typeof res.total === 'number' ? res.total : list.length;
+    if (batch.length === 0) break;
+    page += 1;
+  }
+  const truncated = list.length < total;
+  return { list, total: truncated ? list.length : total, truncated };
+}
+
 /** 运营流程 · 申报补贴：班级列表 → 本班材料工作台 */
 export function TrainingSubsidyDeclarePage() {
   const qc = useQueryClient();
@@ -136,25 +186,49 @@ export function TrainingSubsidyDeclarePage() {
 
   const statsQ = useQuery({
     queryKey: ['subsidies-stats'],
-    queryFn: () => trainApi.pageSubsidies({ page: 1, pageSize: 500 }),
+    queryFn: async () => {
+      const res = await fetchAllSubsidyItems();
+      return {
+        items: res.items,
+        total: res.total,
+        page: 1,
+        pageSize: res.items.length,
+        truncated: res.truncated,
+      };
+    },
     enabled: !inWorkbench,
   });
 
   const classListQ = useQuery({
-    queryKey: ['subsidy-class-list', classPage, classPageSize, classKeyword, certFilter],
-    queryFn: () =>
-      trainApi.pageInfoClassList({
-        page: classPage,
-        pageSize: classPageSize,
+    queryKey: [
+      'subsidy-class-list',
+      classPage,
+      classPageSize,
+      classKeyword,
+      certFilter,
+      subsidyStatusFilter,
+    ],
+    queryFn: async () => {
+      if (subsidyStatusFilter === 'all') {
+        return trainApi.pageInfoClassList({
+          page: classPage,
+          pageSize: classPageSize,
+          keyword: classKeyword || undefined,
+          certFilter,
+        });
+      }
+      // 状态筛：全量班级 + 本地分页（依赖 subsidies-stats 映射）
+      return fetchAllInfoClasses({
         keyword: classKeyword || undefined,
         certFilter,
-      }),
+      });
+    },
     enabled: !inWorkbench,
   });
 
   const classesPickQ = useQuery({
-    queryKey: ['info-classes-brief'],
-    queryFn: () => trainApi.pageInfoClassList({ page: 1, pageSize: 200 }),
+    queryKey: ['info-classes-brief-all'],
+    queryFn: () => fetchAllInfoClasses({ certFilter: 'all' }),
     enabled: createOpen,
   });
 
@@ -174,15 +248,16 @@ export function TrainingSubsidyDeclarePage() {
       const fresh = await trainApi.getSubsidy(row.id);
       setDetail(fresh);
       return fresh;
-    } catch {
-      setDetail(row);
-      return row;
+    } catch (e) {
+      message.error((e as Error).message || '加载补贴单失败，请稍后重试');
+      throw e;
     }
   };
 
   const enterWorkbench = async (row: TrainSubsidy) => {
-    await openDetail(row);
+    const fresh = await openDetail(row);
     setInWorkbench(true);
+    return fresh;
   };
 
   const exitWorkbench = () => {
@@ -222,7 +297,7 @@ export function TrainingSubsidyDeclarePage() {
     }
   };
 
-  useEffect(() => {
+  const applySubsidyFocus = useCallback(() => {
     const focus = trainApi.consumeSubsidyDeclareFocus();
     if (!focus) return;
     if (focus.classId != null) {
@@ -241,8 +316,16 @@ export function TrainingSubsidyDeclarePage() {
     if (focus.classId != null) {
       void openClassWorkbench(focus.classId);
     }
+    // openClassWorkbench / openDetailById 稳定引用不足，刻意不列入 deps
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [form]);
+
+  useEffect(() => {
+    applySubsidyFocus();
+    const onFocusEvent = () => applySubsidyFocus();
+    window.addEventListener(trainApi.SUBSIDY_DECLARE_FOCUS_EVENT, onFocusEvent);
+    return () => window.removeEventListener(trainApi.SUBSIDY_DECLARE_FOCUS_EVENT, onFocusEvent);
+  }, [applySubsidyFocus]);
 
   const createMu = useMutation({
     mutationFn: trainApi.createSubsidy,
@@ -252,7 +335,7 @@ export function TrainingSubsidyDeclarePage() {
       form.resetFields();
       if (row.classId != null) setClassFilter(row.classId);
       invalidate();
-      void enterWorkbench(row);
+      void enterWorkbench(row).catch(() => undefined);
     },
     onError: (e: Error) => message.error(e.message || '创建失败'),
   });
@@ -299,11 +382,23 @@ export function TrainingSubsidyDeclarePage() {
   const displayClassRows = useMemo(() => {
     const rows = listClassRows;
     if (subsidyStatusFilter === 'all') return rows;
-    return rows.filter((c) => {
+    const filtered = rows.filter((c) => {
       const st = classSubsidyStatus(subsidyByClass.get(String(c.id)));
       return st === subsidyStatusFilter;
     });
-  }, [listClassRows, subsidyByClass, subsidyStatusFilter]);
+    const start = (classPage - 1) * classPageSize;
+    return filtered.slice(start, start + classPageSize);
+  }, [listClassRows, subsidyByClass, subsidyStatusFilter, classPage, classPageSize]);
+
+  const displayClassTotal = useMemo(() => {
+    if (subsidyStatusFilter === 'all') {
+      return classListQ.data?.total ?? 0;
+    }
+    return listClassRows.filter((c) => {
+      const st = classSubsidyStatus(subsidyByClass.get(String(c.id)));
+      return st === subsidyStatusFilter;
+    }).length;
+  }, [subsidyStatusFilter, classListQ.data?.total, listClassRows, subsidyByClass]);
 
   const profiles = profilesQ.data || [];
 
@@ -505,10 +600,12 @@ export function TrainingSubsidyDeclarePage() {
           setCreateOpen(false);
           form.resetFields();
           setClassFilter(classId);
-          void enterWorkbench(existing);
+          void enterWorkbench(existing).catch(() => undefined);
         }
       })
-      .catch(() => undefined);
+      .catch((e: Error) => {
+        message.error(e.message || '查询本班补贴单失败');
+      });
   };
 
   const applySearch = () => {
@@ -566,6 +663,20 @@ export function TrainingSubsidyDeclarePage() {
         style={{ marginBottom: 12 }}
         message="每个班材料不同，请逐班办理。点「进入材料工作台」自动打开/创建本班补贴单。"
       />
+
+      {statsQ.data?.truncated || (classListQ.data as { truncated?: boolean } | undefined)?.truncated ? (
+        <Alert
+          type="warning"
+          showIcon
+          style={{ marginBottom: 12 }}
+          message="数据量过大，看板/状态筛选可能未加载全部记录"
+          description={
+            statsQ.data?.truncated
+              ? `补贴单已加载 ${statsQ.data.items.length} / ${statsQ.data.total}，进度标签可能不全。`
+              : '班级列表在状态筛选下未全部加载，请缩小筛选条件后重试。'
+          }
+        />
+      ) : null}
 
       <div className="subsidy-stat-row">
         <div className="subsidy-stat-card">
@@ -632,7 +743,10 @@ export function TrainingSubsidyDeclarePage() {
                   <Select
                     style={{ width: 160 }}
                     value={subsidyStatusFilter}
-                    onChange={setSubsidyStatusFilter}
+                    onChange={(v) => {
+                      setSubsidyStatusFilter(v as 'all' | 'none' | 'open' | 'done');
+                      setClassPage(1);
+                    }}
                     options={[
                       { value: 'all', label: '全部状态' },
                       { value: 'none', label: '未建单' },
@@ -644,7 +758,7 @@ export function TrainingSubsidyDeclarePage() {
                 <Table
                   rowKey="id"
                   size="middle"
-                  loading={classListQ.isLoading || workBusy}
+                  loading={classListQ.isLoading || statsQ.isLoading || workBusy}
                   columns={classColumns}
                   dataSource={displayClassRows}
                   scroll={{ x: 1100 }}
@@ -668,7 +782,7 @@ export function TrainingSubsidyDeclarePage() {
                   pagination={{
                     current: classPage,
                     pageSize: classPageSize,
-                    total: classListQ.data?.total ?? 0,
+                    total: displayClassTotal,
                     showSizeChanger: true,
                     showTotal: (t) => `共 ${t} 个班级`,
                     onChange: (p, ps) => {

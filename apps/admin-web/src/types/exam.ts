@@ -568,10 +568,11 @@ export interface CompanyQuestionQuery {
   keyword?: string;
 }
 
-// 来源映射:0=内部,1=外部
+// 来源映射:0=内部,1=外部,3=赛前复习
 export const EXAM_SOURCE_MAP: Record<number, string> = {
   0: '内部',
   1: '外部',
+  3: '赛前复习',
 };
 
 // 题型映射

@@ -21,6 +21,7 @@ import type {
   TrainProjectTable, TrainProjectTableQuery, TrainProjectTableCreateReq, TrainProjectTableUpdateReq,
   TrainDashboard,
   DashboardMilestoneItem,
+  ReviewSyncPanel,
   DashboardStageDistribution,
   DashboardCompanyOverview,
   TrainTalentNeed, TrainTalentNeedQuery, TrainTalentNeedCreateReq, TrainTalentNeedUpdateReq,
@@ -386,6 +387,11 @@ export function deleteProjectTable(id: number) {
 // ==================== Dashboard (仪表盘) ====================
 export function getDashboard() {
   return unwrap<TrainDashboard>(apiClient.get(`${BASE}/dashboard`));
+}
+
+/** 同步练习（AI 同步学）统计面板：一次拿全，默认近 30 天 */
+export function getReviewSyncPanel(days: number = 30) {
+  return unwrap<ReviewSyncPanel>(apiClient.get(`${BASE}/dashboard/review-sync`, { params: { days } }));
 }
 
 export function getDashboardMilestones() {
@@ -2855,8 +2861,10 @@ export function ensureClassSubsidy(
   );
 }
 
-/** 跳转申报补贴页时写入焦点（班级 / 单号）；页面挂载后消费并清除 */
+/** 跳转申报补贴页时写入焦点（班级 / 单号）；页面挂载或已打开时消费并清除 */
 export const SUBSIDY_DECLARE_FOCUS_KEY = 'train_subsidy_declare_focus';
+/** 同页已挂载时通知消费焦点（sessionStorage 同标签页不触发 storage 事件） */
+export const SUBSIDY_DECLARE_FOCUS_EVENT = 'train_subsidy_declare_focus';
 
 export type SubsidyDeclareFocus = {
   classId?: number | string;
@@ -2869,6 +2877,11 @@ export function stashSubsidyDeclareFocus(focus: SubsidyDeclareFocus) {
     sessionStorage.setItem(SUBSIDY_DECLARE_FOCUS_KEY, JSON.stringify(focus));
   } catch {
     /* ignore quota */
+  }
+  try {
+    window.dispatchEvent(new CustomEvent(SUBSIDY_DECLARE_FOCUS_EVENT, { detail: focus }));
+  } catch {
+    /* ignore non-browser */
   }
 }
 

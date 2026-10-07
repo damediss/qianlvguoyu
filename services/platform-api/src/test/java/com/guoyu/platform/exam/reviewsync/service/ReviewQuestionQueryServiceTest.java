@@ -27,6 +27,7 @@ import com.guoyu.platform.trainingdepartment.mapper.TrainExamListMapper;
 import com.guoyu.platform.trainingdepartment.mapper.TrainExamPeopleListMapper;
 import com.guoyu.platform.trainingdepartment.mapper.TrainExamWorkTypeListMapper;
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
 import java.math.BigDecimal;
 import java.util.List;
@@ -35,6 +36,7 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.junit.jupiter.MockitoSettings;
@@ -197,6 +199,22 @@ class ReviewQuestionQueryServiceTest {
   void loadQuestionScopeEmptyKnowledgeIdsSkipsQuery() {
     assertThat(service.loadQuestionScope(1, List.of())).isEmpty();
     verify(examDetailMapper, never()).selectList(any());
+  }
+
+  /** 选题池硬过滤（方案 §3.4）：SQL 只出客观三型 + 主观题 8 白名单，空 type/未知题型不入池 */
+  @Test
+  @SuppressWarnings({"unchecked", "rawtypes"})
+  void loadQuestionScopeFiltersToWhitelistTypes() {
+    when(examDetailMapper.selectList(any())).thenReturn(List.of());
+
+    service.loadQuestionScope(1, List.of(100L));
+
+    ArgumentCaptor<LambdaQueryWrapper> captor = ArgumentCaptor.forClass(LambdaQueryWrapper.class);
+    verify(examDetailMapper).selectList(captor.capture());
+    assertThat(captor.getValue().getSqlSegment()).contains("type IN");
+    assertThat(captor.getValue().getParamNameValuePairs().values())
+        .contains("single", "multi", "judge", "answer", "cal", "essay", "analysis", "explain",
+            "fill", "short", "drafting");
   }
 
   // ------------------------------------------------------------------

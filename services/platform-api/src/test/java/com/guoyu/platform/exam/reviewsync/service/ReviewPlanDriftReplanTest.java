@@ -42,6 +42,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
+import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 
 /**
  * 考试计划中途变更的入口软重排（方案 §5.8）：
@@ -80,6 +81,10 @@ class ReviewPlanDriftReplanTest {
   private ReviewLlmAssistService llmAssistService;
   @Mock
   private DictMapper dictMapper;
+  @Mock
+  private AiGradeApplicationService aiGradeService;
+  @Mock
+  private ThreadPoolTaskExecutor aiGradeMockExecutor;
 
   private ReviewPlanApplicationService service;
 
@@ -98,7 +103,9 @@ class ReviewPlanDriftReplanTest {
   void setUp() {
     service = new ReviewPlanApplicationService(planMapper, dayMapper, answerMapper, wrongMapper,
         mockPaperMapper, mockItemMapper, grayWhitelistMapper, reviewQuery, examResultWriteRepository,
-        llmAssistService, dictMapper, new ObjectMapper());
+        llmAssistService, dictMapper, new ObjectMapper(), aiGradeService, aiGradeMockExecutor);
+    // 纯单测无 Spring 代理：self 注入自身
+    service.setSelf(service);
   }
 
   /** 建计划时的旧口径：考试日在 66 天后（阶段 33/20/13）、source=0，学员停在第 1 天 */

@@ -352,6 +352,12 @@ public class AppExamSmartService {
     };
   }
 
+  /** 客观三型判定（错题重练 wrongReplay 反查过滤用，方案 Q-C；题型归一复用 normalizeQuestionType） */
+  static boolean isObjectiveQuestionType(String raw) {
+    String t = normalizeQuestionType(raw);
+    return "single".equals(t) || "multi".equals(t) || "judge".equals(t);
+  }
+
   private static int typeSortKey(String raw) {
     String t = normalizeQuestionType(raw);
     if ("single".equals(t)) {
@@ -385,6 +391,9 @@ public class AppExamSmartService {
     }
     Map<Integer, ExamExamDetailEntity> byId = examDetailMapper.selectBatchIds(wrongIds).stream()
         .filter(e -> e.getDeleted() == 0)
+        // 防御性过滤（方案 Q-C）：trainsave 写 exam_user_answer_log 后主观题错题会漏进重练池
+        // 且无作答 UI——错题重练只保留客观三型
+        .filter(e -> isObjectiveQuestionType(e.getType()))
         .collect(Collectors.toMap(ExamExamDetailEntity::getId, e -> e, (a, b) -> a, LinkedHashMap::new));
     // 保持错题出现顺序（首次答错时间升序），不做乱序
     List<ExamExamDetailEntity> questions = new ArrayList<>();

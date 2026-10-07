@@ -207,6 +207,10 @@ public class TrainPeopleListApplicationService {
     entity.setCurrentLevel(req.getCurrentLevel());
     entity.setSortNumber(req.getSortNumber());
     mapper.updateById(entity);
+    if ("student".equals(entity.getType()) && entity.getTrainClassId() != null) {
+      // 姓名/手机等变更后补刷同步学考生名单（幂等）
+      classReviewSyncApplicationService.syncRosterIfBound(entity.getTrainClassId());
+    }
     return toVO(entity);
   }
 
@@ -371,6 +375,10 @@ public class TrainPeopleListApplicationService {
     }
     platformUserApplicationService.syncFromExternalProfile(
         entity.getPlatformUserId(), entity.getIdCard(), entity.getRealname(), entity.getPhone());
+    // 开班准备主路径改学员走本接口，需补刷同步学名单（与 REST update 一致）
+    if ("student".equals(entity.getType()) && entity.getTrainClassId() != null) {
+      classReviewSyncApplicationService.syncRosterIfBound(entity.getTrainClassId());
+    }
     Map<String, Object> result = new LinkedHashMap<>();
     result.put("id", entity.getId());
     result.put("realname", entity.getRealname());

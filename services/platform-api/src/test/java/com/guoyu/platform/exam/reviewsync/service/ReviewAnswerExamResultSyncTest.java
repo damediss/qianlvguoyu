@@ -37,6 +37,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
 import org.springframework.dao.DuplicateKeyException;
+import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 
 /**
  * 单题作答 answer() 的 exam_result 事务内同步直写（单库化 Q3a）：
@@ -69,6 +70,10 @@ class ReviewAnswerExamResultSyncTest {
   private ReviewLlmAssistService llmAssistService;
   @Mock
   private DictMapper dictMapper;
+  @Mock
+  private AiGradeApplicationService aiGradeService;
+  @Mock
+  private ThreadPoolTaskExecutor aiGradeMockExecutor;
 
   private ReviewPlanApplicationService service;
 
@@ -79,7 +84,9 @@ class ReviewAnswerExamResultSyncTest {
   void setUp() {
     service = new ReviewPlanApplicationService(planMapper, dayMapper, answerMapper, wrongMapper,
         mockPaperMapper, mockItemMapper, grayWhitelistMapper, reviewQuery, examResultWriteRepository,
-        llmAssistService, dictMapper, new ObjectMapper());
+        llmAssistService, dictMapper, new ObjectMapper(), aiGradeService, aiGradeMockExecutor);
+    // 纯单测无 Spring 代理：self 注入自身，客观题大事务/主观题短事务方法直接直调
+    service.setSelf(service);
 
     AiReviewPlanEntity plan = new AiReviewPlanEntity();
     plan.setId(100L);

@@ -38,9 +38,11 @@ import {
   getCertBatchProgress,
 } from "../../api/chazheng";
 import type { ChazhengUser, ChazhengCert, CertCheckBatchProgress } from "../../types/chazheng";
+import { usePaneActive, usePaneActiveRef } from "../../layouts/TabKeepAlive";
 
 export function CertQueryPage() {
   const queryClient = useQueryClient();
+  const paneActiveRef = usePaneActiveRef(usePaneActive()); // 标签不可见时暂停 2s 查证轮询（§3.6）
   const [query, setQuery] = useState({ page: 1, pageSize: 20, keyword: "", ymd: "", enterpriseId: undefined as number | undefined });
   const [importing, setImporting] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
@@ -85,6 +87,7 @@ export function CertQueryPage() {
     setProgressOpen(true);
     setProgressData({ total: 0, checked: 0 });
     const poll = async () => {
+      if (!paneActiveRef.current) return; // 标签不可见：跳过本轮请求，服务端查证照常进行
       try {
         const data = await getCertProgress();
         setProgressData(data);
@@ -208,6 +211,7 @@ export function CertQueryPage() {
       setBatchProgress(null);
       setBatchProgressOpen(true);
       const poll = async () => {
+        if (!paneActiveRef.current) return; // 标签不可见：跳过本轮请求，服务端查证照常进行
         try {
           const data = await getCertBatchProgress(batchId);
           setBatchProgress(data);

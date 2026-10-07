@@ -238,7 +238,10 @@ export function SubsidyClassWorkbench({ subsidy, onBack, onSubsidyChange }: Prop
         next.delete(instanceId);
         return next;
       });
+      message.success('已删除材料');
       invalidate();
+    } catch (e) {
+      message.error((e as Error).message || '删除材料失败');
     } finally {
       setDeletingId(null);
     }

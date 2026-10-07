@@ -517,8 +517,14 @@ public class ExamExamDetailApplicationService {
         entity.setScore(score);
         entity.setIsPrivate(0);
         entity.setStatus(1);
-        entity.setCheckStatus(0);
-        entity.setFinalCheckStatus(0);
+        // 导入即通过两级审核（用户口径）：审核人/时间一并落库，直接进入练习/同步学题库
+        LocalDateTime now = LocalDateTime.now();
+        entity.setCheckStatus(1);
+        entity.setCheckTime(now);
+        entity.setCheckUserId(userId.intValue());
+        entity.setFinalCheckStatus(1);
+        entity.setFinalCheckTime(now);
+        entity.setFinalCheckUserId(userId.intValue());
         entity.setSortNumber(1);
         entity.setUserId(userId.intValue());
         entity.setDeleted(0);

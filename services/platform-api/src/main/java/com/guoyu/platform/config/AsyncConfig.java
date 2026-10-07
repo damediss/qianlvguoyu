@@ -258,6 +258,29 @@ public class AsyncConfig {
     return executor;
   }
 
+  /**
+   * AI 同步学模考主观题并行判分池（《简答题作答与AI判分方案》§3.4 mock 三段式②）：
+   * 每道主观题 1 次 LLM 判分（单题超时 20s + 失败重试 1 次由编排侧控制）。
+   * core=max=5：单卷主观题上限 ai_review_mock_subjective_max 默认 5，整卷主观题可全部并行；
+   * queue=25 缓冲多学员并发交卷。
+   * AbortPolicy：队列满拒绝由编排侧捕获、该题按 0 分兜底并标注（踩坑 #12——禁用
+   * CallerRunsPolicy，否则拒绝时退化为 HTTP 线程同步判分，前端"卡死"；踩坑 #14——@Bean
+   * 返回类型必须 ThreadPoolTaskExecutor + 注入端 @Qualifier，避免多 Executor Bean 注入歧义）。
+   */
+  @Bean(name = "aiGradeMockExecutor")
+  public ThreadPoolTaskExecutor aiGradeMockExecutor() {
+    ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
+    executor.setCorePoolSize(5);
+    executor.setMaxPoolSize(5);
+    executor.setQueueCapacity(25);
+    executor.setThreadNamePrefix("ai-grade-mock-");
+    executor.setWaitForTasksToCompleteOnShutdown(true);
+    executor.setAwaitTerminationSeconds(60);
+    executor.setRejectedExecutionHandler(new ThreadPoolExecutor.AbortPolicy());
+    executor.initialize();
+    return executor;
+  }
+
   @Bean(name = "assessorLedgerImportExecutor")
   public ThreadPoolTaskExecutor assessorLedgerImportExecutor() {
     ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();

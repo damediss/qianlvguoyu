@@ -42,6 +42,7 @@ import {
 } from '@ant-design/icons';
 import * as trainApi from '../../api/training';
 import { useAuthStore } from '../../stores/authStore';
+import { usePaneActive } from '../../layouts/TabKeepAlive';
 import type {
   DemandPublicData,
   ThreeYearPlan,
@@ -155,6 +156,7 @@ function isPlatformAdminUser(roles: string[] | undefined, username: string | und
 
 export const SolutionPlanningPage: React.FC = () => {
   const queryClient = useQueryClient();
+  const paneActive = usePaneActive(); // 标签页不可见时暂停轮询（§3.6）
   const loginRole = useAuthStore((s) => s.currentUser?.loginRole);
   const roles = useAuthStore((s) => s.currentUser?.roles ?? []);
   const username = useAuthStore((s) => s.currentUser?.username);
@@ -215,6 +217,7 @@ export const SolutionPlanningPage: React.FC = () => {
     }),
     enabled: activeTab === 'three-year',
     refetchInterval: (query) => {
+      if (!paneActive) return false;
       const items = query.state.data?.items ?? [];
       return items.some((p) => planStatusCode(p.status) === 1) ? 3000 : false;
     },
@@ -235,6 +238,7 @@ export const SolutionPlanningPage: React.FC = () => {
     queryFn: () => trainApi.getThreeYearPlan(currentPlan!.id),
     enabled: detailOpen && !!currentPlan?.id && Number(currentPlan?.status ?? 0) < 2,
     refetchInterval: (query) => {
+      if (!paneActive) return false;
       const plan = query.state.data;
       return plan?.status === 1 ? 3000 : false;
     },

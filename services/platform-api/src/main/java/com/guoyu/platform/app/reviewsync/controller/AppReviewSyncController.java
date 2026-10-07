@@ -64,7 +64,7 @@ public class AppReviewSyncController {
     return LegacyAppResponse.ok("成功", reviewService.questions(userId, examId(body), questionIds));
   }
 
-  /** 7.4 单题作答 */
+  /** 7.4 单题作答（主观题支持自评兜底入参 selfAssessed/selfCorrect，可选） */
   @PostMapping("/answer")
   public LegacyAppResponse answer(@RequestBody Map<String, Object> body) {
     long userId = requireUserId();
@@ -76,7 +76,9 @@ public class AppReviewSyncController {
         str(body.get("roundType")),
         str(body.get("userAnswer")),
         intValue(body.get("useTimeSec")),
-        TenantContextHolder.getTenantId()));
+        TenantContextHolder.getTenantId(),
+        intValueOrNull(body.get("selfAssessed")),
+        intValueOrNull(body.get("selfCorrect"))));
   }
 
   /** 7.5 开始模考 */
@@ -181,6 +183,18 @@ public class AppReviewSyncController {
       return Integer.parseInt(String.valueOf(value));
     } catch (NumberFormatException e) {
       return 0;
+    }
+  }
+
+  /** 可选 int 入参：缺失/非数值返回 null（调用方按"未传"处理） */
+  private static Integer intValueOrNull(Object value) {
+    if (value == null) {
+      return null;
+    }
+    try {
+      return Integer.parseInt(String.valueOf(value));
+    } catch (NumberFormatException e) {
+      return null;
     }
   }
 

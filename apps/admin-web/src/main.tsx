@@ -95,6 +95,7 @@ import { CompetitionPracticalJudgeApp } from './pages/competition/CompetitionPra
 import { FormalExamPlayerApp } from './pages/formalExam/FormalExamPlayerApp';
 import { findCompetitionMenuCode, isCompetitionPath } from './routes/competitionRoute';
 import { useAuthStore } from './stores/authStore';
+import { useTabStore } from './stores/tabStore';
 import { NavigationBlockerProvider, useNavigationBlocker } from './hooks/useUnsavedChangesBlocker';
 
 // Pre-instantiate factory components for stable React references
@@ -576,6 +577,13 @@ function useBrowserPathname() {
 function CollectionManageShell({ taskId, examSessionId }: { taskId: string; examSessionId?: string }) {
   const [manageActive, setManageActive] = React.useState(true);
 
+  // §3.7 覆盖态标签：原子入口记录 overridePath（D1）——先取当前完整 URL 再入 store，
+  // openOverrideTab 全程不触碰 URL，杜绝"菜单 path 改写直达 URL"连锁丢页。
+  React.useEffect(() => {
+    const overrideUrl = window.location.pathname + window.location.search;
+    useTabStore.getState().openOverrideTab('certification_practical_collection', undefined, overrideUrl);
+  }, [taskId]);
+
   return (
     <AppShell
       pageMap={pageMap}
@@ -616,7 +624,12 @@ function CompetitionEventShell({ pathname }: { pathname: string }) {
 
   React.useEffect(() => {
     setEventActive(true);
-  }, [pathname]);
+    // §3.7 覆盖态标签（D1 + 幽灵标签守卫）：menuTree 未到时不开标签（避免兜底码开幽灵标签），
+    // 到达后按真实菜单码 openOverrideTab——原子记录 overridePath，全程不触碰 URL。
+    if (!menuTree.length) return;
+    const overrideUrl = window.location.pathname + window.location.search;
+    useTabStore.getState().openOverrideTab(competitionMenuKey, undefined, overrideUrl);
+  }, [pathname, competitionMenuKey, menuTree.length]);
 
   return (
     <AppShell
@@ -653,6 +666,9 @@ function ReviewSyncStatsShell({ pathname }: { pathname: string }) {
 
   React.useEffect(() => {
     setStatsActive(true);
+    // §3.7 覆盖态标签（D1）：先取当前完整 URL 再入 store，原子记录 overridePath 不触碰 URL
+    const overrideUrl = window.location.pathname + window.location.search;
+    useTabStore.getState().openOverrideTab('train_exam-list', undefined, overrideUrl);
   }, [pathname]);
 
   return (
@@ -684,6 +700,9 @@ function GraduationClassDetailShell({ pathname }: { pathname: string }) {
 
   React.useEffect(() => {
     setDetailActive(true);
+    // §3.7 覆盖态标签（D1）：先取当前完整 URL 再入 store，原子记录 overridePath 不触碰 URL
+    const overrideUrl = window.location.pathname + window.location.search;
+    useTabStore.getState().openOverrideTab('train_graduation_ceremony', undefined, overrideUrl);
   }, [pathname]);
 
   return (

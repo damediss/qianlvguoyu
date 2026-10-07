@@ -238,16 +238,18 @@ public class KnowledgeSqlExporter {
     String var = "@k_" + node.getNodeKey().replace('-', '_');
     String parentExpr = node.getParentId() == null || node.getParentId() == 0
         ? "0" : "@k_" + parentKeyOf(tree, node).replace('-', '_');
-    // L3 叶标题内嵌完整编码（对齐样例 "工匠精神培养A-A-A-001"）；骨架节点标题解析期已含编码
+    // 平台口径（对齐库内既有工种数据）：title=纯名称，series_no=节点编码（如 A-A-A-001）。
+    // 骨架节点标题解析期带编码尾巴（titleWithKey），此处剥掉；L3 标题本就纯净不动
+    String key = node.getNodeKey();
     String title = node.getTitle();
-    if (node.getNodeLevel() == 3 && !title.endsWith(node.getNodeKey())) {
-      title = title + node.getNodeKey();
+    if (title != null && key != null && title.endsWith(key)) {
+      title = title.substring(0, title.length() - key.length());
     }
     sql.append("INSERT INTO exam_knowledge_structure (use_type, type, cover, intro, course_id, ")
         .append("parent_id, title, series_no, level, important, user_id, status, sort_number, ")
         .append("tenant_id, create_time, deleted, org_id, org_name, amount) VALUES (0, 0, '', '', ")
         .append(courseVar).append(", ").append(parentExpr).append(", '").append(esc(title))
-        .append("', NULL, ").append(node.getNodeLevel()).append(", ")
+        .append("', '").append(esc(key)).append("', ").append(node.getNodeLevel()).append(", ")
         .append(node.getImportant() == null ? "NULL" : "'" + esc(node.getImportant()) + "'")
         .append(", ").append(options.operatorUserId())
         .append(", 1, 100, ").append(options.tenantId())
