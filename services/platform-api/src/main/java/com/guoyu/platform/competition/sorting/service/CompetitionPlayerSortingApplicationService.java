@@ -32,8 +32,6 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.stream.Collectors;
-import java.util.stream.IntStream;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -215,8 +213,13 @@ public class CompetitionPlayerSortingApplicationService {
       selected.add(candidate);
     }
 
-    Map<Integer, String> workstationByGroup = assignWorkstations(
-        entity.getGroupCount(), entity.getWorkstationCount());
+    if (entity.getWorkstationCount() == null || entity.getPlayersPerGroup() == null
+        || entity.getWorkstationCount() < 1
+        || entity.getWorkstationCount() > entity.getPlayersPerGroup()) {
+      throw new BusinessException(ErrorCode.UNPROCESSABLE_ENTITY,
+          "工位数量必须大于零且不能大于每组人数上限，请重新创建排序任务");
+    }
+    int workstationCount = entity.getWorkstationCount();
     Collections.shuffle(selected, RANDOM);
     Map<Long, String> mobileByProfileId = maskedMobileByProfileId(selected, new HashSet<>(selectedIds));
     List<CompetitionPlayerSortingAssignmentVO> assignments = new ArrayList<>(selected.size());
@@ -230,7 +233,8 @@ public class CompetitionPlayerSortingApplicationService {
         assignments.add(new CompetitionPlayerSortingAssignmentVO(
             candidate.contestantProfileId(), candidate.contestantNo(), candidate.name(),
             mobileByProfileId.get(parseId(candidate.contestantProfileId())),
-            groupNo, groupOrder, workstationByGroup.get(groupNo)));
+            groupNo, groupOrder,
+            CompetitionPlayerSortingWorkstations.assign(groupOrder, workstationCount)));
       }
     }
 
@@ -276,9 +280,9 @@ public class CompetitionPlayerSortingApplicationService {
     if (req.groupCount() < 1 || req.workstationCount() < 1 || req.playersPerGroup() < 1) {
       throw new BusinessException(ErrorCode.UNPROCESSABLE_ENTITY, "组数、工位数和每组人数上限必须大于零");
     }
-    if (req.workstationCount() < req.groupCount()) {
+    if (req.workstationCount() > req.playersPerGroup()) {
       throw new BusinessException(ErrorCode.UNPROCESSABLE_ENTITY,
-          "工位数量不能少于组数，每组至少需要一个工位");
+          "工位数量不能大于每组人数上限");
     }
   }
 
@@ -405,22 +409,6 @@ public class CompetitionPlayerSortingApplicationService {
       throw new BusinessException(ErrorCode.UNPROCESSABLE_ENTITY,
           "所选选手中包含不属于当前赛段的选手，请刷新名单后重试");
     }
-  }
-
-  private Map<Integer, String> assignWorkstations(int groupCount, int workstationCount) {
-    Map<Integer, String> result = new HashMap<>();
-    int perGroup = workstationCount / groupCount;
-    int remainder = workstationCount % groupCount;
-    int nextStation = 1;
-    for (int groupNo = 1; groupNo <= groupCount; groupNo++) {
-      int assignedCount = perGroup + (groupNo <= remainder ? 1 : 0);
-      List<String> stations = IntStream.range(nextStation, nextStation + assignedCount)
-          .mapToObj(number -> number + "号工位")
-          .toList();
-      result.put(groupNo, String.join("、", stations));
-      nextStation += assignedCount;
-    }
-    return result;
   }
 
   private CompetitionPlayerSortingTaskEntity requireTask(Long taskId) {

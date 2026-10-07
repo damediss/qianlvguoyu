@@ -7,8 +7,10 @@ import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import org.apache.poi.ss.usermodel.Cell;
 import org.apache.poi.ss.usermodel.CellType;
 import org.apache.poi.ss.usermodel.Row;
@@ -110,9 +112,11 @@ public class CompetitionPlayerSortingWorkbookExportService {
       sheet.shiftRows(noteRow, sheet.getLastRowNum(), lastDataRow - noteRow + 1);
     }
 
-    Map<Integer, String> workstationByGroup = new LinkedHashMap<>();
+    Map<Integer, Set<String>> workstationByGroup = new LinkedHashMap<>();
     for (CompetitionPlayerSortingAssignmentVO assignment : assignments) {
-      workstationByGroup.putIfAbsent(assignment.groupNo(), assignment.workstation());
+      workstationByGroup
+          .computeIfAbsent(assignment.groupNo(), key -> new LinkedHashSet<>())
+          .add(assignment.workstation());
     }
     Row styleRow = sheet.getRow(firstDataRow);
     for (int groupNo = 1; groupNo <= groupCount; groupNo++) {
@@ -123,7 +127,8 @@ public class CompetitionPlayerSortingWorkbookExportService {
       }
       copyRowStyle(styleRow, row, 3);
       setString(row, 0, groupLabel(groupNo));
-      setString(row, 1, workstationByGroup.getOrDefault(groupNo, ""));
+      setString(row, 1, String.join("、",
+          workstationByGroup.getOrDefault(groupNo, Set.of())));
       setString(row, 2, "");
     }
   }

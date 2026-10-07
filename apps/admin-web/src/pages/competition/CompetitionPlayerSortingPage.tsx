@@ -113,6 +113,23 @@ function maximumSortingPlayerCount(groupCount: number, playersPerGroup: number) 
   return Math.min(groupCount * playersPerGroup, MAX_SORTING_PLAYER_COUNT);
 }
 
+function workstationLoadHint(playersPerGroup: number, workstationCount: number) {
+  if (playersPerGroup < 1 || workstationCount < 1 || workstationCount > playersPerGroup) return '';
+  const base = Math.floor(playersPerGroup / workstationCount);
+  const extra = playersPerGroup % workstationCount;
+  if (workstationCount === playersPerGroup) {
+    return '每组满员时一人对应一个工位，按出场顺序从第一工位排到最后一工位。本组实际人数更少时，多出的工位空置。';
+  }
+  if (workstationCount === 1) {
+    return '每组只有 1 个工位，本组选手全部安排在第一工位。';
+  }
+  if (extra === 0) {
+    return `每组满员时，每个工位 ${base} 人，按出场顺序轮转。本组实际人数更少时，仍按人数轮转，排不到的工位空置。`;
+  }
+  const rest = workstationCount - extra;
+  return `每组满员 ${playersPerGroup} 人不能被 ${workstationCount} 个工位整除。按出场顺序轮转后，前 ${extra} 个工位各 ${base + 1} 人，后 ${rest} 个工位各 ${base} 人，相邻工位相差不超过 1 人。实际人数少于上限时仍按本组人数轮转，排不到的工位空置。`;
+}
+
 export function CompetitionPlayerSortingPage({
   stageId,
   stageName,
@@ -166,8 +183,14 @@ export function CompetitionPlayerSortingPage({
     && selectedIds.length <= maximumPlayerCount;
   const candidateCountInsufficient = candidatesQuery.isSuccess
     && candidates.length < minimumPlayerCount;
-  const enoughWorkstations = effectiveGroupCount > 0
-    && effectiveWorkstationCount >= effectiveGroupCount;
+  const workstationWithinLimit = effectivePlayersPerGroup > 0
+    && effectiveWorkstationCount >= 1
+    && effectiveWorkstationCount <= effectivePlayersPerGroup;
+  const configurationReady = effectiveGroupCount > 0 && workstationWithinLimit;
+  const draftWorkstationHint = workstationLoadHint(
+    Number(playersPerGroup || 0),
+    Number(workstationCount || 0),
+  );
 
   const createMutation = useMutation({
     mutationFn: (taskConfiguration: SortingConfiguration) => {
@@ -256,8 +279,8 @@ export function CompetitionPlayerSortingPage({
 
   const taskColumns = [
     { title: '组数', dataIndex: 'groupCount', width: 70 },
-    { title: '工位数', dataIndex: 'workstationCount', width: 80 },
     { title: '每组人数上限', dataIndex: 'playersPerGroup', width: 105 },
+    { title: '每组工位', dataIndex: 'workstationCount', width: 90 },
     { title: '选手数', dataIndex: 'playerCount', width: 80 },
     {
       title: '任务状态',
@@ -368,7 +391,7 @@ export function CompetitionPlayerSortingPage({
   };
 
   const saveSelectionAndReview = () => {
-    if (!countMatches || !enoughWorkstations) return;
+    if (!countMatches || !workstationWithinLimit) return;
     selectionMutation.mutate(selectedIds);
   };
 
@@ -428,7 +451,7 @@ export function CompetitionPlayerSortingPage({
               <Button
                 type="primary"
                 loading={createMutation.isPending}
-                disabled={!enoughWorkstations}
+                disabled={!configurationReady}
                 onClick={() => void createTaskAndOpenSelection()}
               >
                 创建任务并选择选手
@@ -438,7 +461,7 @@ export function CompetitionPlayerSortingPage({
               <Button
                 type="primary"
                 loading={selectionMutation.isPending}
-                disabled={!countMatches || !enoughWorkstations || !canCreate}
+                disabled={!countMatches || !workstationWithinLimit || !canCreate}
                 onClick={saveSelectionAndReview}
               >保存选手并确认</Button>
             )}
@@ -449,7 +472,7 @@ export function CompetitionPlayerSortingPage({
                   <Button
                     type="primary"
                     loading={randomizeMutation.isPending}
-                    disabled={!createdTaskId}
+                    disabled={!createdTaskId || !workstationWithinLimit}
                     onClick={() => createdTaskId && randomizeMutation.mutate(createdTaskId)}
                   >确认并执行随机分组</Button>
                 )}
@@ -474,27 +497,52 @@ export function CompetitionPlayerSortingPage({
               type="info"
               showIcon
               message={`当前赛段：${stageName || stageId}`}
-              description="设置组数、工位数和每组人数上限。选手至少与组数相同以保证每组有人；人数不整除时，各组人数尽量均衡，差不超过 1 人。"
+              description="先设置组数和每组人数上限，再设置每组工位数量。工位数量不能大于每组人数上限。选手至少与组数相同以保证每组有人；人数不整除组数时，各组人数尽量均衡，相差不超过 1 人。"
             />
             <Form<SortingFormValues> form={form} layout="vertical" requiredMark>
               <Space size={20} wrap align="start">
                 <Form.Item name="groupCount" label="组数量" rules={[{ required: true, message: '请输入组数量' }]}>
-                  <InputNumber min={1} max={200} precision={0} placeholder="例如 8" style={{ width: 180 }} />
-                </Form.Item>
-                <Form.Item name="workstationCount" label="工位数量" rules={[{ required: true, message: '请输入工位数量' }]}>
-                  <InputNumber min={1} max={5000} precision={0} placeholder="例如 16" style={{ width: 180 }} />
+                  <InputNumber min={1} max={200} precision={0} placeholder="例如 5" style={{ width: 180 }} />
                 </Form.Item>
                 <Form.Item name="playersPerGroup" label="每组人数上限" rules={[{ required: true, message: '请输入每组人数上限' }]}>
-                  <InputNumber min={1} max={5000} precision={0} placeholder="例如 5" style={{ width: 180 }} />
+                  <InputNumber min={1} max={5000} precision={0} placeholder="例如 9" style={{ width: 180 }} />
+                </Form.Item>
+                <Form.Item
+                  name="workstationCount"
+                  label="工位数量"
+                  dependencies={['playersPerGroup']}
+                  rules={[
+                    { required: true, message: '请输入工位数量' },
+                    ({ getFieldValue }) => ({
+                      validator(_, value) {
+                        const cap = getFieldValue('playersPerGroup');
+                        if (value == null || cap == null || Number(value) <= Number(cap)) {
+                          return Promise.resolve();
+                        }
+                        return Promise.reject(new Error('工位数量不能大于每组人数上限'));
+                      },
+                    }),
+                  ]}
+                >
+                  <InputNumber
+                    min={1}
+                    max={Number(playersPerGroup) > 0 ? Number(playersPerGroup) : 5000}
+                    precision={0}
+                    placeholder="不超过每组人数上限"
+                    style={{ width: 180 }}
+                  />
                 </Form.Item>
               </Space>
             </Form>
-            {groupCount && workstationCount && workstationCount < groupCount && (
-              <Alert type="warning" showIcon message="工位数量不能少于组数，请保证每组至少有一个工位。" />
+            {playersPerGroup && workstationCount && workstationCount > playersPerGroup && (
+              <Alert type="warning" showIcon message="工位数量不能大于每组人数上限。请先确定每组人数上限，再填写不超过该上限的工位数量。" />
             )}
             <Typography.Text type="secondary">
-              工位会按组顺序尽量均匀分配；每个赛段分别创建和保存排序任务，单次最多选择 5000 名选手。
+              工位按每组单独编号，组内按出场顺序轮转。工位数等于人数上限时一人一工位；工位数为 1 时全组共用第一工位。每个赛段分别创建排序任务，单次最多选择 5000 名选手。
             </Typography.Text>
+            {draftWorkstationHint && (
+              <Typography.Text type="secondary">{draftWorkstationHint}</Typography.Text>
+            )}
           </Space>
         )}
 
@@ -515,8 +563,8 @@ export function CompetitionPlayerSortingPage({
                     ? `至少选择 ${minimumPlayerCount} 人，保证每组至少 1 人。`
                     : `最多选择 ${maximumPlayerCount} 人（每组不超过 ${effectivePlayersPerGroup} 人，单次上限 5000 人）。`}
             />
-            {groupCount && workstationCount && workstationCount < groupCount && (
-              <Alert type="warning" showIcon message="工位数量不能少于组数。请返回上一步调整任务配置。" />
+            {!workstationWithinLimit && (
+              <Alert type="warning" showIcon message="工位数量不能大于每组人数上限。请删除该任务后重新创建。" />
             )}
             <Space wrap>
               <Button
@@ -548,20 +596,27 @@ export function CompetitionPlayerSortingPage({
               type="success"
               showIcon
               message="任务配置与选手人数已核对"
-              description={`已创建并保存任务 ${createdTaskId || ''}。确认后将对选手进行随机排序，并按组分配工位。`}
+              description={`已创建并保存任务 ${createdTaskId || ''}。确认后将对选手进行随机排序，并在每组内按出场顺序轮转工位。`}
             />
+            {!workstationWithinLimit && (
+              <Alert type="warning" showIcon message="工位数量不能大于每组人数上限。请删除该任务后重新创建。" />
+            )}
             <Descriptions bordered size="small" column={2}>
               <Descriptions.Item label="所属赛段">{stageName || stageId}</Descriptions.Item>
               <Descriptions.Item label="选手人数">{savedPlayerCount} 人</Descriptions.Item>
               <Descriptions.Item label="组数量">{configuration.groupCount} 组</Descriptions.Item>
-              <Descriptions.Item label="工位数量">{configuration.workstationCount} 个</Descriptions.Item>
               <Descriptions.Item label="每组人数上限">{configuration.playersPerGroup} 人</Descriptions.Item>
+              <Descriptions.Item label="工位数量">{configuration.workstationCount} 个</Descriptions.Item>
               <Descriptions.Item label="分组人数校验">
                 已选 {savedPlayerCount} 人；允许 {configuration.groupCount}–{maximumSortingPlayerCount(configuration.groupCount, configuration.playersPerGroup)} 人，通过
               </Descriptions.Item>
               <Descriptions.Item label="预计各组人数" span={2}>
                 {groupSizePlan(savedPlayerCount, configuration.groupCount)
                   .map((size, index) => `第${index + 1}组 ${size}人`).join('；')}
+              </Descriptions.Item>
+              <Descriptions.Item label="工位分配" span={2}>
+                {workstationLoadHint(configuration.playersPerGroup, configuration.workstationCount)
+                  || '工位数量不能大于每组人数上限。'}
               </Descriptions.Item>
             </Descriptions>
             {selectedCandidates.length > 0 ? (
@@ -610,7 +665,7 @@ export function CompetitionPlayerSortingPage({
             <>
               {taskDetailQuery.data && (
                 <Alert style={{ marginBottom: 12 }} type="success" showIcon
-                  message={`共 ${taskDetailQuery.data.playerCount} 人，${taskDetailQuery.data.groupCount} 组（${groupSizePlan(taskDetailQuery.data.playerCount, taskDetailQuery.data.groupCount).map((size, index) => `第${index + 1}组${size}人`).join('、')}）；每组人数上限 ${taskDetailQuery.data.playersPerGroup} 人；工位总数 ${taskDetailQuery.data.workstationCount}。`} />
+                  message={`共 ${taskDetailQuery.data.playerCount} 人，${taskDetailQuery.data.groupCount} 组（${groupSizePlan(taskDetailQuery.data.playerCount, taskDetailQuery.data.groupCount).map((size, index) => `第${index + 1}组${size}人`).join('、')}）；每组人数上限 ${taskDetailQuery.data.playersPerGroup} 人；每组工位 ${taskDetailQuery.data.workstationCount} 个，按出场顺序轮转。`} />
               )}
               <Table<CompetitionPlayerSortingAssignment>
                 rowKey={(record) => `${record.groupNo}-${record.groupOrder}-${record.contestantProfileId}`}
