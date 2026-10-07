@@ -136,7 +136,7 @@ public interface ReviewSyncStatsMapper {
   List<Map<String, Object>> knowledgeAgg(@Param("examId") Long examId,
       @Param("platformUserId") Long platformUserId);
 
-  /** 一批计划的作答聚合（学员明细表组装用） */
+  /** 一批计划的作答聚合（学员明细表组装用）；lastAnswerDate=真实最后作答日（展示口径） */
   @Select("""
       <script>
       SELECT plan_id AS planId,
@@ -144,7 +144,8 @@ public interface ReviewSyncStatsMapper {
              COALESCE(SUM(is_correct), 0) AS corrects,
              COALESCE(SUM(round_type = 'new'), 0) AS newAnswers,
              COALESCE(SUM(round_type = 'review'), 0) AS reviewAnswers,
-             COALESCE(SUM(round_type = 'mock'), 0) AS mockAnswers
+             COALESCE(SUM(round_type = 'mock'), 0) AS mockAnswers,
+             MAX(DATE(created_at)) AS lastAnswerDate
       FROM ai_review_answer
       WHERE deleted = 0 AND plan_id IN
       <foreach collection="planIds" item="pid" open="(" separator="," close=")">#{pid}</foreach>

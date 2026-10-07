@@ -396,7 +396,9 @@ public class ReviewSyncStatsApplicationService {
       row.put("yellowCnt", wrongs != null ? asLong(wrongs.get("yellowCnt")) : 0);
       row.put("greenCnt", wrongs != null ? asLong(wrongs.get("greenCnt")) : 0);
       row.put("starCnt", wrongs != null ? asLong(wrongs.get("starCnt")) : 0);
-      row.put("lastActiveDate", plan.getLastActiveDate() != null ? plan.getLastActiveDate().toString() : null);
+      // 展示口径=真实最后作答日；plan.lastActiveDate 是"任务覆盖到哪天"（超前完成可为未来日期，D7 §15.1-②），仅供中断检测，不下发
+      Object lastAnswerDate = answers != null ? answers.get("lastAnswerDate") : null;
+      row.put("lastActiveDate", lastAnswerDate != null ? lastAnswerDate.toString() : null);
       rows.add(row);
     }
     return rows;
