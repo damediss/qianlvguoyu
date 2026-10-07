@@ -2248,7 +2248,30 @@ public class ReviewPlanApplicationService {
     view.put("reviewTarget", reviewListForDay(plan, day).size());
     view.put("newDone", day.getNewDone());
     view.put("reviewDone", day.getReviewDone());
-    view.put("mock", mockView(day));
+    view.put("mock", mockViewWithStage2Parallel(plan, day));
+    return view;
+  }
+
+  /**
+   * 今日模考视图：阶段 3 的天有物化时预组的卷（mockPaperId 驱动，原口径）；
+   * 阶段 2（定向爆破）起开放并行动模考——不预组卷、交卷不标记当日完成（清算照常），
+   * 入口进入仿真模考页后由 mockStart 现场组卷，不限次（现状口径）。
+   * 开关：sys_dict ai_review_mock_stage2_enabled（缺省开；置 0 关闭，安静回退到仅阶段 3 开放）。
+   */
+  Map<String, Object> mockViewWithStage2Parallel(AiReviewPlanEntity plan, AiReviewPlanDayEntity day) {
+    Map<String, Object> paperView = mockView(day);
+    if (paperView != null) {
+      return paperView;
+    }
+    Integer stage = day.getStage();
+    if (stage == null || stage < 2) {
+      return null;
+    }
+    if (dictInt("ai_review_mock_stage2_enabled", 1, plan.getTenantId()) != 1) {
+      return null;
+    }
+    Map<String, Object> view = new LinkedHashMap<>();
+    view.put("available", true);
     return view;
   }
 
