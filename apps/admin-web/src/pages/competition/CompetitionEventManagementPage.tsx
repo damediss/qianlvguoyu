@@ -37,6 +37,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   createCompetitionEvent,
   createCompetitionEventWorkType,
+  deleteCompetitionEventWorkType,
   getCompetitionEvent,
   listCompetitionEventWorkTypes,
   listCompetitionEventWorkTypeLevels,
@@ -996,12 +997,7 @@ function CompetitionEventWorkTypeCard({
 
       for (const existing of eventWorkTypesQuery.data || []) {
         if (existing.status !== 'active' || selectedWorkTypeIds.includes(idValue(existing.workTypeId))) continue;
-        await updateCompetitionEventWorkType(eventId, existing.id, {
-          workTypeId: Number(existing.workTypeId),
-          displayName: existing.displayName || existing.workTypeName || undefined,
-          status: 'inactive',
-          sortOrder: existing.sortOrder,
-        });
+        await deleteCompetitionEventWorkType(eventId, existing.id);
       }
     },
     onSuccess: () => {

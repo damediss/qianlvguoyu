@@ -12,9 +12,14 @@ import com.guoyu.platform.common.exception.BusinessException;
 import com.guoyu.platform.competition.dto.CompetitionEventWorkTypeCreateReq;
 import com.guoyu.platform.competition.dto.CompetitionEventWorkTypeUpdateReq;
 import com.guoyu.platform.competition.entity.CompetitionEventWorkTypeEntity;
+import com.guoyu.platform.competition.entity.CompetitionEventWorkTypeLevelEntity;
+import com.guoyu.platform.competition.entity.CompetitionEventWorkTypeStageEntity;
+import com.guoyu.platform.competition.mapper.CompetitionEventWorkTypeLevelMapper;
 import com.guoyu.platform.competition.mapper.CompetitionEventWorkTypeMapper;
+import com.guoyu.platform.competition.mapper.CompetitionEventWorkTypeStageMapper;
 import com.guoyu.platform.exam.entity.ExamWorkTypeEntity;
 import com.guoyu.platform.exam.mapper.ExamWorkTypeMapper;
+import java.util.List;
 import java.util.concurrent.atomic.AtomicLong;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
@@ -31,7 +36,10 @@ class CompetitionEventWorkTypeDomainServiceTest {
   @Test
   void bindsDifferentWorkTypesAndRejectsDuplicateInSameEvent() {
     when(examWorkTypeMapper.selectOne(any())).thenReturn(source(10, "焊工"), source(11, "电工"));
-    when(mapper.selectCount(any())).thenReturn(0L, 0L, 1L);
+    CompetitionEventWorkTypeEntity occupied = new CompetitionEventWorkTypeEntity();
+    occupied.setId(100L);
+    occupied.setStatus("active");
+    when(mapper.selectOne(any())).thenReturn(null, null, occupied);
     AtomicLong ids = new AtomicLong(100);
     doAnswer(invocation -> {
       CompetitionEventWorkTypeEntity entity = invocation.getArgument(0);
@@ -109,6 +117,112 @@ class CompetitionEventWorkTypeDomainServiceTest {
     assertThat(updated.getStatus()).isEqualTo("active");
     assertThat(updated.getSortOrder()).isEqualTo(7);
     verify(mapper).updateById(existing);
+  }
+
+  @Test
+  void listHidesInactiveWorkTypes() {
+    CompetitionEventWorkTypeEntity active = binding(1L, "active", "铝电解槽操作工");
+    CompetitionEventWorkTypeEntity inactive = binding(2L, "inactive", "电解槽操作工");
+    when(mapper.selectList(any())).thenReturn(List.of(active, inactive));
+
+    assertThat(service.list(1L, 200L))
+        .extracting(CompetitionEventWorkTypeEntity::getDisplayName)
+        .containsExactly("铝电解槽操作工");
+  }
+
+  @Test
+  void createReactivatesInactiveBinding() {
+    CompetitionEventWorkTypeEntity retired = binding(300L, "inactive", "电解槽操作工");
+    retired.setWorkTypeId(59L);
+    when(examWorkTypeMapper.selectOne(any())).thenReturn(source(59, "电解槽操作工"));
+    when(mapper.selectOne(any())).thenReturn(retired);
+    when(mapper.updateById(any(CompetitionEventWorkTypeEntity.class))).thenReturn(1);
+
+    CompetitionEventWorkTypeEntity revived = service.create(
+        1L, 200L, new CompetitionEventWorkTypeCreateReq(59L, null, "active", 2));
+
+    assertThat(revived.getId()).isEqualTo(300L);
+    assertThat(revived.getStatus()).isEqualTo("active");
+    assertThat(revived.getSortOrder()).isEqualTo(2);
+    verify(mapper, never()).insert(any(CompetitionEventWorkTypeEntity.class));
+  }
+
+  @Test
+  void removingUnusedWorkTypeDeletesLevelsAndStageLinks() {
+    CompetitionEventWorkTypeLevelMapper levelMapper = Mockito.mock(CompetitionEventWorkTypeLevelMapper.class);
+    CompetitionEventWorkTypeStageMapper stageMapper = Mockito.mock(CompetitionEventWorkTypeStageMapper.class);
+    CompetitionEventWorkTypeDomainService removing = new CompetitionEventWorkTypeDomainService(
+        mapper, examWorkTypeMapper, levelMapper, stageMapper);
+    when(mapper.selectOne(any())).thenReturn(binding(300L, "inactive", "电解槽操作工"));
+    when(mapper.countOperationalReferences(1L, 300L)).thenReturn(0L);
+    CompetitionEventWorkTypeLevelEntity level = new CompetitionEventWorkTypeLevelEntity();
+    level.setId(400L);
+    level.setStagePlanStatus("draft");
+    CompetitionEventWorkTypeStageEntity stageLink = new CompetitionEventWorkTypeStageEntity();
+    stageLink.setId(500L);
+    when(levelMapper.selectList(any())).thenReturn(List.of(level));
+    when(stageMapper.selectList(any())).thenReturn(List.of(stageLink));
+    when(levelMapper.deleteById(400L)).thenReturn(1);
+    when(stageMapper.deleteById(500L)).thenReturn(1);
+    when(mapper.deleteById(300L)).thenReturn(1);
+
+    removing.remove(1L, 200L, 300L);
+
+    verify(stageMapper).deleteById(500L);
+    verify(levelMapper).deleteById(400L);
+    verify(mapper).deleteById(300L);
+  }
+
+  @Test
+  void removingWorkTypeWithOperationalRowsKeepsTheBinding() {
+    CompetitionEventWorkTypeLevelMapper levelMapper = Mockito.mock(CompetitionEventWorkTypeLevelMapper.class);
+    CompetitionEventWorkTypeStageMapper stageMapper = Mockito.mock(CompetitionEventWorkTypeStageMapper.class);
+    CompetitionEventWorkTypeDomainService removing = new CompetitionEventWorkTypeDomainService(
+        mapper, examWorkTypeMapper, levelMapper, stageMapper);
+    when(mapper.selectOne(any())).thenReturn(binding(300L, "active", "电解槽操作工"));
+    when(mapper.countOperationalReferences(1L, 300L)).thenReturn(2L);
+
+    assertThatThrownBy(() -> removing.remove(1L, 200L, 300L))
+        .isInstanceOf(BusinessException.class)
+        .hasMessage("该工种已有赛段、报名或试题等业务数据，不能移除");
+    verify(mapper, never()).deleteById(any(java.io.Serializable.class));
+    verify(levelMapper, never()).deleteById(any(java.io.Serializable.class));
+  }
+
+  @Test
+  void markingWorkTypeInactiveRemovesItInsteadOfLeavingASelectableRow() {
+    CompetitionEventWorkTypeLevelMapper levelMapper = Mockito.mock(CompetitionEventWorkTypeLevelMapper.class);
+    CompetitionEventWorkTypeStageMapper stageMapper = Mockito.mock(CompetitionEventWorkTypeStageMapper.class);
+    CompetitionEventWorkTypeDomainService removing = new CompetitionEventWorkTypeDomainService(
+        mapper, examWorkTypeMapper, levelMapper, stageMapper);
+    CompetitionEventWorkTypeEntity existing = binding(300L, "active", "电解槽操作工");
+    when(mapper.selectOne(any())).thenReturn(existing);
+    when(mapper.countOperationalReferences(1L, 300L)).thenReturn(0L);
+    when(levelMapper.selectList(any())).thenReturn(List.of());
+    when(stageMapper.selectList(any())).thenReturn(List.of());
+    when(mapper.deleteById(300L)).thenReturn(1);
+
+    CompetitionEventWorkTypeEntity updated = removing.update(
+        1L, 200L, 300L,
+        new CompetitionEventWorkTypeUpdateReq(59L, "电解槽操作工", "inactive", 0));
+
+    assertThat(updated.getStatus()).isEqualTo("inactive");
+    verify(mapper).deleteById(300L);
+    verify(mapper, never()).updateById(any(CompetitionEventWorkTypeEntity.class));
+  }
+
+  private CompetitionEventWorkTypeEntity binding(Long id, String status, String displayName) {
+    CompetitionEventWorkTypeEntity entity = new CompetitionEventWorkTypeEntity();
+    entity.setId(id);
+    entity.setTenantId(1L);
+    entity.setEventId(200L);
+    entity.setWorkTypeId(59L);
+    entity.setDisplayName(displayName);
+    entity.setStatus(status);
+    entity.setSortOrder(0);
+    entity.setStagePlanStatus("draft");
+    entity.setDeleted(0);
+    return entity;
   }
 
   private ExamWorkTypeEntity source(int id, String title) {

@@ -97,6 +97,15 @@ public class CompetitionEventWorkTypeApplicationService {
         principal.getTenantId(), eventId, eventWorkTypeId, req));
   }
 
+  @Transactional
+  public void delete(Long eventId, Long eventWorkTypeId) {
+    PlatformUserPrincipal principal = currentUser();
+    CompetitionEventEntity event = accessibleEvent(principal, eventId, true);
+    requireDraftEvent(event);
+    lockedDraftOrFallback(principal, eventId, event);
+    domainService.remove(principal.getTenantId(), eventId, eventWorkTypeId);
+  }
+
   private CompetitionEventEntity lockedDraftOrFallback(
       PlatformUserPrincipal principal, Long eventId, CompetitionEventEntity fallback) {
     CompetitionEventEntity locked = eventService.lockForUpdate(principal.getTenantId(), eventId);

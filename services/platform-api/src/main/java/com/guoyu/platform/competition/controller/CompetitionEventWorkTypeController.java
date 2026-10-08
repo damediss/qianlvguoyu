@@ -10,6 +10,7 @@ import jakarta.validation.Valid;
 import java.util.List;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.validation.annotation.Validated;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -60,5 +61,18 @@ public class CompetitionEventWorkTypeController {
       @PathVariable Long eventWorkTypeId,
       @Valid @RequestBody CompetitionEventWorkTypeUpdateReq req) {
     return ApiResponse.ok(service.update(eventId, eventWorkTypeId, req));
+  }
+
+  @DeleteMapping("/{eventWorkTypeId}")
+  @PreAuthorize("hasAuthority('competition:event-work-type:manage')")
+  @AuditLog(
+      module = "competition",
+      action = "event-work-type:delete",
+      targetType = "competition_event_work_type")
+  public ApiResponse<Void> delete(
+      @PathVariable Long eventId,
+      @PathVariable Long eventWorkTypeId) {
+    service.delete(eventId, eventWorkTypeId);
+    return ApiResponse.ok(null);
   }
 }

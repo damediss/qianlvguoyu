@@ -998,10 +998,11 @@ export function publishCompetitionStageSettlement(settlementId: CompetitionId) {
   return unwrap<CompetitionStageSettlement>(apiClient.post(`/competition/stage-settlements/${settlementId}/publish`));
 }
 
-export function listCompetitionEventWorkTypes(eventId: CompetitionId) {
-  return unwrap<CompetitionEventWorkType[]>(
+export async function listCompetitionEventWorkTypes(eventId: CompetitionId) {
+  const rows = await unwrap<CompetitionEventWorkType[]>(
     apiClient.get(`/competition/events/${eventId}/work-types`),
   );
+  return (rows ?? []).filter((item) => item.status === 'active');
 }
 
 export function listCompetitionEventWorkTypeLevels(
@@ -1127,6 +1128,15 @@ export function updateCompetitionEventWorkType(
 ) {
   return unwrap<CompetitionEventWorkType>(
     apiClient.put(`/competition/events/${eventId}/work-types/${eventWorkTypeId}`, payload),
+  );
+}
+
+export function deleteCompetitionEventWorkType(
+  eventId: CompetitionId,
+  eventWorkTypeId: CompetitionId,
+) {
+  return unwrap<void>(
+    apiClient.delete(`/competition/events/${eventId}/work-types/${eventWorkTypeId}`),
   );
 }
 
