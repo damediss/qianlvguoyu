@@ -10,6 +10,7 @@ public class CompetitionSubjectScoreImportRowEntity extends BaseEntity {
   private Long batchId;
   private Integer rowNo;
   private String idCardNo;
+  private String playerName;
   private Long contestantMemberId;
   private BigDecimal rawScore;
   private String externalReference;
@@ -25,6 +26,8 @@ public class CompetitionSubjectScoreImportRowEntity extends BaseEntity {
   public void setRowNo(Integer value) { rowNo = value; }
   public String getIdCardNo() { return idCardNo; }
   public void setIdCardNo(String value) { idCardNo = value; }
+  public String getPlayerName() { return playerName; }
+  public void setPlayerName(String value) { playerName = value; }
   public Long getContestantMemberId() { return contestantMemberId; }
   public void setContestantMemberId(Long value) { contestantMemberId = value; }
   public BigDecimal getRawScore() { return rawScore; }

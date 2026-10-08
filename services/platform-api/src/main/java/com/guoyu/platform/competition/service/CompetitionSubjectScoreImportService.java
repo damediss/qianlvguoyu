@@ -34,7 +34,6 @@ import java.time.format.DateTimeParseException;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.HexFormat;
-import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -113,7 +112,7 @@ public class CompetitionSubjectScoreImportService {
         ByteArrayOutputStream output = new ByteArrayOutputStream()) {
       Sheet sheet = workbook.createSheet(label(type) + "成绩");
       Row header = sheet.createRow(0);
-      String[] names = {"身份证号", label(type) + "成绩"};
+      String[] names = {"姓名", "身份证号", label(type) + "成绩"};
       for (int i = 0; i < names.length; i++) {
         header.createCell(i).setCellValue(names[i]);
         sheet.setColumnWidth(i, i == 0 ? 24 * 256 : 18 * 256);
@@ -193,24 +192,21 @@ public class CompetitionSubjectScoreImportService {
     try (Workbook workbook = new XSSFWorkbook();
         ByteArrayOutputStream output = new ByteArrayOutputStream()) {
       Sheet sheet = workbook.createSheet("错误明细");
-      String[] names = {"原行号", "身份证号", typeLabel + "成绩", "外部流水号", "取得时间", "备注", "错误原因"};
+      String[] names = {"原行号", "姓名", "身份证号", typeLabel + "成绩", "错误原因"};
       Row header = sheet.createRow(0);
       for (int i = 0; i < names.length; i++) {
         header.createCell(i).setCellValue(names[i]);
-        sheet.setColumnWidth(i, i == 6 ? 40 * 256 : 22 * 256);
+        sheet.setColumnWidth(i, i == 4 ? 40 * 256 : 22 * 256);
       }
       int index = 1;
       for (CompetitionSubjectScoreImportRowEntity source : invalidRows) {
         Row row = sheet.createRow(index++);
         row.createCell(0).setCellValue(source.getRowNo());
-        row.createCell(1).setCellValue(nullToEmpty(source.getIdCardNo()));
-        row.createCell(2).setCellValue(source.getRawScore() == null
+        row.createCell(1).setCellValue(nullToEmpty(source.getPlayerName()));
+        row.createCell(2).setCellValue(nullToEmpty(source.getIdCardNo()));
+        row.createCell(3).setCellValue(source.getRawScore() == null
             ? "" : source.getRawScore().toPlainString());
-        row.createCell(3).setCellValue(nullToEmpty(source.getExternalReference()));
-        row.createCell(4).setCellValue(source.getAchievedAt() == null
-            ? "" : source.getAchievedAt().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")));
-        row.createCell(5).setCellValue(nullToEmpty(source.getRemark()));
-        row.createCell(6).setCellValue(nullToEmpty(source.getErrorMessage()));
+        row.createCell(4).setCellValue(nullToEmpty(source.getErrorMessage()));
       }
       workbook.write(output);
       return output.toByteArray();
@@ -405,7 +401,7 @@ public class CompetitionSubjectScoreImportService {
       CompetitionSubjectScoreImportBatchEntity batch = batchMapper.selectById(batchId);
       if (batch == null) return;
       byte[] bytes = fileApplicationService.readFileBytesById(batch.getSourceFileId());
-      Map<String, Set<Long>> membersByHash = contestantsByIdCardHash(batch);
+      Map<String, Map<Long, String>> membersByHash = contestantsByIdCardHash(batch);
       Set<String> duplicates = new HashSet<>();
       int total = 0;
       int valid = 0;
@@ -413,38 +409,48 @@ public class CompetitionSubjectScoreImportService {
       DataFormatter formatter = new DataFormatter();
       try (Workbook workbook = WorkbookFactory.create(new ByteArrayInputStream(bytes))) {
         Sheet sheet = workbook.getSheetAt(0);
+        SheetColumns columns = columns(sheet.getRow(0), formatter);
+        if (!columns.scoreFound) {
+          throw new IllegalArgumentException("模板缺少成绩列，请使用最新导入模板");
+        }
         for (int i = 1; i <= sheet.getLastRowNum(); i++) {
           Row excelRow = sheet.getRow(i);
-          if (excelRow == null || formatter.formatCellValue(excelRow.getCell(0)).isBlank()) continue;
+          if (excelRow == null || formatter.formatCellValue(excelRow.getCell(columns.idCard)).isBlank()) {
+            continue;
+          }
           total++;
           CompetitionSubjectScoreImportRowEntity row = new CompetitionSubjectScoreImportRowEntity();
           row.setId(IdWorker.getId());
           row.setTenantId(tenantId);
           row.setBatchId(batchId);
           row.setRowNo(i + 1);
-          row.setExternalReference(text(formatter, excelRow.getCell(2)));
-          row.setRemark(text(formatter, excelRow.getCell(4)));
+          row.setPlayerName(columns.name < 0 ? null : text(formatter, excelRow.getCell(columns.name)));
+          row.setExternalReference(columns.reference < 0
+              ? null : text(formatter, excelRow.getCell(columns.reference)));
+          row.setRemark(columns.remark < 0 ? null : text(formatter, excelRow.getCell(columns.remark)));
           String error = null;
           String normalizedIdCard = null;
           try {
-            normalizedIdCard = identityDomainService.normalizeIdCard(text(formatter, excelRow.getCell(0)));
+            normalizedIdCard = identityDomainService.normalizeIdCard(
+                text(formatter, excelRow.getCell(columns.idCard)));
             row.setIdCardNo(normalizedIdCard);
           } catch (RuntimeException ex) {
             error = "身份证号格式不合法";
-            row.setIdCardNo(text(formatter, excelRow.getCell(0)));
+            row.setIdCardNo(text(formatter, excelRow.getCell(columns.idCard)));
           }
           try {
-            row.setRawScore(decimal(formatter, excelRow.getCell(1)));
+            row.setRawScore(decimal(formatter, excelRow.getCell(columns.score)));
           } catch (RuntimeException ex) {
             if (error == null) error = label(batch.getSourceType()) + "成绩格式错误";
           }
           try {
-            row.setAchievedAt(dateTime(formatter, excelRow.getCell(3)));
+            row.setAchievedAt(columns.achievedAt < 0
+                ? null : dateTime(formatter, excelRow.getCell(columns.achievedAt)));
           } catch (RuntimeException ex) {
             row.setAchievedAt(null);
           }
           String hash = normalizedIdCard == null ? null : dataHash.lookupHash(normalizedIdCard);
-          Set<Long> members = hash == null ? Set.of() : membersByHash.getOrDefault(hash, Set.of());
+          Map<Long, String> members = hash == null ? Map.of() : membersByHash.getOrDefault(hash, Map.of());
           Long matchedMemberId = null;
           if (normalizedIdCard != null && !duplicates.add(normalizedIdCard)) {
             error = "批次内身份证号重复";
@@ -458,7 +464,11 @@ public class CompetitionSubjectScoreImportService {
               || row.getRawScore().compareTo(HUNDRED) > 0)) {
             error = label(batch.getSourceType()) + "成绩必须在0到100之间";
           } else if (error == null) {
-            matchedMemberId = members.iterator().next();
+            matchedMemberId = members.keySet().iterator().next();
+            if (!samePersonName(row.getPlayerName(), members.get(matchedMemberId))) {
+              error = "姓名与身份证号不匹配";
+              matchedMemberId = null;
+            }
           }
           row.setContestantMemberId(matchedMemberId);
           row.setValidationStatus(error == null ? "valid" : "invalid");
@@ -531,21 +541,80 @@ public class CompetitionSubjectScoreImportService {
     }
   }
 
-  private Map<String, Set<Long>> contestantsByIdCardHash(
+  private Map<String, Map<Long, String>> contestantsByIdCardHash(
       CompetitionSubjectScoreImportBatchEntity batch) {
     List<CompetitionSubjectScoreContestantRow> rows = contestantMapper.selectByScope(
         batch.getTenantId(), batch.getEventId(), batch.getStageId(),
         batch.getEventWorkTypeId(), batch.getEventWorkTypeLevelId());
-    Map<String, Set<Long>> result = new HashMap<>();
+    Map<String, Map<Long, String>> result = new HashMap<>();
     if (rows == null) return result;
     for (CompetitionSubjectScoreContestantRow row : rows) {
       if (row == null || row.getIdCardLookupHash() == null || row.getContestantMemberId() == null) {
         continue;
       }
-      result.computeIfAbsent(row.getIdCardLookupHash(), key -> new LinkedHashSet<>())
-          .add(row.getContestantMemberId());
+      result.computeIfAbsent(row.getIdCardLookupHash(), key -> new java.util.LinkedHashMap<>())
+          .putIfAbsent(row.getContestantMemberId(), row.getPlayerName());
     }
     return result;
+  }
+
+  private SheetColumns columns(Row header, DataFormatter formatter) {
+    SheetColumns columns = new SheetColumns();
+    if (header == null) return columns;
+    boolean recognized = false;
+    boolean scoreFound = false;
+    for (int index = 0; index < header.getLastCellNum(); index++) {
+      String name = text(formatter, header.getCell(index));
+      if (name == null) continue;
+      String normalized = name.replace(" ", "").replace("\u3000", "");
+      if ("姓名".equals(normalized) || "选手姓名".equals(normalized)) {
+        columns.name = index;
+        recognized = true;
+      } else if ("身份证号".equals(normalized) || "身份证号码".equals(normalized)) {
+        columns.idCard = index;
+        recognized = true;
+      } else if (normalized.contains("成绩")) {
+        columns.score = index;
+        columns.scoreFound = true;
+        scoreFound = true;
+        recognized = true;
+      } else if ("外部流水号".equals(normalized)) {
+        columns.reference = index;
+      } else if ("取得时间".equals(normalized)) {
+        columns.achievedAt = index;
+      } else if ("备注".equals(normalized)) {
+        columns.remark = index;
+      }
+    }
+    if (!recognized) {
+      columns.scoreFound = true;
+      return new SheetColumns();
+    }
+    if (!scoreFound) {
+      columns.scoreFound = false;
+    }
+    return columns;
+  }
+
+  private boolean samePersonName(String importedName, String rosterName) {
+    String imported = normalizePersonName(importedName);
+    String roster = normalizePersonName(rosterName);
+    return imported.isEmpty() || roster.isEmpty() || imported.equals(roster);
+  }
+
+  private String normalizePersonName(String name) {
+    if (name == null) return "";
+    return name.trim().replace(" ", "").replace("\u3000", "");
+  }
+
+  private static final class SheetColumns {
+    private int name = -1;
+    private int idCard = 0;
+    private int score = 1;
+    private int reference = -1;
+    private int achievedAt = -1;
+    private int remark = -1;
+    private boolean scoreFound = true;
   }
 
   private void requireEnabledContent(Long stageId, String sourceType) {

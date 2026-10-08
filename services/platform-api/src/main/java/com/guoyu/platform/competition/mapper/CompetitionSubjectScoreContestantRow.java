@@ -4,6 +4,7 @@ package com.guoyu.platform.competition.mapper;
 public class CompetitionSubjectScoreContestantRow {
   private Long contestantMemberId;
   private String idCardLookupHash;
+  private String playerName;
 
   public Long getContestantMemberId() { return contestantMemberId; }
   public void setContestantMemberId(Long contestantMemberId) {
@@ -13,4 +14,6 @@ public class CompetitionSubjectScoreContestantRow {
   public void setIdCardLookupHash(String idCardLookupHash) {
     this.idCardLookupHash = idCardLookupHash;
   }
+  public String getPlayerName() { return playerName; }
+  public void setPlayerName(String playerName) { this.playerName = playerName; }
 }

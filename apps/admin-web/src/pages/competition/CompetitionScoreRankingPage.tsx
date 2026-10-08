@@ -2253,7 +2253,7 @@ export function CompetitionScoreRankingPage({
               type="info"
               showIcon
               message="仿真成绩按身份证号导入"
-              description="先切换到仿真，再下载模板并导入。校验通过后会自动写入仿真成绩，并按赛段内容权重计算综合成绩。"
+              description="模板列为姓名、身份证号、仿真成绩。校验通过后会自动写入，并按赛段内容权重计算综合成绩。"
             />
           )}
           {subject.type === 'simulation' && !usesStageContentFormula && (
@@ -2271,7 +2271,7 @@ export function CompetitionScoreRankingPage({
               type="info"
               showIcon
               message="实操成绩按身份证号导入"
-              description="先切换到实操，再下载模板并导入。校验通过后会自动写入实操成绩，并按赛段内容权重计算综合成绩。"
+              description="模板列为姓名、身份证号、实操成绩。校验通过后会自动写入，并按赛段内容权重计算综合成绩。"
             />
           )}
           {subject.type === 'practical' && !usesStageContentFormula && (

@@ -94,6 +94,7 @@ class CompetitionSubjectScoreImportServiceTest {
         content("theory", "40"), content("simulation", "30"), content("practical", "30")));
     CompetitionSubjectScoreContestantRow contestant = new CompetitionSubjectScoreContestantRow();
     contestant.setContestantMemberId(MEMBER_ID);
+    contestant.setPlayerName("测试选手");
     contestant.setIdCardLookupHash(dataHash.lookupHash(ID_CARD));
     when(contestantMapper.selectByScope(any(), any(), any(), any(), any()))
         .thenReturn(List.of(contestant));
@@ -168,11 +169,13 @@ class CompetitionSubjectScoreImportServiceTest {
         ByteArrayOutputStream output = new ByteArrayOutputStream()) {
       var sheet = workbook.createSheet("成绩");
       var header = sheet.createRow(0);
-      header.createCell(0).setCellValue("身份证号");
-      header.createCell(1).setCellValue("成绩");
+      header.createCell(0).setCellValue("姓名");
+      header.createCell(1).setCellValue("身份证号");
+      header.createCell(2).setCellValue("成绩");
       var row = sheet.createRow(1);
-      row.createCell(0).setCellValue(idCard);
-      row.createCell(1).setCellValue(score);
+      row.createCell(0).setCellValue("测试选手");
+      row.createCell(1).setCellValue(idCard);
+      row.createCell(2).setCellValue(score);
       workbook.write(output);
       return output.toByteArray();
     } catch (Exception ex) {

@@ -9,7 +9,7 @@ public interface CompetitionSubjectScoreContestantMapper {
   @Select({
       "<script>",
       "SELECT COALESCE(p.member_id, r.member_id) AS contestant_member_id,",
-      "pi.id_card_lookup_hash",
+      "pi.id_card_lookup_hash, i.name AS player_name",
       "FROM competition_registration r",
       "JOIN competition_player_identity pi ON pi.id = r.player_id",
       "AND pi.tenant_id = r.tenant_id AND pi.deleted = 0",
