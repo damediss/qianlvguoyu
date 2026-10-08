@@ -50,7 +50,12 @@
 ### 数据库铁律
 
 1. MySQL 8.4，主键雪花 ID（`BIGINT`）；业务主表必含 BaseEntity 六列（`id / tenant_id / deleted / created_by / updated_by / created_at / updated_at`），与实体 getter 一一对应
-2. Flyway 共用迁移放 `services/platform-api/src/main/resources/db/migration/`；仅一侧数据库已应用的分叉迁移分别放 `db/migration-test/` 或 `db/migration-prod/`。默认与隔离压测 profile (`application.yml` / `application-loadtest.yml`) 使用测试历史；生产 profile (`application-prod.yml`) 使用生产历史。运行时 locations 不得同时包含同版本的不同脚本。**不改已应用迁移，新增共用迁移必须用高于测试库和生产库 MAX(version) 的新版本号并留间隔**；种子迁移必须幂等；空库必须能跑通全部迁移
+2. Flyway 迁移。**目录三档的构成与 profile 接线属事实快照，以 `docs/agent/项目现状.md`（脚本生成）为准**，本条只规定操作铁律：
+   - **不改已应用迁移**：改了会让 checksum 校验失败、Flyway 拒绝启动。要修正已上线的结构，只能写新版本号的修正迁移，不回头改旧文件
+   - **新增共用迁移取号**：测试库（gjjddb2026）与生产库（gjjddbpro）历史已分叉，必须同时查两库 `SELECT MAX(version) FROM flyway_schema_history`，取最大值后再加间隔。间隔口径：共用目录按 `_001 / _002 …` 逐个递进（同一天多个时 +1）；分叉目录按 `_010 / _020 …` 预留 10 的间隔，便于他人同时插号
+   - **分叉目录只作补救用**，即"另一侧库尚未应用、又不能改历史"这一种情况；必须成对登记（在两侧同名脚本头部注释写明对应侧的版本号；登记只约束新产生的双写，存量对以 `docs/agent/项目现状.md` 台账为准，不必回补），由 `node scripts/gen-agents-context.mjs` 自动比对出双写对与同版本号冲突，**报出来的冲突必须当次修掉**（脚本检出冲突时非零退出。存量 1 处 `20260924_001` 属 test×prod 潜伏冲突：处置=挑一侧把文件改到该侧分叉目录的空闲版本号，并同步更新该侧库 `flyway_schema_history` 对应行的 version，不改脚本内容）
+   - **分叉要收敛**：每个季度至少一次把测试库从生产 schema 快照重建，重建后清空 `db/migration-test/` 与 `db/migration-prod/`，历史回到单线。**重建必须连同 `flyway_schema_history` 一起从生产侧灌入**，否则清空分叉目录后 Flyway validate 会因历史引用缺失直接失败。未收敛前，新改动一律写共用目录，不得再新增双写
+   - 种子迁移必须幂等（`INSERT IGNORE` 或先查后插）；空库必须能跑通全部迁移——验证方式是 `mvn compile` 后对空库执行一次 migrate（迁移读的是 `target/classes`）
 3. 菜单/权限/角色授权种子的 `tenant_id` 写 **10159**（千铝工投运行租户），不照抄历史文件里的 `tenant_id=1`；权限三步链：菜单 → 权限码 → `sys_role_permission` 授权，缺最后一步接口 403
 4. 业务主状态以 MySQL 为准，Redis 只用于缓存/会话/验证码/限流；`@Cacheable` 返回值用 `new ArrayList<>(list)`，禁用 immutable collection（Redis 反序列化会炸）
 5. 新迁移必须 `mvn compile` 后才会被 Flyway 看到（读 `target/classes`）；Druid wall 拦 `PREPARE` 与 `AS new` 别名——迁移走独立直连（`spring.flyway.url/user/password`，属性名是 `user` 不是 `username`），upsert 用旧式 `ON DUPLICATE KEY UPDATE c = VALUES(c)`
@@ -132,7 +137,7 @@
 |---|---|---|
 | `apps/admin-web/AGENTS.md` | 前端规则全量（命令 / 错误处理 / 登录态 / 多租户） | 改前端前 |
 | `services/platform-api/AGENTS.md` | 后端细则（分层 / 防御性编程 / 异步完整版 / DB 细则 / LLM 11 条） | 改后端前 |
-| `docs/agent/项目现状.md` | 模块清单、迁移基线、apps/services 状态（脚本生成） | 需要现状快照时 |
+| `docs/agent/项目现状.md` | 模块清单、Flyway 迁移基线（含分叉双写对与版本号硬冲突）、apps/services 状态（脚本生成） | 需要现状快照时 / 新增迁移取号前 |
 | `docs/agent/踩坑库.md` | 26 条事故案例（含已失效归档） | 碰相关领域前 |
 | `docs/agent/多Agent协作协议.md` | 角色 / 硬上限 / 交棒 / 并行约束 | Mavis / Team 阶段 |
 | `docs/agent/本地开发环境.md` | 环境路径 / 变量 / 命令 / Demo 账号 | 搭环境、起服务时 |
