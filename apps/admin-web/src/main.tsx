@@ -84,6 +84,7 @@ import { PracticalCollectionApp } from './pages/practicalCollection/PracticalCol
 import { CompetitionEventManagementPage } from './pages/competition/CompetitionEventManagementPage';
 import { CompetitionPlayerManagementPage } from './pages/competition/CompetitionPlayerManagementPage';
 import { CompetitionPlayerSortingManagementPage } from './pages/competition/CompetitionPlayerSortingPage';
+import { CompetitionPlayerDrawManagementPage } from './pages/competition/CompetitionPlayerDrawPage';
 import { CompetitionRefereeManagementPage } from './pages/competition/CompetitionRefereeManagementPage';
 import { CompetitionRefereeGroupPage } from './pages/competition/CompetitionRefereeGroupPage';
 import { CompetitionEventModulePage, type CompetitionEventModule } from './pages/competition/CompetitionEventModulePage';
@@ -541,6 +542,7 @@ const pageMap: Record<string, React.ReactNode> = {
   competition_player: <CompetitionPlayerManagementPage />,
   competition_player_info: <CompetitionPlayerManagementPage />,
   competition_player_sorting: <CompetitionPlayerSortingManagementPage />,
+  competition_player_draw: <CompetitionPlayerDrawManagementPage />,
   competition_referee: <CompetitionRefereeManagementPage />,
   competition_referee_info: <CompetitionRefereeManagementPage />,
   competition_referee_group: <CompetitionRefereeGroupPage />,

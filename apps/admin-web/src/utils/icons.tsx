@@ -43,6 +43,7 @@ export const CURATED_ICONS: string[] = [
   'CheckCircleOutlined',
   'SwapOutlined',
   'AppstoreOutlined',
+  'OrderedListOutlined',
   // Additional common icons
   'HomeOutlined',
   'PlusCircleOutlined',
