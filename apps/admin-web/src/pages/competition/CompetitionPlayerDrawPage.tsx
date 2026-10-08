@@ -226,8 +226,9 @@ export function CompetitionPlayerDrawPage({
 
   const deleteMutation = useMutation({
     mutationFn: deleteCompetitionPlayerDrawTask,
-    onSuccess: () => {
+    onSuccess: (_data, taskId) => {
       message.success('抽签任务已删除');
+      if (idValue(taskId) === activeTaskId) setDeskOpen(false);
       void queryClient.invalidateQueries({ queryKey: ['competition-player-draw-tasks', stageId] });
     },
     onError: (error) => message.error(errorText(error, '删除抽签任务失败')),
@@ -276,6 +277,22 @@ export function CompetitionPlayerDrawPage({
     setDeskOpen(true);
   };
 
+  const confirmDelete = (taskId: CompetitionId, status: string) => {
+    const content = status === 'drawn'
+      ? '该任务已完成抽签。删除后出场名单将从任务列表中移除。确认删除吗？'
+      : status === 'ordered'
+        ? '抽签顺序已生成，但尚未逐个抽签。删除后需要重新创建任务。确认删除吗？'
+        : '删除后，该未执行的抽签任务将从任务列表中移除。确认删除吗？';
+    Modal.confirm({
+      title: '删除抽签任务',
+      content,
+      okText: '删除',
+      okButtonProps: { danger: true },
+      cancelText: '取消',
+      onOk: () => deleteMutation.mutateAsync(idValue(taskId)),
+    });
+  };
+
   const taskColumns = [
     { title: '选手数', dataIndex: 'playerCount', width: 90 },
     {
@@ -296,7 +313,7 @@ export function CompetitionPlayerDrawPage({
     {
       title: '操作',
       key: 'actions',
-      width: 320,
+      width: 400,
       render: (_: unknown, record: CompetitionPlayerDrawTask) => (
         <Space>
           {record.status === 'created' && record.playerCount === 0 && canCreate && (
@@ -319,22 +336,13 @@ export function CompetitionPlayerDrawPage({
               onClick={() => downloadMutation.mutate(record.id)}
             >导出 Excel</Button>
           )}
-          {(record.status === 'created' || record.status === 'ordered') && canDelete && (
+          {(record.status === 'created' || record.status === 'ordered' || record.status === 'drawn') && canDelete && (
             <Button
               type="link"
               danger
               icon={<DeleteOutlined />}
               loading={deleteMutation.isPending && deleteMutation.variables === idValue(record.id)}
-              onClick={() => Modal.confirm({
-                title: '删除抽签任务',
-                content: record.status === 'ordered'
-                  ? '抽签顺序已生成，但尚未逐个抽签。删除后需要重新创建任务。确认删除吗？'
-                  : '删除后，该未执行的抽签任务将从任务列表中移除。确认删除吗？',
-                okText: '删除',
-                okButtonProps: { danger: true },
-                cancelText: '取消',
-                onOk: () => deleteMutation.mutateAsync(idValue(record.id)),
-              })}
+              onClick={() => confirmDelete(record.id, record.status)}
             >删除</Button>
           )}
         </Space>
@@ -555,6 +563,14 @@ export function CompetitionPlayerDrawPage({
         footer={(
           <Space>
             <Button onClick={() => setDeskOpen(false)}>关闭</Button>
+            {detail?.status === 'drawn' && activeTaskId && canDelete && (
+              <Button
+                danger
+                icon={<DeleteOutlined />}
+                loading={deleteMutation.isPending}
+                onClick={() => confirmDelete(activeTaskId, 'drawn')}
+              >删除</Button>
+            )}
             {detail?.status === 'drawn' && activeTaskId && canExport && (
               <Button
                 type="primary"

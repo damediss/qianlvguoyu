@@ -128,8 +128,8 @@ public class CompetitionPlayerDrawApplicationService {
   public void delete(Long taskId) {
     CompetitionPlayerDrawTaskEntity entity = lockTask(taskId);
     stageService.assertCanManage(entity.getStageId());
-    if (!CREATED.equals(entity.getStatus()) && !ORDERED.equals(entity.getStatus())) {
-      throw new BusinessException(ErrorCode.CONFLICT, "已开始逐个抽签或已完成的任务不能删除");
+    if (DRAWING.equals(entity.getStatus())) {
+      throw new BusinessException(ErrorCode.CONFLICT, "抽签进行中的任务不能删除，请完成全部抽签后再删除");
     }
     if (taskMapper.deleteById(taskId) != 1) {
       throw new BusinessException(ErrorCode.NOT_FOUND, "抽签任务不存在");
