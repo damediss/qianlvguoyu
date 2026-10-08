@@ -1632,9 +1632,15 @@ export function CompetitionScoreRankingPage({
     );
   };
   const refreshAll = () => {
+    // refetch() 会绕过 enabled 门：scope 未就绪时变量为 undefined，axios 丢弃后变成裸请求（后端 500）。
+    // 未就绪时整体拦截并提示，与查询自动触发的门控保持同一口径
+    if (!scopeReady) {
+      message.warning('当前赛事尚未选定赛段、工种或参赛等级，请先在上方完成选择再刷新');
+      return;
+    }
     void scoreSourcesQuery.refetch();
     void totalSnapshotsQuery.refetch();
-    void rankingSnapshotsQuery.refetch();
+    if (contextReady) void rankingSnapshotsQuery.refetch();
     void playersQuery.refetch();
     void scoringTasksQuery.refetch();
   };
