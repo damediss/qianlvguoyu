@@ -192,15 +192,20 @@ export function CompetitionPlayerManagementPage() {
   useEffect(() => {
     if (selectedWorkTypeId && !workTypeOptions.some((item) => item.value === selectedWorkTypeId)) setSelectedWorkTypeId(undefined);
   }, [selectedWorkTypeId, workTypeOptions]);
+  // 渲染期派生有效工种：跨赛事切换/URL 参数混合时，未在当前赛事工种列表中的 id 在本帧即钳为 undefined，
+  // 查询不会发出（effect 事后纠偏存在一帧竞态，会打出 404/422 控制台噪音）
+  const effectiveWorkTypeId = workTypeOptions.some((item) => item.value === selectedWorkTypeId)
+    ? selectedWorkTypeId
+    : undefined;
 
   const playersQuery = useQuery({
-    queryKey: ['competition-players', selectedEventId, selectedOrgId, selectedWorkTypeId, query],
+    queryKey: ['competition-players', selectedEventId, selectedOrgId, effectiveWorkTypeId, query],
     queryFn: () => pageCompetitionPlayers({
       page: query.page,
       pageSize: query.pageSize,
       eventId: selectedEventId,
       orgId: selectedOrgId,
-      eventWorkTypeId: selectedWorkTypeId,
+      eventWorkTypeId: effectiveWorkTypeId,
       keyword: query.keyword,
     }),
     enabled: canView && Boolean(selectedEventId),
@@ -272,8 +277,8 @@ export function CompetitionPlayerManagementPage() {
   const openCreate = () => {
     setEditing(undefined);
     form.resetFields();
-    setSelectedWorkTypes(selectedWorkTypeId
-      ? [{ eventWorkTypeId: selectedWorkTypeId }]
+    setSelectedWorkTypes(effectiveWorkTypeId
+      ? [{ eventWorkTypeId: effectiveWorkTypeId }]
       : []);
     form.setFieldsValue({ orgId: selectedOrgId });
     setFormOpen(true);
@@ -379,7 +384,7 @@ export function CompetitionPlayerManagementPage() {
             style={{ width: 280 }}
           />
           <Select allowClear showSearch optionFilterProp="label" value={selectedOrgId} options={orgOptions} onChange={(value) => { setSelectedOrgId(value); setQuery((current) => ({ ...current, page: 1 })); }} placeholder="按企业筛选" style={{ width: 220 }} loading={organizationsQuery.isLoading} />
-          <Select allowClear showSearch optionFilterProp="label" value={selectedWorkTypeId} options={workTypeOptions} onChange={(value) => { setSelectedWorkTypeId(value); setQuery((current) => ({ ...current, page: 1 })); }} placeholder="按工种筛选" style={{ width: 200 }} loading={workTypesQuery.isLoading} />
+          <Select allowClear showSearch optionFilterProp="label" value={effectiveWorkTypeId} options={workTypeOptions} onChange={(value) => { setSelectedWorkTypeId(value); setQuery((current) => ({ ...current, page: 1 })); }} placeholder="按工种筛选" style={{ width: 200 }} loading={workTypesQuery.isLoading} />
           <Input allowClear prefix={<SearchOutlined />} placeholder="姓名" value={keyword} onChange={(event) => setKeyword(event.target.value)} onPressEnter={() => setQuery((current) => ({ ...current, page: 1, keyword: keyword.trim() || undefined }))} style={{ width: 220 }} />
           <Button type="primary" ghost icon={<SearchOutlined />} onClick={() => setQuery((current) => ({ ...current, page: 1, keyword: keyword.trim() || undefined }))}>查询</Button>
         </Space>

@@ -133,16 +133,21 @@ export function CompetitionEventModulePage({
       setSelectedEventWorkTypeLevelCode(undefined);
     }
   }, [activeEventWorkTypes, selectedEventWorkTypeId]);
+  // 渲染期派生有效工种：跨赛事切换/URL 参数混合时，未在当前赛事工种列表中的 id 在本帧即钳为 undefined，
+  // 查询与子组件不会以混合状态发出请求（effect 事后纠偏存在一帧竞态，会打出 404/422/400 控制台噪音）
+  const effectiveEventWorkTypeId = activeEventWorkTypes.some(
+    (item) => String(item.id) === selectedEventWorkTypeId,
+  ) ? selectedEventWorkTypeId : undefined;
   const eventWorkTypeLevelsQuery = useQuery({
     queryKey: [
       'competition-event-work-type-levels',
       selectedEventId,
-      selectedEventWorkTypeId,
+      effectiveEventWorkTypeId,
       'stage-planning-selector',
     ],
     queryFn: () => listCompetitionEventWorkTypeLevels(
-      selectedEventId!, selectedEventWorkTypeId!),
-    enabled: needsWorkTypeScope && Boolean(selectedEventId && selectedEventWorkTypeId),
+      selectedEventId!, effectiveEventWorkTypeId!),
+    enabled: needsWorkTypeScope && Boolean(selectedEventId && effectiveEventWorkTypeId),
   });
   const levelOptions = useMemo(() => {
     const configuredLevels = (eventWorkTypeLevelsQuery.data || [])
@@ -164,6 +169,10 @@ export function CompetitionEventModulePage({
       setSelectedEventWorkTypeLevelCode(levelOptions[0].value);
     }
   }, [levelOptions, selectedEventWorkTypeLevelCode]);
+  // 等级同理：工种切换后旧等级在本帧即失效，子组件（赛段编排/控制台）不会收到混合范围
+  const effectiveEventWorkTypeLevelCode = levelOptions.some(
+    (level) => level.value === selectedEventWorkTypeLevelCode,
+  ) ? selectedEventWorkTypeLevelCode : undefined;
 
   if (!canView) {
     return <Result status="403" title={`暂无${meta.title}查看权限`} />;
@@ -226,7 +235,7 @@ export function CompetitionEventModulePage({
               <Select
                 showSearch
                 optionFilterProp="label"
-                value={selectedEventWorkTypeId}
+                value={effectiveEventWorkTypeId}
                 loading={eventWorkTypesQuery.isFetching}
                 disabled={!selectedEventId || (!eventWorkTypesQuery.isFetching && activeEventWorkTypes.length === 0)}
                 placeholder="请选择工种"
@@ -245,8 +254,8 @@ export function CompetitionEventModulePage({
               <Select
                 showSearch
                 optionFilterProp="label"
-                value={selectedEventWorkTypeLevelCode}
-                disabled={!selectedEventWorkTypeId || levelOptions.length === 0}
+                value={effectiveEventWorkTypeLevelCode}
+                disabled={!effectiveEventWorkTypeId || levelOptions.length === 0}
                 loading={eventWorkTypeLevelsQuery.isFetching}
                 placeholder={levelOptions.length ? '请选择等级' : '请先在赛事总览选择等级'}
                 style={{ width: 180, maxWidth: '100%' }}
@@ -256,7 +265,7 @@ export function CompetitionEventModulePage({
                   setSelectedEventWorkTypeLevelCode(levelCode || undefined);
                 }}
               />
-              {selectedEventWorkTypeId && !eventWorkTypeLevelsQuery.isFetching && levelOptions.length === 0 && (
+              {effectiveEventWorkTypeId && !eventWorkTypeLevelsQuery.isFetching && levelOptions.length === 0 && (
                 <Typography.Text type="warning">请先在赛事总览为当前工种选择参赛等级</Typography.Text>
               )}
             </>
@@ -264,12 +273,12 @@ export function CompetitionEventModulePage({
         </Space>
       </Card>
       {selectedEvent && module === 'notices' && <CompetitionNoticePage eventId={String(selectedEvent.id)} onNavigate={onNavigate} embedded />}
-      {selectedEvent && module === 'stages' && selectedEventWorkTypeId && selectedEventWorkTypeLevelCode ? (
+      {selectedEvent && module === 'stages' && effectiveEventWorkTypeId && effectiveEventWorkTypeLevelCode ? (
         <CompetitionStagePlanningPage
-          key={`stage-planning:${selectedEvent.id}:${selectedEventWorkTypeId ?? 'event'}:${selectedEventWorkTypeLevelCode}`}
+          key={`stage-planning:${selectedEvent.id}:${effectiveEventWorkTypeId ?? 'event'}:${effectiveEventWorkTypeLevelCode}`}
           eventId={String(selectedEvent.id)}
-          eventWorkTypeId={selectedEventWorkTypeId}
-          eventWorkTypeLevelCode={selectedEventWorkTypeLevelCode}
+          eventWorkTypeId={effectiveEventWorkTypeId}
+          eventWorkTypeLevelCode={effectiveEventWorkTypeLevelCode}
           onNavigate={onNavigate}
           onNavigateToScope={(workTypeId, levelCode) => {
             setSelectedEventWorkTypeId(String(workTypeId));
@@ -291,12 +300,12 @@ export function CompetitionEventModulePage({
           embedded
         />
       )}
-      {selectedEvent && module === 'formal-exam-console' && selectedEventWorkTypeId && selectedEventWorkTypeLevelCode ? (
+      {selectedEvent && module === 'formal-exam-console' && effectiveEventWorkTypeId && effectiveEventWorkTypeLevelCode ? (
         <CompetitionFormalExamConsolePage
-          key={`formal-exam:${selectedEvent.id}:${selectedEventWorkTypeId}:${selectedEventWorkTypeLevelCode}`}
+          key={`formal-exam:${selectedEvent.id}:${effectiveEventWorkTypeId}:${effectiveEventWorkTypeLevelCode}`}
           eventId={String(selectedEvent.id)}
-          eventWorkTypeId={selectedEventWorkTypeId}
-          eventWorkTypeLevelCode={selectedEventWorkTypeLevelCode}
+          eventWorkTypeId={effectiveEventWorkTypeId}
+          eventWorkTypeLevelCode={effectiveEventWorkTypeLevelCode}
           initialStageId={initialStageId}
         />
       ) : selectedEvent && module === 'formal-exam-console' ? (
@@ -306,12 +315,12 @@ export function CompetitionEventModulePage({
           </Typography.Text>
         </Card>
       ) : null}
-      {selectedEvent && module === 'practical-exam-console' && selectedEventWorkTypeId && selectedEventWorkTypeLevelCode ? (
+      {selectedEvent && module === 'practical-exam-console' && effectiveEventWorkTypeId && effectiveEventWorkTypeLevelCode ? (
         <CompetitionPracticalConsolePage
-          key={`practical-exam:${selectedEvent.id}:${selectedEventWorkTypeId}:${selectedEventWorkTypeLevelCode}`}
+          key={`practical-exam:${selectedEvent.id}:${effectiveEventWorkTypeId}:${effectiveEventWorkTypeLevelCode}`}
           eventId={String(selectedEvent.id)}
-          eventWorkTypeId={selectedEventWorkTypeId}
-          eventWorkTypeLevelCode={selectedEventWorkTypeLevelCode}
+          eventWorkTypeId={effectiveEventWorkTypeId}
+          eventWorkTypeLevelCode={effectiveEventWorkTypeLevelCode}
           initialStageId={initialStageId}
         />
       ) : null}
