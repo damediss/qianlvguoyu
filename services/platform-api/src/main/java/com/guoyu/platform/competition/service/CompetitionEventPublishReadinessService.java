@@ -279,7 +279,7 @@ public class CompetitionEventPublishReadinessService {
         sequenceValid ? "赛段顺序和时间窗口合法" : "赛段类型不能重复，且时间必须按赛段顺序递增且不重叠");
     boolean contentValid = true;
     boolean weightsValid = true;
-    boolean simulationAvailable = true;
+    boolean simulationEnabled = false;
     for (CompetitionStageEntity stage : stages) {
       if (stage == null || stage.getId() == null) {
         contentValid = false;
@@ -325,8 +325,9 @@ public class CompetitionEventPublishReadinessService {
             total = total.add(weight);
           }
           if (contentType == CompetitionStageContentType.SIMULATION) {
-            // The only simulation implementation in this release is an explicit placeholder.
-            simulationAvailable = false;
+            // Simulation scores are imported from Excel by ID card, so the content
+            // can be confirmed as part of the stage plan.
+            simulationEnabled = true;
           }
         } else if (!isDisabled || (content.getWeight() != null
             && content.getWeight().compareTo(BigDecimal.ZERO) != 0)) {
@@ -345,8 +346,10 @@ public class CompetitionEventPublishReadinessService {
         contentValid ? "所有赛段均已配置有效比赛内容" : "每个赛段至少需要启用一项有效比赛内容");
     addCheck(checks, "CONTENT_WEIGHT_INVALID", weightsValid,
         weightsValid ? "每个赛段启用内容权重合计为100%" : "每个赛段启用内容权重必须大于0且合计为100%，未启用内容权重必须为0");
-    addCheck(checks, "SIMULATION_PROVIDER_UNAVAILABLE", simulationAvailable,
-        simulationAvailable ? "未使用尚未接入的仿真内容" : "仿真 Provider 尚未接入，不能确认当前工种等级的赛段编排");
+    addCheck(checks, "SIMULATION_PROVIDER_UNAVAILABLE", true,
+        simulationEnabled
+            ? "仿真成绩通过 Excel 按身份证号导入，可以确认赛段编排"
+            : "未启用仿真内容");
 
     List<CompetitionEventWorkTypeStageEntity> stageRows = safeList(workTypeStageMapper.selectList(
         new LambdaQueryWrapper<CompetitionEventWorkTypeStageEntity>()

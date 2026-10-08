@@ -1213,6 +1213,27 @@ export interface CompetitionFormalScoringTask {
   candidateStatus?: string | null;
 }
 
+export interface CompetitionSubjectScoreImportBatch {
+  id: CompetitionId;
+  eventId: CompetitionId;
+  stageId: CompetitionId;
+  eventWorkTypeId: CompetitionId;
+  eventWorkTypeLevelId?: CompetitionId | null;
+  sourceType: 'practical' | 'simulation';
+  sourceFileId: CompetitionId;
+  fileName: string;
+  batchStatus:
+    'parsing' | 'ready' | 'invalid' | 'confirming' | 'completed' | 'failed';
+  totalRows: number;
+  validRows: number;
+  errorRows: number;
+  confirmedRows: number;
+  errorMessage?: string | null;
+  correctionReason?: string | null;
+  confirmedAt?: string | null;
+  confirmedBy?: CompetitionId | null;
+}
+
 export interface CompetitionSimulationImportBatch {
   id: CompetitionId;
   eventId: CompetitionId;

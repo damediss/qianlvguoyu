@@ -85,6 +85,25 @@ class CompetitionEventPublishReadinessServiceTest {
   }
 
   @Test
+  void scopeConfirmationAllowsSimulationWhenScoresAreImported() {
+    CompetitionEventEntity event = event();
+    CompetitionEventWorkTypeEntity workType = workType();
+    CompetitionEventWorkTypeLevelEntity level = level("5", "draft");
+    when(stageMapper.selectList(any())).thenReturn(List.of(stage()));
+    when(contentMapper.selectList(any())).thenReturn(List.of(
+        content("theory", "40.00"),
+        content("simulation", "30.00"),
+        content("practical", "30.00")));
+    when(workTypeStageMapper.selectList(any())).thenReturn(List.of(stageConfig()));
+
+    var readiness = service.evaluateForScopeConfirmation(1L, event, workType, level);
+
+    assertThat(readiness.ready()).isTrue();
+    assertThat(readiness.checks()).anyMatch(check ->
+        "SIMULATION_PROVIDER_UNAVAILABLE".equals(check.code()) && check.passed());
+  }
+
+  @Test
   void scopeConfirmationRequiresEventDatesAfterEarlyPublish() {
     CompetitionEventEntity event = event();
     event.setStartAt(null);
@@ -156,13 +175,16 @@ class CompetitionEventPublishReadinessServiceTest {
   }
 
   private CompetitionStageContentEntity content() {
+    return content("theory", "100.00");
+  }
+
+  private CompetitionStageContentEntity content(String type, String weight) {
     CompetitionStageContentEntity content = new CompetitionStageContentEntity();
-    content.setId(6001L);
     content.setEventId(1001L);
     content.setStageId(5001L);
-    content.setContentType("theory");
+    content.setContentType(type);
     content.setStatus("enabled");
-    content.setWeight(new BigDecimal("100.00"));
+    content.setWeight(new BigDecimal(weight));
     content.setDeleted(0);
     return content;
   }

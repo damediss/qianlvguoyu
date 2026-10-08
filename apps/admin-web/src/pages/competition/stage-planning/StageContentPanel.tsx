@@ -39,7 +39,7 @@ export const STAGE_CONTENT_OPTIONS: StageContentOption[] = [
     label: '仿真操作',
     icon: <ExperimentOutlined />,
     color: '#722ed1',
-    providerHint: '当前为占位内容，不能发布执行方案或结算',
+    providerHint: '成绩在成绩与排名中按身份证号导入',
   },
   {
     code: 'practical',
@@ -192,10 +192,22 @@ export function StageContentPanel({
 
       {selected.includes('simulation') && (
         <Alert
-          type="warning"
+          type="info"
           showIcon
-          message="仿真操作当前仅作为配置占位"
-          description="可以在本赛段配置中选择仿真并设置权重；在仿真 Provider 接入前，执行方案就绪、发布和结算会被后端阻断。"
+          message="仿真成绩通过 Excel 导入"
+          description="勾选仿真并保存权重后可以确认赛段编排。仿真分数在成绩与排名中按身份证号导入，再按内容权重计入综合成绩。"
+        />
+      )}
+
+      {(selected.includes('practical') || selected.includes('simulation')) && validWeights && (
+        <Alert
+          type="info"
+          showIcon
+          message="实操与仿真成绩来源"
+          description={`保存权重后，在成绩与排名中按身份证号导入 ${[
+            selected.includes('practical') ? '实操' : '',
+            selected.includes('simulation') ? '仿真' : '',
+          ].filter(Boolean).join('、')} xlsx。系统按身份证匹配选手分数，再按这里的内容权重计算综合成绩与排名。理论成绩仍来自正式考试。`}
         />
       )}
 

@@ -59,6 +59,7 @@ import type {
   CompetitionRankingGenerateResult,
   CompetitionFormalScoringTask,
   CompetitionSimulationImportBatch,
+  CompetitionSubjectScoreImportBatch,
   CompetitionTheoryRequirement,
   CompetitionTheoryRequirementRequest,
   CompetitionTheoryCourseSource,
@@ -1280,6 +1281,55 @@ export function confirmCompetitionSimulationImport(batchId: CompetitionId, corre
   return unwrap<CompetitionSimulationImportBatch>(
     apiClient.post(`/competition/simulation-score-imports/${batchId}/confirm`, { correctionReason }),
   );
+}
+
+export async function downloadCompetitionSubjectScoreTemplate(
+  sourceType: 'practical' | 'simulation',
+): Promise<Blob> {
+  const response = await apiClient.get('/competition/subject-score-imports/template', {
+    params: { sourceType },
+    responseType: 'blob',
+  });
+  return response.data;
+}
+
+export function uploadCompetitionSubjectScores(params: {
+  eventId: CompetitionId;
+  stageId: CompetitionId;
+  eventWorkTypeId: CompetitionId;
+  eventWorkTypeLevelId?: CompetitionId;
+  sourceType: 'practical' | 'simulation';
+}, file: File) {
+  const body = new FormData();
+  body.append('file', file);
+  return unwrap<CompetitionSubjectScoreImportBatch>(apiClient.post(
+    '/competition/subject-score-imports', body, { params },
+  ));
+}
+
+export function getCompetitionSubjectScoreImport(batchId: CompetitionId) {
+  return unwrap<CompetitionSubjectScoreImportBatch>(
+    apiClient.get(`/competition/subject-score-imports/${batchId}`),
+  );
+}
+
+export function confirmCompetitionSubjectScoreImport(
+  batchId: CompetitionId,
+  correctionReason?: string,
+) {
+  return unwrap<CompetitionSubjectScoreImportBatch>(
+    apiClient.post(`/competition/subject-score-imports/${batchId}/confirm`, { correctionReason }),
+  );
+}
+
+export async function downloadCompetitionSubjectScoreImportErrors(
+  batchId: CompetitionId,
+): Promise<Blob> {
+  const response = await apiClient.get(
+    `/competition/subject-score-imports/${batchId}/errors`,
+    { responseType: 'blob' },
+  );
+  return response.data;
 }
 
 export async function downloadCompetitionSimulationImportErrors(

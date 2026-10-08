@@ -42,6 +42,7 @@ import {
   Progress,
   Result,
   Row,
+  Segmented,
   Select,
   Space,
   Spin,
@@ -62,7 +63,11 @@ import {
   confirmCompetitionRankingSnapshot,
   confirmCompetitionSimulationImport,
   calculateCompetitionTotalScore,
+  confirmCompetitionSubjectScoreImport,
   downloadCompetitionSimulationImportErrors,
+  downloadCompetitionSubjectScoreImportErrors,
+  downloadCompetitionSubjectScoreTemplate,
+  getCompetitionSubjectScoreImport,
   getCompetitionEvent,
   getCompetitionFormalCandidateAnswerSheet,
   getCompetitionFormalCandidateResult,
@@ -83,7 +88,9 @@ import {
   publishCompetitionRankingSnapshot,
   retryCompetitionFormalScoringTask,
   uploadCompetitionSimulationScores,
+  uploadCompetitionSubjectScores,
 } from '../../api/competition';
+import { usePaneActive } from '../../layouts/TabKeepAlive';
 import { useAuthStore } from '../../stores/authStore';
 import type {
   CompetitionFormalCandidateAnswerSheet,
@@ -99,6 +106,7 @@ import type {
   CompetitionScoreRule,
   CompetitionScoreSource,
   CompetitionScoreSourceType,
+  CompetitionSubjectScoreImportBatch,
   CompetitionStageContent,
   CompetitionTotalScoreSnapshot,
 } from '../../types/competition';
@@ -601,6 +609,7 @@ export function CompetitionScoreRankingPage({
   onNavigate: (path: string) => void;
   embedded?: boolean;
 }) {
+  const paneActive = usePaneActive();
   const permissions = useAuthStore((state) => state.permissionCodes);
   const canViewEvent = permissions.includes('competition:event:view');
   const canViewScores = permissions.includes('competition:score:view');
@@ -635,6 +644,12 @@ export function CompetitionScoreRankingPage({
     useState<string>();
   const [selectedSnapshotId, setSelectedSnapshotId] = useState<string>();
   const [simulationBatchId, setSimulationBatchId] = useState<string>();
+  const [subjectBatchIds, setSubjectBatchIds] = useState<
+    Partial<Record<'practical' | 'simulation', string>>
+  >({});
+  const [importSubject, setImportSubject] = useState<
+    'practical' | 'simulation'
+  >('practical');
   const [rankingDraftOpen, setRankingDraftOpen] = useState(false);
   const [rankingDraftRows, setRankingDraftRows] = useState<RankingDraftRow[]>(
     [],
@@ -898,6 +913,27 @@ export function CompetitionScoreRankingPage({
     queryFn: () => getCompetitionSimulationImport(simulationBatchId!),
     enabled: Boolean(simulationBatchId),
     refetchInterval: (query) =>
+      paneActive &&
+      ['parsing', 'confirming'].includes(query.state.data?.batchStatus || '')
+        ? 1000
+        : false,
+  });
+  const practicalImportQuery = useQuery({
+    queryKey: ['competition-subject-score-import', subjectBatchIds.practical],
+    queryFn: () => getCompetitionSubjectScoreImport(subjectBatchIds.practical!),
+    enabled: Boolean(subjectBatchIds.practical),
+    refetchInterval: (query) =>
+      paneActive &&
+      ['parsing', 'confirming'].includes(query.state.data?.batchStatus || '')
+        ? 1000
+        : false,
+  });
+  const simulationIdCardImportQuery = useQuery({
+    queryKey: ['competition-subject-score-import', subjectBatchIds.simulation],
+    queryFn: () => getCompetitionSubjectScoreImport(subjectBatchIds.simulation!),
+    enabled: Boolean(subjectBatchIds.simulation),
+    refetchInterval: (query) =>
+      paneActive &&
       ['parsing', 'confirming'].includes(query.state.data?.batchStatus || '')
         ? 1000
         : false,
@@ -1319,6 +1355,147 @@ export function CompetitionScoreRankingPage({
         await simulationConfirmMutation.mutateAsync(reason.trim());
       },
     });
+  };
+  const subjectUploadMutation = useMutation({
+    mutationFn: ({
+      sourceType,
+      file,
+    }: {
+      sourceType: 'practical' | 'simulation';
+      file: File;
+    }) =>
+      uploadCompetitionSubjectScores(
+        {
+          eventId,
+          stageId: stageId!,
+          eventWorkTypeId: eventWorkTypeId!,
+          eventWorkTypeLevelId,
+          sourceType,
+        },
+        file,
+      ),
+    onSuccess: (batch, variables) => {
+      setSubjectBatchIds((current) => ({
+        ...current,
+        [variables.sourceType]: idValue(batch.id),
+      }));
+      message.success('文件已接收，正在校验；通过后会写入成绩并计算综合分');
+    },
+  });
+  const subjectConfirmMutation = useMutation({
+    mutationFn: ({
+      batchId,
+      correctionReason,
+    }: {
+      batchId: CompetitionId;
+      correctionReason?: string;
+    }) => confirmCompetitionSubjectScoreImport(batchId, correctionReason),
+    onSuccess: () => {
+      message.success('成绩已写入，正在按赛段内容权重计算综合成绩');
+      queryClient.invalidateQueries({
+        queryKey: ['competition-score-sources', eventId],
+      });
+      queryClient.invalidateQueries({
+        queryKey: ['competition-total-score-snapshots', eventId],
+      });
+      queryClient.invalidateQueries({
+        queryKey: ['competition-ranking-snapshots', eventId],
+      });
+    },
+  });
+  const requestSubjectConfirm = (batchId: CompetitionId) => {
+    const replacingPublished = rankingSnapshots.some(
+      (snapshot) => snapshot.status === 'published',
+    );
+    if (!replacingPublished) {
+      subjectConfirmMutation.mutate({ batchId });
+      return;
+    }
+    let reason = '';
+    Modal.confirm({
+      title: '填写已发布成绩更正原因',
+      content: (
+        <Input.TextArea
+          rows={3}
+          maxLength={500}
+          onChange={(event) => {
+            reason = event.target.value;
+          }}
+        />
+      ),
+      okText: '确认更正导入',
+      onOk: async () => {
+        if (!reason.trim()) {
+          message.error('已发布范围更正必须填写原因');
+          return Promise.reject(new Error('correction reason required'));
+        }
+        await subjectConfirmMutation.mutateAsync({
+          batchId,
+          correctionReason: reason.trim(),
+        });
+      },
+    });
+  };
+  const autoConfirmedBatches = useRef(new Set<string>());
+  const completedImportBatches = useRef(new Set<string>());
+  useEffect(() => {
+    const batches = [
+      practicalImportQuery.data,
+      simulationIdCardImportQuery.data,
+    ];
+    for (const batch of batches) {
+      if (!batch?.id) continue;
+      const batchKey = idValue(batch.id);
+      const canCommit =
+        batch.batchStatus === 'ready' ||
+        (batch.batchStatus === 'failed' &&
+          batch.errorRows === 0 &&
+          batch.confirmedRows < batch.validRows);
+      if (canCommit && !autoConfirmedBatches.current.has(batchKey)) {
+        const replacingPublished = rankingSnapshots.some(
+          (snapshot) => snapshot.status === 'published',
+        );
+        if (replacingPublished) continue;
+        autoConfirmedBatches.current.add(batchKey);
+        subjectConfirmMutation.mutate({ batchId: batch.id });
+      }
+      if (
+        batch.batchStatus === 'completed' &&
+        !completedImportBatches.current.has(batchKey)
+      ) {
+        completedImportBatches.current.add(batchKey);
+        void queryClient.invalidateQueries({
+          queryKey: ['competition-score-sources', eventId],
+        });
+        void queryClient.invalidateQueries({
+          queryKey: ['competition-total-score-snapshots', eventId],
+        });
+        void queryClient.invalidateQueries({
+          queryKey: ['competition-ranking-snapshots', eventId],
+        });
+      }
+    }
+  }, [
+    eventId,
+    practicalImportQuery.data,
+    queryClient,
+    rankingSnapshots,
+    simulationIdCardImportQuery.data,
+    subjectConfirmMutation,
+  ]);
+  const downloadSubjectTemplate = async (
+    sourceType: 'practical' | 'simulation',
+  ) => {
+    try {
+      downloadBlob(
+        await downloadCompetitionSubjectScoreTemplate(sourceType),
+        sourceType === 'practical'
+          ? '实操成绩导入模板.xlsx'
+          : '仿真成绩导入模板.xlsx',
+      );
+    } catch {
+      message.error('导入模板下载失败');
+    }
   };
   const requestRankingPublish = (snapshotId: CompetitionId) => {
     const replacingPublished = rankingSnapshots.some(
@@ -2070,7 +2247,16 @@ export function CompetitionScoreRankingPage({
               </Card>
             </Col>
           </Row>
-          {subject.type === 'simulation' && (
+          {subject.type === 'simulation' && usesStageContentFormula && (
+            <Alert
+              className="competition-score-subject-alert"
+              type="info"
+              showIcon
+              message="仿真成绩按身份证号导入"
+              description="先切换到仿真，再下载模板并导入。校验通过后会自动写入仿真成绩，并按赛段内容权重计算综合成绩。"
+            />
+          )}
+          {subject.type === 'simulation' && !usesStageContentFormula && (
             <Alert
               className="competition-score-subject-alert"
               type="info"
@@ -2079,7 +2265,16 @@ export function CompetitionScoreRankingPage({
               description="文件先预检，确认后才写入统一成绩来源并触发综合计算。"
             />
           )}
-          {subject.type === 'practical' && (
+          {subject.type === 'practical' && usesStageContentFormula && (
+            <Alert
+              className="competition-score-subject-alert"
+              type="info"
+              showIcon
+              message="实操成绩按身份证号导入"
+              description="先切换到实操，再下载模板并导入。校验通过后会自动写入实操成绩，并按赛段内容权重计算综合成绩。"
+            />
+          )}
+          {subject.type === 'practical' && !usesStageContentFormula && (
             <Alert
               className="competition-score-subject-alert"
               type="warning"
@@ -2116,6 +2311,79 @@ export function CompetitionScoreRankingPage({
       ),
     };
   });
+
+  const renderSubjectImportAlert = (
+    sourceType: 'practical' | 'simulation',
+    batch?: CompetitionSubjectScoreImportBatch,
+  ) =>
+    batch ? (
+      <Alert
+        className="competition-score-import-alert"
+        type={
+          batch.batchStatus === 'invalid' || batch.batchStatus === 'failed'
+            ? 'error'
+            : 'info'
+        }
+        showIcon
+        message={`${sourceMeta[sourceType].shortLabel}成绩：${
+          {
+            parsing: '正在校验身份证号',
+            ready: '校验通过，正在写入成绩',
+            invalid: '校验未通过，尚未写入成绩',
+            confirming: '正在写入成绩并计算综合分',
+            completed: '已写入成绩，综合分按已齐备的科目计算',
+            failed: '导入失败',
+          }[batch.batchStatus]
+        }`}
+        description={`总行数 ${batch.totalRows}，有效 ${batch.validRows}，错误 ${batch.errorRows}，已确认 ${batch.confirmedRows}${batch.errorMessage ? `；${batch.errorMessage}` : ''}`}
+        action={
+          <Space>
+            {batch.errorRows > 0 && (
+              <Button
+                icon={<DownloadOutlined />}
+                onClick={async () => {
+                  try {
+                    downloadBlob(
+                      await downloadCompetitionSubjectScoreImportErrors(batch.id),
+                      `${sourceMeta[sourceType].shortLabel}成绩导入错误明细.xlsx`,
+                    );
+                  } catch {
+                    message.error('错误明细下载失败');
+                  }
+                }}
+              >
+                下载错误明细
+              </Button>
+            )}
+            {(batch.batchStatus === 'ready' ||
+              (batch.batchStatus === 'failed' &&
+                batch.errorRows === 0 &&
+                batch.confirmedRows < batch.validRows)) && (
+              <Button
+                type="primary"
+                loading={subjectConfirmMutation.isPending}
+                onClick={() => requestSubjectConfirm(batch.id)}
+              >
+                确认导入
+              </Button>
+            )}
+          </Space>
+        }
+      />
+    ) : null;
+
+  const importableSubjects = (['practical', 'simulation'] as const).filter(
+    (sourceType) => subjects.some((subject) => subject.type === sourceType),
+  );
+  const activeImportSubject = importableSubjects.includes(importSubject)
+    ? importSubject
+    : importableSubjects[0];
+  const activeImportBatch =
+    activeImportSubject === 'practical'
+      ? practicalImportQuery.data
+      : activeImportSubject === 'simulation'
+        ? simulationIdCardImportQuery.data
+        : undefined;
 
   const content = (
     <div className="competition-score-page">
@@ -2175,6 +2443,8 @@ export function CompetitionScoreRankingPage({
               </Button>
             )}
             {canImportSimulation &&
+              !usesStageContentFormula &&
+              Boolean(scoreRuleId) &&
               subjects.some((subject) => subject.type === 'simulation') && (
                 <Upload
                   accept=".xlsx,.xls"
@@ -2193,6 +2463,51 @@ export function CompetitionScoreRankingPage({
                   </Button>
                 </Upload>
               )}
+            {usesStageContentFormula &&
+              canImportSimulation &&
+              contextReady &&
+              importableSubjects.length > 0 &&
+              activeImportSubject && (
+                <Space size={8}>
+                  <Segmented
+                    value={activeImportSubject}
+                    options={importableSubjects.map((sourceType) => ({
+                      value: sourceType,
+                      label: sourceMeta[sourceType].shortLabel,
+                    }))}
+                    onChange={(value) => {
+                      const sourceType = value as 'practical' | 'simulation';
+                      setImportSubject(sourceType);
+                      setWorkbenchSubject(sourceType);
+                    }}
+                  />
+                  <Button
+                    icon={<DownloadOutlined />}
+                    onClick={() => void downloadSubjectTemplate(activeImportSubject)}
+                  >
+                    下载模板
+                  </Button>
+                  <Upload
+                    accept=".xlsx,.xls"
+                    showUploadList={false}
+                    beforeUpload={(file) => {
+                      subjectUploadMutation.mutate({
+                        sourceType: activeImportSubject,
+                        file,
+                      });
+                      return false;
+                    }}
+                  >
+                    <Button
+                      type="primary"
+                      icon={<UploadOutlined />}
+                      loading={subjectUploadMutation.isPending}
+                    >
+                      导入成绩
+                    </Button>
+                  </Upload>
+                </Space>
+              )}
           </Space>
         </div>
         <div className="competition-score-scope-selectors">
@@ -2208,6 +2523,7 @@ export function CompetitionScoreRankingPage({
               setScoreRuleId(undefined);
               setSelectedSnapshotId(undefined);
               setSelectedMemberId(undefined);
+              setSubjectBatchIds({});
             }}
           />
           <Select
@@ -2226,6 +2542,7 @@ export function CompetitionScoreRankingPage({
               setScoreRuleId(undefined);
               setSelectedSnapshotId(undefined);
               setSelectedMemberId(undefined);
+              setSubjectBatchIds({});
             }}
           />
           {levelRequired && (
@@ -2241,6 +2558,7 @@ export function CompetitionScoreRankingPage({
                 setEventWorkTypeLevelId(value);
                 setScoreRuleId(undefined);
                 setSelectedSnapshotId(undefined);
+                setSubjectBatchIds({});
               }}
             />
           )}
@@ -2305,6 +2623,8 @@ export function CompetitionScoreRankingPage({
           </Button>
         </div>
       </Card>
+      {activeImportSubject &&
+        renderSubjectImportAlert(activeImportSubject, activeImportBatch)}
       {canReadReadiness && readinessQuery.data && (
         <Alert
           className="competition-score-readiness"
@@ -2435,7 +2755,9 @@ export function CompetitionScoreRankingPage({
                     </Typography.Text>
                   </div>
                   {subjects.some((subject) => subject.type === 'simulation') &&
-                    canImportSimulation && (
+                    canImportSimulation &&
+                    !usesStageContentFormula &&
+                    Boolean(scoreRuleId) && (
                       <Upload
                         accept=".xlsx,.xls"
                         showUploadList={false}
@@ -2455,9 +2777,13 @@ export function CompetitionScoreRankingPage({
                 </div>
                 <Tabs
                   activeKey={workbenchSubject || subjects[0].type}
-                  onChange={(key) =>
-                    setWorkbenchSubject(key as CompetitionScoreSourceType)
-                  }
+                  onChange={(key) => {
+                    const sourceType = key as CompetitionScoreSourceType;
+                    setWorkbenchSubject(sourceType);
+                    if (sourceType === 'practical' || sourceType === 'simulation') {
+                      setImportSubject(sourceType);
+                    }
+                  }}
                   items={workbenchItems}
                 />
               </Card>
@@ -2767,6 +3093,14 @@ export function CompetitionScoreRankingPage({
                       </Space>
                     }
                   />
+                )}
+                {renderSubjectImportAlert(
+                  'practical',
+                  practicalImportQuery.data,
+                )}
+                {renderSubjectImportAlert(
+                  'simulation',
+                  simulationIdCardImportQuery.data,
                 )}
               </div>
             ),
