@@ -632,7 +632,8 @@ export function CompetitionScoreRankingPage({
     'competition:scoring-readiness:view',
   );
   const [stageId, setStageId] = useState<string>();
-  const [eventWorkTypeId, setEventWorkTypeId] = useState<string>();
+  // 原始工种 state（可能短暂持有跨赛事的旧 id）；下游一律使用下方派生的 effectiveEventWorkTypeId
+  const [rawEventWorkTypeId, setEventWorkTypeId] = useState<string>();
   const [eventWorkTypeLevelId, setEventWorkTypeLevelId] = useState<string>();
   const [scoreRuleId, setScoreRuleId] = useState<string>();
   const [activeTab, setActiveTab] = useState('overview');
@@ -673,6 +674,12 @@ export function CompetitionScoreRankingPage({
     queryFn: () => listCompetitionEventWorkTypes(eventId),
     enabled: canViewEvent && canReadDimensions,
   });
+  // 渲染期派生有效工种：跨赛事/URL 参数混合时，未在当前赛事工种列表中的 id 当帧钳为 undefined，
+  // 全部查询/操作以此值为准，混合帧内不会发出请求（effect 事后纠偏存在一帧竞态）
+  const eventWorkTypeId = rawEventWorkTypeId
+    && (workTypesQuery.data || []).some((item) => idValue(item.id) === rawEventWorkTypeId)
+    ? rawEventWorkTypeId
+    : undefined;
   const levelsQuery = useQuery({
     queryKey: ['competition-event-work-type-levels', eventId, eventWorkTypeId],
     queryFn: () =>
@@ -746,9 +753,9 @@ export function CompetitionScoreRankingPage({
     }
   }, [stageId, stagesQuery.data?.items]);
   useEffect(() => {
-    if (!eventWorkTypeId && workTypesQuery.data?.length)
+    if (!rawEventWorkTypeId && workTypesQuery.data?.length)
       setEventWorkTypeId(idValue(workTypesQuery.data[0].id));
-  }, [eventWorkTypeId, workTypesQuery.data]);
+  }, [rawEventWorkTypeId, workTypesQuery.data]);
   useEffect(() => {
     const levels = levelsQuery.data || [];
     if (!levels.some((level) => idValue(level.id) === eventWorkTypeLevelId))

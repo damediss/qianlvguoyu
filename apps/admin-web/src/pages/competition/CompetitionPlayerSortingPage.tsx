@@ -691,7 +691,8 @@ export function CompetitionPlayerSortingManagementPage() {
   });
   const events = eventsQuery.data?.items || [];
   const [selectedEventId, setSelectedEventId] = useState<string>();
-  const [selectedWorkTypeId, setSelectedWorkTypeId] = useState<string>();
+  // 原始工种 state（可能短暂持有跨赛事的旧 id）；下游一律使用下方派生的 selectedWorkTypeId
+  const [rawSelectedWorkTypeId, setSelectedWorkTypeId] = useState<string>();
   const [selectedLevelCode, setSelectedLevelCode] = useState<string>();
   const [selectedStageId, setSelectedStageId] = useState<string>();
 
@@ -718,6 +719,12 @@ export function CompetitionPlayerSortingManagementPage() {
         label: workType.displayName || workType.workTypeName || idValue(workType.workTypeId),
       }))
   ), [workTypesQuery.data]);
+  // 渲染期派生有效工种：跨赛事切换时，未在当前赛事工种列表中的 id 当帧钳为 undefined，
+  // 查询不会发出（effect 事后纠偏存在一帧竞态，会打出 404/422 控制台噪音）
+  const selectedWorkTypeId = rawSelectedWorkTypeId
+    && workTypeOptions.some((item) => item.value === rawSelectedWorkTypeId)
+    ? rawSelectedWorkTypeId
+    : undefined;
 
   useEffect(() => {
     if (!workTypesQuery.data) return;
@@ -727,12 +734,12 @@ export function CompetitionPlayerSortingManagementPage() {
       setSelectedStageId(undefined);
       return;
     }
-    if (!selectedWorkTypeId || !workTypeOptions.some((item) => item.value === selectedWorkTypeId)) {
+    if (!rawSelectedWorkTypeId || !workTypeOptions.some((item) => item.value === rawSelectedWorkTypeId)) {
       setSelectedWorkTypeId(workTypeOptions[0].value);
       setSelectedLevelCode(undefined);
       setSelectedStageId(undefined);
     }
-  }, [selectedWorkTypeId, workTypeOptions, workTypesQuery.data]);
+  }, [rawSelectedWorkTypeId, workTypeOptions, workTypesQuery.data]);
 
   const levelsQuery = useQuery({
     queryKey: ['competition-event-work-type-levels', selectedEventId, selectedWorkTypeId, 'player-sorting'],

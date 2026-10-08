@@ -179,7 +179,8 @@ export function CompetitionTheoryExamPage({
 
   const [activeTab, setActiveTab] = useState('paper');
   const [stageId, setStageId] = useState<string | undefined>(initialStageId);
-  const [eventWorkTypeId, setEventWorkTypeId] = useState<string | undefined>(initialEventWorkTypeId);
+  // 原始工种 state（可能短暂持有跨赛事的旧 id，来自 URL 参数）；下游一律使用下方派生的 effectiveEventWorkTypeId
+  const [rawEventWorkTypeId, setEventWorkTypeId] = useState<string | undefined>(initialEventWorkTypeId);
   const [eventWorkTypeLevelId, setEventWorkTypeLevelId] = useState<string>();
   const [scoreRuleId, setScoreRuleId] = useState<string>();
   const [selectedVersionId, setSelectedVersionId] = useState<string>();
@@ -197,16 +198,27 @@ export function CompetitionTheoryExamPage({
   const [actionForm] = Form.useForm<{ reason: string; confirmation: string }>();
   const [withdrawForm] = Form.useForm<{ reason: string }>();
   const queryClient = useQueryClient();
-  const scopeReady = Boolean(stageId && eventWorkTypeId && scoreRuleId);
-  const paperScopeReady = Boolean(stageId && eventWorkTypeId);
 
   const eventQuery = useQuery({
     queryKey: ['competition-event', eventId],
     queryFn: () => getCompetitionEvent(eventId),
     enabled: canViewEvent,
   });
+  const workTypesQuery = useQuery({
+    queryKey: ['competition-event-work-types', eventId],
+    queryFn: () => listCompetitionEventWorkTypes(eventId),
+    enabled: canViewEvent && canReadDimensions,
+  });
+  // 渲染期派生有效工种：跨赛事/URL 参数混合时，未在当前赛事工种列表中的 id 当帧钳为 undefined，
+  // 全部查询/操作以此值为准，混合帧内不会发出请求（effect 事后纠偏存在一帧竞态）
+  const eventWorkTypeId = rawEventWorkTypeId
+    && (workTypesQuery.data || []).some((item) => idValue(item.id) === rawEventWorkTypeId)
+    ? rawEventWorkTypeId
+    : undefined;
+  const scopeReady = Boolean(stageId && eventWorkTypeId && scoreRuleId);
+  const paperScopeReady = Boolean(stageId && eventWorkTypeId);
   const stagesQuery = useQuery({
-    queryKey: ['competition-stages', eventId, eventWorkTypeId ?? 'event', initialEventWorkTypeLevelCode ?? 'event'],
+    queryKey: ['competition-stages', eventId],
     queryFn: () => pageCompetitionStages(eventId, {
       page: 1,
       pageSize: 500,
@@ -215,11 +227,6 @@ export function CompetitionTheoryExamPage({
       eventWorkTypeId: initialEventWorkTypeLevelCode ? eventWorkTypeId : undefined,
       eventWorkTypeLevelCode: initialEventWorkTypeLevelCode,
     }),
-    enabled: canViewEvent && canReadDimensions,
-  });
-  const workTypesQuery = useQuery({
-    queryKey: ['competition-event-work-types', eventId],
-    queryFn: () => listCompetitionEventWorkTypes(eventId),
     enabled: canViewEvent && canReadDimensions,
   });
   const levelsQuery = useQuery({
@@ -243,10 +250,10 @@ export function CompetitionTheoryExamPage({
   useEffect(() => {
     const workTypes = workTypesQuery.data || [];
     if (!workTypes.length) return;
-    if (!eventWorkTypeId || !workTypes.some((workType) => idValue(workType.id) === eventWorkTypeId)) {
+    if (!rawEventWorkTypeId || !workTypes.some((workType) => idValue(workType.id) === rawEventWorkTypeId)) {
       setEventWorkTypeId(idValue(workTypes[0].id));
     }
-  }, [eventWorkTypeId, workTypesQuery.data]);
+  }, [rawEventWorkTypeId, workTypesQuery.data]);
   useEffect(() => {
     const levels = levelsQuery.data || [];
     if (!levels.length) {
