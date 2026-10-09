@@ -9,6 +9,7 @@ import {
   Card,
   Alert,
   Button,
+  Checkbox,
   Input,
   Modal,
   Pagination,
@@ -43,6 +44,7 @@ import {
   saveCompetitionPlayerSortingGroups,
   saveCompetitionPlayerSortingRoles,
   saveCompetitionPlayerSortingWorkstations,
+  shuffleCompetitionPlayerSortingGroupOrder,
 } from '../../api/competitionPlayerSorting';
 import type { CompetitionEvent, CompetitionId, CompetitionStage } from '../../types/competition';
 import type {
@@ -103,11 +105,11 @@ function splitCodes(value: string) {
 
 function taskStatus(task: CompetitionPlayerSortingTask) {
   if (task.groupingMode === 'company' && task.status === 'created') {
-    return task.groupCount > 0
-      ? <Tag color="processing">待完成排序</Tag>
-      : <Tag color="warning">待成组</Tag>;
+    if (!(task.groupCount > 0)) return <Tag color="warning">待成组</Tag>;
+    if (!task.workstationLabel) return <Tag color="warning">待设置工位</Tag>;
+    return <Tag color="processing">抽签进行中</Tag>;
   }
-  if (task.status === 'ordered') return <Tag color="processing">待工位抽签</Tag>;
+  if (task.status === 'ordered') return <Tag color="processing">待完成工位抽签</Tag>;
   if (task.status === 'drawn') return <Tag color="success">已完成工位抽签</Tag>;
   if (task.status === 'sorted') return <Tag color="success">已随机排序</Tag>;
   if (task.status === 'created' && task.playerCount === 0) return <Tag color="warning">待选择选手</Tag>;
@@ -183,6 +185,7 @@ export function CompetitionPlayerSortingPage({
   const [reveal, setReveal] = useState<CompetitionPlayerSortingReveal>();
   const [previewTask, setPreviewTask] = useState<CompetitionPlayerSortingTask>();
   const [groupPage, setGroupPage] = useState(1);
+  const [selectedStationGroupNos, setSelectedStationGroupNos] = useState<number[]>([]);
   const [resultGroupPage, setResultGroupPage] = useState(1);
   const [activeTaskId, setActiveTaskId] = useState<string>();
   const [resultOpen, setResultOpen] = useState(false);
@@ -270,7 +273,7 @@ export function CompetitionPlayerSortingPage({
       applyDetail(task);
       setGroupPage(1);
       setWizardStep(2);
-      message.success('分组已保存，请按组成员顺序点击抽签');
+      message.success('分组已保存，请随机排列各组出场顺序');
       invalidateTasks();
     },
     onError: (error) => message.error(errorText(error, '保存分组失败')),
@@ -289,7 +292,7 @@ export function CompetitionPlayerSortingPage({
     },
     onSuccess: (task) => {
       applyDetail(task);
-      setWizardStep(3);
+      setWizardStep(4);
       message.success('组内角色已保存，可以随机排出场顺序并选取组长');
       invalidateTasks();
     },
@@ -301,7 +304,7 @@ export function CompetitionPlayerSortingPage({
     onSuccess: (task) => {
       applyDetail(task);
       setGroupPage(1);
-      setWizardStep(3);
+      setWizardStep(4);
       message.success('已随机排出场顺序，并在每组指定一名组长');
       queryClient.setQueryData(['competition-player-sorting-task', idValue(task.id)], task);
       invalidateTasks();
@@ -309,9 +312,22 @@ export function CompetitionPlayerSortingPage({
     onError: (error) => message.error(errorText(error, '随机排序失败')),
   });
 
+  const shuffleGroupOrderMutation = useMutation({
+    mutationFn: () => {
+      if (!createdTaskId) throw new Error('请先保存分组');
+      return shuffleCompetitionPlayerSortingGroupOrder(createdTaskId);
+    },
+    onSuccess: (task) => {
+      applyDetail(task);
+      message.success('已随机排定各组出场顺序，可以进入工位设置');
+      invalidateTasks();
+    },
+    onError: (error) => message.error(errorText(error, '组出场顺序排序失败')),
+  });
+
   const workstationsMutation = useMutation({
     mutationFn: async () => {
-      if (!createdTaskId) throw new Error('请先完成随机排序');
+      if (!createdTaskId) throw new Error('请先完成成组');
       return saveCompetitionPlayerSortingWorkstations(createdTaskId, {
         label: workstationLabel.trim(),
         subLabel: subWorkstationLabel.trim(),
@@ -320,7 +336,9 @@ export function CompetitionPlayerSortingPage({
     },
     onSuccess: (task) => {
       applyDetail(task);
-      message.success('工位设置已保存，请按组点击抽签');
+      setGroupPage(1);
+      setWizardStep(4);
+      message.success('工位设置已保存。完成若干组的组内抽签后，就可以先为这些组抽取工位');
       invalidateTasks();
     },
     onError: (error) => message.error(errorText(error, '工位设置保存失败')),
@@ -340,13 +358,16 @@ export function CompetitionPlayerSortingPage({
   });
 
   const stationDrawMutation = useMutation({
-    mutationFn: () => {
+    mutationFn: (groupNos: number[]) => {
       if (!createdTaskId) throw new Error('请先保存工位设置');
-      return drawCompetitionPlayerSortingWorkstations(createdTaskId);
+      if (!groupNos.length) throw new Error('请选择已完成组内抽签的组');
+      return drawCompetitionPlayerSortingWorkstations(createdTaskId, groupNos);
     },
-    onSuccess: (result) => {
+    onSuccess: (result, groupNos) => {
       applyDetail(result.task);
-      setReveal(result);
+      setSelectedStationGroupNos([]);
+      if (groupNos.length === 1) setReveal(result);
+      else message.success(`已为 ${groupNos.length} 个组抽取工位`);
       if (result.allCompleted) {
         queryClient.setQueryData(['competition-player-sorting-task', idValue(result.task.id)], result.task);
       }
@@ -496,22 +517,26 @@ export function CompetitionPlayerSortingPage({
     setWizardOpen(true);
   };
 
-  const resumeTask = async (task: CompetitionPlayerSortingTask) => {
+  const resumeTask = async (task: CompetitionPlayerSortingTask, preferredStep?: number) => {
     try {
       const detail = await queryClient.fetchQuery({
         queryKey: ['competition-player-sorting-task', idValue(task.id)],
         queryFn: () => getCompetitionPlayerSortingTask(task.id),
       });
       applyDetail(detail);
-      const ungrouped = (detail.members || []).some((member) => member.groupNo == null || !member.groupName);
-      if (detail.status === 'drawn' || detail.status === 'ordered') {
-        setGroupPage(1);
-        setWizardStep(3);
-      } else if (ungrouped) setWizardStep(1);
-      else {
-        setGroupPage(1);
-        setWizardStep(2);
-      }
+      const ungrouped = (detail.members || []).some((member) => member.groupNo == null || !member.groupName)
+        || !(detail.groupCount > 0);
+      const stationsReady = Boolean(
+        detail.workstationLabel
+        && detail.subWorkstationLabel
+        && (detail.stations?.length || 0) > 0,
+      );
+      setGroupPage(1);
+      if (preferredStep != null) setWizardStep(preferredStep);
+      else if (ungrouped) setWizardStep(1);
+      else if (!detail.groupOrderShuffled) setWizardStep(2);
+      else if (!stationsReady) setWizardStep(3);
+      else setWizardStep(4);
       setWizardOpen(true);
     } catch (error) {
       message.error(errorText(error, '排序任务加载失败'));
@@ -656,12 +681,15 @@ export function CompetitionPlayerSortingPage({
       render: (_: unknown, record: CompetitionPlayerSortingTask) => (
         <Space wrap>
           {record.groupingMode === 'company' && record.status === 'created' && canCreate && (
-            <Button type="link" onClick={() => void resumeTask(record)}>继续</Button>
-          )}
-          {record.groupingMode === 'company' && (record.status === 'ordered' || record.status === 'drawn') && canCreate && (
             <Button type="link" onClick={() => void resumeTask(record)}>
-              {record.status === 'drawn' ? '调整工位' : '工位抽签'}
+              {record.workstationLabel ? '继续抽签' : '继续'}
             </Button>
+          )}
+          {record.groupingMode === 'company' && record.status === 'ordered' && canCreate && (
+            <Button type="link" onClick={() => void resumeTask(record, 4)}>工位抽签</Button>
+          )}
+          {record.groupingMode === 'company' && record.status === 'drawn' && canCreate && (
+            <Button type="link" onClick={() => void resumeTask(record, 3)}>调整工位</Button>
           )}
           {(record.status === 'sorted' || record.status === 'drawn' || record.status === 'ordered') && canView && (
             <Button type="link" onClick={() => { setResultGroupPage(1); setActiveTaskId(idValue(record.id)); setResultOpen(true); }}>
@@ -707,12 +735,53 @@ export function CompetitionPlayerSortingPage({
     () => groupAssignments(taskDetailQuery.data?.assignments || []),
     [taskDetailQuery.data?.assignments],
   );
-  const assignmentGroupPage = Math.min(groupPage, Math.max(assignmentGroups.length, 1));
-  const currentAssignmentGroup = assignmentGroups[assignmentGroupPage - 1];
-  const nextDrawMember = members.find((member) => member.groupNo != null && member.drawOrder == null);
+  const nextDrawMember = useMemo(() => {
+    for (const group of roleGroups) {
+      const member = group.members.find((item) => item.drawOrder == null);
+      if (member) return member;
+    }
+    return undefined;
+  }, [roleGroups]);
+  const nextDrawKey = nextDrawMember
+    ? `${nextDrawMember.groupNo}:${idValue(nextDrawMember.contestantProfileId)}`
+    : '';
+  useEffect(() => {
+    if (wizardStep !== 4 || !nextDrawKey || nextDrawMember?.groupNo == null) return;
+    const index = roleGroups.findIndex((group) => group.groupNo === nextDrawMember.groupNo);
+    if (index >= 0) setGroupPage(index + 1);
+  }, [wizardStep, nextDrawKey]);
   const roleGroupPage = Math.min(groupPage, Math.max(roleGroups.length, 1));
   const currentRoleGroup = roleGroups[roleGroupPage - 1];
-  const nextStationGroup = assignmentGroups.find((group) => !group.workstation || !group.subWorkstation);
+  const configuredGroupCount = roleGroups.length || previewTask?.groupCount || manualGroups.length;
+  const workstationByGroupNo = new Map(assignmentGroups.map((group) => [group.groupNo, group]));
+  const workstationDrawnCount = roleGroups.filter((group) => {
+    const assigned = workstationByGroupNo.get(group.groupNo);
+    return Boolean(assigned?.workstation && assigned?.subWorkstation);
+  }).length;
+  const savedStationCount = previewTask?.stations?.length || 0;
+  const remainingStationCount = Math.max(savedStationCount - workstationDrawnCount, 0);
+  const savedStationSnapshot = JSON.stringify((previewTask?.stations || []).map((station) => ({
+    code: station.code,
+    subCodes: station.subCodes || [],
+  })));
+  const stationsDirty = workstationLabel.trim() !== (previewTask?.workstationLabel || '')
+    || subWorkstationLabel.trim() !== (previewTask?.subWorkstationLabel || '')
+    || JSON.stringify(stations) !== savedStationSnapshot;
+  const stationsReadyToSave = Boolean(
+    workstationLabel.trim()
+    && subWorkstationLabel.trim()
+    && workstationLabel.trim() !== subWorkstationLabel.trim()
+    && configuredGroupCount >= 1
+    && stations.length >= configuredGroupCount
+    && stations.every((station) => station.subCodes.length >= 1)
+  );
+  const canEnterDraw = Boolean(
+    previewTask?.workstationLabel
+    && previewTask.subWorkstationLabel
+    && savedStationCount >= configuredGroupCount
+    && configuredGroupCount >= 1
+    && !stationsDirty
+  );
   const resultGroupIndex = Math.min(resultGroupPage, Math.max(resultGroups.length, 1));
   const currentResultGroup = resultGroups[resultGroupIndex - 1];
 
@@ -723,7 +792,7 @@ export function CompetitionPlayerSortingPage({
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap' }}>
           <div>
             {showTitle && <Typography.Title level={4} style={{ margin: 0 }}><TeamOutlined /> 排序分组</Typography.Title>}
-            <Typography.Text type="secondary">赛段：{stageName || stageId} · 先按公司选人成组，再抽签排工位</Typography.Text>
+            <Typography.Text type="secondary">赛段：{stageName || stageId} · 先成组并设置工位，再分组抽签。完成部分组后可以先抽这些组的工位</Typography.Text>
           </div>
           <Space>
             <Button
@@ -758,13 +827,13 @@ export function CompetitionPlayerSortingPage({
       </Space>
 
       <Modal
-        title={`排序任务 · ${['选择选手', '手动成组', '组内抽签', '工位抽签'][wizardStep]}`}
+        title={`排序任务 · ${['选择选手', '手动成组', '组出场顺序', '工位设置', '抽签'][wizardStep]}`}
         open={wizardOpen}
         onCancel={() => setWizardOpen(false)}
-        width={980}
+        width="min(1100px, calc(100vw - 48px))"
         centered
         destroyOnClose
-        styles={{ body: { maxHeight: 'calc(100vh - 220px)', overflowY: 'auto' } }}
+        styles={{ body: { maxHeight: 'calc(100vh - 168px)', overflowY: 'auto' } }}
         footer={(
           <Space>
             {wizardStep < 2 && <Button onClick={() => setWizardOpen(false)}>取消</Button>}
@@ -786,20 +855,37 @@ export function CompetitionPlayerSortingPage({
             )}
             {wizardStep === 2 && (
               <>
-                <Button onClick={() => setWizardOpen(false)}>稍后处理</Button>
-                {members.length > 0 && members.every((member) => member.drawOrder != null) && (
-                  <Button type="primary" onClick={() => setWizardStep(3)}>进入工位抽签</Button>
-                )}
+                <Button onClick={() => setWizardStep(1)}>返回修改分组</Button>
+                <Button
+                  loading={shuffleGroupOrderMutation.isPending}
+                  disabled={!canCreate || roleGroups.length < 1}
+                  onClick={() => shuffleGroupOrderMutation.mutate()}
+                >{previewTask?.groupOrderShuffled ? '重新随机排序' : '随机排序出场顺序'}</Button>
+                <Button
+                  type="primary"
+                  disabled={!previewTask?.groupOrderShuffled}
+                  onClick={() => setWizardStep(3)}
+                >进入工位设置</Button>
               </>
             )}
             {wizardStep === 3 && (
               <>
-                <Button onClick={() => setWizardStep(2)}>返回排序抽签</Button>
+                <Button onClick={() => setWizardOpen(false)}>稍后处理</Button>
+                {canEnterDraw && (
+                  <Button onClick={() => { setGroupPage(1); setWizardStep(4); }}>进入抽签</Button>
+                )}
                 <Button
+                  type="primary"
                   loading={workstationsMutation.isPending}
-                  disabled={!workstationLabel.trim() || !subWorkstationLabel.trim() || assignmentGroups.length < 1 || stations.length < assignmentGroups.length || stations.some((station) => station.subCodes.length < 1)}
+                  disabled={!canCreate || !stationsReadyToSave}
                   onClick={() => workstationsMutation.mutate()}
                 >保存工位设置</Button>
+              </>
+            )}
+            {wizardStep === 4 && (
+              <>
+                <Button onClick={() => setWizardStep(3)}>返回工位设置</Button>
+                <Button onClick={() => setWizardOpen(false)}>稍后处理</Button>
               </>
             )}
           </Space>
@@ -810,8 +896,9 @@ export function CompetitionPlayerSortingPage({
           items={[
             { title: '选择选手' },
             { title: '手动成组' },
-            { title: '组内抽签' },
-            { title: '工位抽签' },
+            { title: '组出场顺序' },
+            { title: '工位设置' },
+            { title: '抽签' },
           ]}
           style={{ marginBottom: 24 }}
         />
@@ -922,66 +1009,54 @@ export function CompetitionPlayerSortingPage({
         {wizardStep === 2 && (
           <Space direction="vertical" size={12} style={{ width: '100%' }}>
             <Alert
-              type={members.length > 0 && members.every((member) => member.drawOrder != null) ? 'success' : 'info'}
+              type={previewTask?.groupOrderShuffled ? 'success' : 'info'}
               showIcon
-              message="按组成员顺序点击抽签。抽到 1 的选手为组长，最后一名也需要点击确认。"
+              message={previewTask?.groupOrderShuffled
+                ? `已随机排定 ${roleGroups.length} 个组的出场顺序。`
+                : `已成组 ${roleGroups.length} 个。当前顺序还是成组时的先后。`}
+              description="随机打乱各组的出场先后。出场顺序 1 的组最先出场。排定后才能进入工位和子工位设置。尚未开始组内抽签时，可以重新随机排序。"
             />
-            {currentRoleGroup && (
-              <Card size="small" title={`${currentRoleGroup.groupName} · ${currentRoleGroup.orgName} · ${currentRoleGroup.members.length}人`}>
-                <Table<CompetitionPlayerSortingMember>
-                  rowKey={(record) => idValue(record.contestantProfileId)}
-                  size="small"
-                  pagination={false}
-                  dataSource={currentRoleGroup.members}
-                  columns={[
-                    {
-                      title: '考生姓名',
-                      key: 'name',
-                      render: (_, record) => candidateById.get(idValue(record.contestantProfileId))?.name || '-',
-                    },
-                    {
-                      title: '排序号',
-                      dataIndex: 'drawOrder',
-                      width: 120,
-                      render: (value?: number | null) => value == null
-                        ? <Typography.Text type="secondary">待抽取</Typography.Text>
-                        : <Typography.Text strong style={{ fontSize: 20 }}>{value}{value === 1 ? ' · 组长' : ''}</Typography.Text>,
-                    },
-                    {
-                      title: '操作',
-                      key: 'draw',
-                      width: 140,
-                      render: (_, record) => nextDrawMember && idValue(nextDrawMember.contestantProfileId) === idValue(record.contestantProfileId) ? (
-                        <Button type="primary" loading={orderDrawMutation.isPending} disabled={!canRandomize} onClick={() => orderDrawMutation.mutate()}>
-                          点击抽签
-                        </Button>
-                      ) : null,
-                    },
-                  ]}
-                />
-              </Card>
-            )}
-            {roleGroups.length > 1 && (
-              <Pagination
-                current={roleGroupPage}
-                pageSize={1}
-                total={roleGroups.length}
-                showSizeChanger={false}
-                onChange={setGroupPage}
-                showTotal={(total, range) => `第 ${range[0]} / ${total} 组`}
-              />
-            )}
+            <Table
+              size="small"
+              pagination={false}
+              rowKey="groupNo"
+              dataSource={roleGroups}
+              locale={{ emptyText: '请先完成成组' }}
+              columns={[
+                {
+                  title: '出场顺序',
+                  dataIndex: 'groupNo',
+                  width: 120,
+                  render: (value: number) => (previewTask?.groupOrderShuffled ? value : '待排序'),
+                },
+                { title: '组名', dataIndex: 'groupName' },
+                { title: '参赛公司', dataIndex: 'orgName' },
+                {
+                  title: '人数',
+                  key: 'count',
+                  width: 80,
+                  render: (_: unknown, record: { members: CompetitionPlayerSortingMember[] }) => record.members.length,
+                },
+              ]}
+            />
           </Space>
         )}
 
         {wizardStep === 3 && (
           <Space direction="vertical" size={12} style={{ width: '100%' }}>
             <Alert
-              type="info"
+              type={stationsReadyToSave ? 'success' : 'info'}
               showIcon
-              message={`共 ${assignmentGroups.length} 个组，已配置 ${stations.length} 个工位。抽中工位时会带出绑定的子工位。`}
-              description="先填写工位描述和子工位描述。每个工位编号要绑定一个或多个子工位编号，例如槽号 703 绑定极号 B6。小组抽到 703，对应子工位就是 B6。"
+              message={`共 ${configuredGroupCount} 个组，已添加 ${stations.length} 个工位。工位数量不能少于组数，抽中工位时会带出绑定的子工位。`}
+              description="各组出场顺序已经随机排定。先填写工位描述和子工位描述。每个工位编号要绑定一个或多个子工位编号，例如槽号 703 绑定极号 B6。小组抽到 703，对应子工位就是 B6。保存后进入抽签。"
             />
+            {workstationDrawnCount > 0 && (
+              <Alert
+                type="warning"
+                showIcon
+                message="重新保存工位设置会清空已经抽出的工位，组内排序号保留。"
+              />
+            )}
             <Space wrap>
               <Input value={workstationLabel} maxLength={16} placeholder="工位描述" style={{ width: 160 }} onChange={(event) => setWorkstationLabel(event.target.value)} />
               <Input value={subWorkstationLabel} maxLength={16} placeholder="子工位描述" style={{ width: 160 }} onChange={(event) => setSubWorkstationLabel(event.target.value)} />
@@ -1009,33 +1084,111 @@ export function CompetitionPlayerSortingPage({
                 </Card>
               ))}
             </Space>
-            {currentAssignmentGroup && (
-              <Card
-                size="small"
-                title={`${currentAssignmentGroup.groupName} · ${currentAssignmentGroup.orgName} · ${currentAssignmentGroup.members.length}人${currentAssignmentGroup.workstation ? ` · ${workstationLabel || '工位'} ${currentAssignmentGroup.workstation}` : ''}${currentAssignmentGroup.subWorkstation ? ` · ${subWorkstationLabel || '子工位'} ${currentAssignmentGroup.subWorkstation}` : ''}`}
-              >
-                <Space direction="vertical">
+          </Space>
+        )}
+
+        {wizardStep === 4 && (
+          <Space direction="vertical" size={16} style={{ width: '100%' }}>
+            <Card
+              size="small"
+              title="组内抽签"
+              extra={<Typography.Text type="secondary">抽到 1 的选手为组长</Typography.Text>}
+            >
+              {currentRoleGroup && (
+                <>
                   <Typography.Text>
-                    {currentAssignmentGroup.members.map((member) => `${member.name || '-'}（${member.groupOrder}${member.groupLeader ? ' · 组长' : ''}）`).join('、')}
+                    {currentRoleGroup.groupName} · {currentRoleGroup.orgName} · {currentRoleGroup.members.length}人
                   </Typography.Text>
-                  {nextStationGroup && nextStationGroup.groupNo === currentAssignmentGroup.groupNo && previewTask?.workstationLabel && previewTask?.subWorkstationLabel && (
-                    <Button type="primary" size="large" loading={stationDrawMutation.isPending} disabled={!canRandomize} onClick={() => stationDrawMutation.mutate()}>
-                      点击抽取工位
-                    </Button>
-                  )}
-                </Space>
-              </Card>
-            )}
-            {assignmentGroups.length > 1 && (
-              <Pagination
-                current={assignmentGroupPage}
-                pageSize={1}
-                total={assignmentGroups.length}
-                showSizeChanger={false}
-                onChange={setGroupPage}
-                showTotal={(total, range) => `第 ${range[0]} / ${total} 组`}
-              />
-            )}
+                  <Table<CompetitionPlayerSortingMember>
+                    rowKey={(record) => idValue(record.contestantProfileId)}
+                    size="small"
+                    pagination={false}
+                    style={{ marginTop: 12 }}
+                    dataSource={currentRoleGroup.members}
+                    columns={[
+                      {
+                        title: '考生姓名',
+                        key: 'name',
+                        render: (_, record) => candidateById.get(idValue(record.contestantProfileId))?.name || '-',
+                      },
+                      {
+                        title: '排序号',
+                        dataIndex: 'drawOrder',
+                        width: 140,
+                        render: (value?: number | null, record?: CompetitionPlayerSortingMember) => {
+                          if (value != null) {
+                            return <Typography.Text strong style={{ fontSize: 20 }}>{value}{value === 1 ? ' · 组长' : ''}</Typography.Text>;
+                          }
+                          const current = Boolean(
+                            record && nextDrawMember
+                            && idValue(nextDrawMember.contestantProfileId) === idValue(record.contestantProfileId),
+                          );
+                          return <Typography.Text type={current ? undefined : 'secondary'}>{current ? '当前抽签' : '待抽取'}</Typography.Text>;
+                        },
+                      },
+                    ]}
+                  />
+                </>
+              )}
+              {roleGroups.length > 1 && (
+                <Pagination
+                  style={{ marginTop: 12 }}
+                  current={roleGroupPage}
+                  pageSize={1}
+                  total={roleGroups.length}
+                  showSizeChanger={false}
+                  onChange={setGroupPage}
+                  showTotal={(total, range) => `第 ${range[0]} / ${total} 组`}
+                />
+              )}
+              <div style={{ marginTop: 12, textAlign: 'right' }}>
+                <Button
+                  type="primary"
+                  loading={orderDrawMutation.isPending}
+                  disabled={!canRandomize || !nextDrawMember || !currentRoleGroup?.members.some((member) => (
+                    idValue(member.contestantProfileId) === idValue(nextDrawMember.contestantProfileId)
+                  ))}
+                  onClick={() => orderDrawMutation.mutate()}
+                >点击抽签</Button>
+              </div>
+            </Card>
+            <Card size="small" title="工位抽签">
+              <Typography.Paragraph type="secondary" style={{ marginBottom: 12 }}>
+                勾选已完成组内抽签的组后再抽工位。未完成组内抽签的组不能选择。已抽到工位的组会直接显示结果。
+              </Typography.Paragraph>
+              <Space direction="vertical" size={8} style={{ width: '100%' }}>
+                {roleGroups.map((group) => {
+                  const assigned = workstationByGroupNo.get(group.groupNo);
+                  const orderDone = group.members.length > 0 && group.members.every((member) => member.drawOrder != null);
+                  const drawn = Boolean(assigned?.workstation);
+                  return (
+                    <Checkbox
+                      key={group.groupNo}
+                      disabled={!orderDone || drawn}
+                      checked={!drawn && selectedStationGroupNos.includes(group.groupNo)}
+                      onChange={(event) => {
+                        setSelectedStationGroupNos((current) => event.target.checked
+                          ? [...current, group.groupNo]
+                          : current.filter((groupNo) => groupNo !== group.groupNo));
+                      }}
+                    >
+                      {group.groupName}
+                      {!orderDone && ' · 组内抽签未完成'}
+                      {drawn && ` · ${previewTask?.workstationLabel || '工位'} ${assigned?.workstation}${assigned?.subWorkstation ? ` / ${previewTask?.subWorkstationLabel || '子工位'} ${assigned.subWorkstation}` : ''}`}
+                      {orderDone && !drawn && ' · 可抽取工位'}
+                    </Checkbox>
+                  );
+                })}
+              </Space>
+              <div style={{ marginTop: 12, textAlign: 'right' }}>
+                <Button
+                  type="primary"
+                  loading={stationDrawMutation.isPending}
+                  disabled={!canRandomize || selectedStationGroupNos.length < 1 || remainingStationCount < 1}
+                  onClick={() => stationDrawMutation.mutate(selectedStationGroupNos)}
+                >工位抽签</Button>
+              </div>
+            </Card>
           </Space>
         )}
       </Modal>
@@ -1057,6 +1210,9 @@ export function CompetitionPlayerSortingPage({
                 <div style={{ fontSize: 28, fontWeight: 600, marginTop: 16 }}>{reveal.name || '选手'}</div>
                 <div style={{ fontSize: 16, marginTop: 8 }}>{reveal.groupName} · {companyName(reveal.orgName)}</div>
                 {reveal.leader ? <Tag color="gold" style={{ marginTop: 16, fontSize: 18, padding: '4px 16px' }}>组长</Tag> : <div style={{ marginTop: 16, fontSize: 16 }}>排序号</div>}
+                {reveal.groupCompleted && (
+                  <div style={{ marginTop: 16, fontSize: 16 }}>本组组内抽签已完成，可以抽取工位</div>
+                )}
               </>
             ) : (
               <>
@@ -1064,6 +1220,9 @@ export function CompetitionPlayerSortingPage({
                 <div style={{ fontSize: 16, marginTop: 8 }}>{companyName(reveal.orgName)}</div>
                 <div style={{ fontSize: 40, fontWeight: 700, marginTop: 20, color: '#1677ff' }}>{reveal.workstationLabel} {reveal.workstation}</div>
                 <div style={{ fontSize: 32, fontWeight: 700, marginTop: 8, color: '#d48806' }}>{reveal.subWorkstationLabel} {reveal.subWorkstation}</div>
+                {!reveal.allCompleted && (
+                  <div style={{ marginTop: 16, fontSize: 16 }}>该工位已占用，其余小组抽完组内顺序后继续抽取剩余工位</div>
+                )}
               </>
             )}
           </div>

@@ -3,9 +3,11 @@ package com.guoyu.platform.competition.sorting.service;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Random;
+import java.util.Set;
 
 /** 选手归类与按组抽签。每个组抽到一个工位编号。 */
 final class CompetitionPlayerSortingPlan {
@@ -19,6 +21,28 @@ final class CompetitionPlayerSortingPlan {
   }
 
   record CompanyGroup(int groupNo, String orgName, List<String> profileIds, String groupName) {
+  }
+
+  /** 把已有组号随机映射为 1..N 的出场顺序。先出现在返回值里的旧组号成为出场顺序 1。 */
+  static Map<Integer, Integer> shuffleGroupAppearance(List<Integer> groupNos, Random random) {
+    LinkedHashSet<Integer> unique = new LinkedHashSet<>();
+    if (groupNos != null) {
+      for (Integer groupNo : groupNos) {
+        if (groupNo != null) {
+          unique.add(groupNo);
+        }
+      }
+    }
+    if (unique.isEmpty()) {
+      throw new IllegalArgumentException("no groups to shuffle");
+    }
+    List<Integer> shuffled = new ArrayList<>(unique);
+    Collections.shuffle(shuffled, random);
+    Map<Integer, Integer> oldToNew = new LinkedHashMap<>();
+    for (int index = 0; index < shuffled.size(); index++) {
+      oldToNew.put(shuffled.get(index), index + 1);
+    }
+    return oldToNew;
   }
 
   static String normalizeOrg(String orgName) {
@@ -78,6 +102,56 @@ final class CompetitionPlayerSortingPlan {
       throw new IllegalArgumentException("no workstation code remains");
     }
     return remaining.get(random.nextInt(remaining.size()));
+  }
+
+  enum WorkstationDrawGate {
+    READY,
+    NEED_GROUP_ORDER,
+    WAIT_FOR_REMAINING_GROUPS,
+    ALL_ASSIGNED
+  }
+
+  record WorkstationDrawChoice(WorkstationDrawGate gate, Integer groupNo) {
+  }
+
+  /**
+   * 只给已经完成组内抽签、且尚未分配工位的小组抽工位。
+   * 多个小组都可抽时，按组号从小到大取下一组，已抽出的工位不再进入候选。
+   */
+  static WorkstationDrawChoice chooseWorkstationGroup(
+      List<Integer> groupNosInOrder,
+      Set<Integer> orderCompleted,
+      Set<Integer> workstationAssigned) {
+    if (groupNosInOrder == null || groupNosInOrder.isEmpty()) {
+      throw new IllegalArgumentException("groups are required");
+    }
+    Integer next = null;
+    boolean anyIncomplete = false;
+    boolean anyCompleted = false;
+    for (Integer groupNo : groupNosInOrder) {
+      if (groupNo == null) {
+        continue;
+      }
+      boolean completed = orderCompleted != null && orderCompleted.contains(groupNo);
+      boolean assigned = workstationAssigned != null && workstationAssigned.contains(groupNo);
+      if (!completed) {
+        anyIncomplete = true;
+        continue;
+      }
+      anyCompleted = true;
+      if (!assigned && next == null) {
+        next = groupNo;
+      }
+    }
+    if (next != null) {
+      return new WorkstationDrawChoice(WorkstationDrawGate.READY, next);
+    }
+    if (anyIncomplete) {
+      return new WorkstationDrawChoice(
+          anyCompleted ? WorkstationDrawGate.WAIT_FOR_REMAINING_GROUPS : WorkstationDrawGate.NEED_GROUP_ORDER,
+          null);
+    }
+    return new WorkstationDrawChoice(WorkstationDrawGate.ALL_ASSIGNED, null);
   }
 
   /** 每个组无放回抽取 1 个工位编号。编号数量不能少于组数。 */

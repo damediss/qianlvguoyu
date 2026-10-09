@@ -8,6 +8,7 @@ import com.guoyu.platform.competition.sorting.dto.CompetitionPlayerSortingGroups
 import com.guoyu.platform.competition.sorting.dto.CompetitionPlayerSortingRolesReq;
 import com.guoyu.platform.competition.sorting.dto.CompetitionPlayerSortingTaskCreateReq;
 import com.guoyu.platform.competition.sorting.dto.CompetitionPlayerSortingTaskSelectionReq;
+import com.guoyu.platform.competition.sorting.dto.CompetitionPlayerSortingWorkstationDrawReq;
 import com.guoyu.platform.competition.sorting.dto.CompetitionPlayerSortingWorkstationsReq;
 import com.guoyu.platform.competition.sorting.service.CompetitionPlayerSortingApplicationService;
 import com.guoyu.platform.competition.sorting.vo.CompetitionPlayerSortingRevealVO;
@@ -97,6 +98,14 @@ public class CompetitionPlayerSortingController {
     return ApiResponse.ok(service.saveGroups(taskId, req));
   }
 
+  @PostMapping("/tasks/{taskId}/shuffle-group-order")
+  @PreAuthorize("hasAuthority('competition:player-sorting:create')")
+  @AuditLog(module = "competition", action = "player-sorting:shuffle-group-order",
+      targetType = "competition_practical_sorting_task")
+  public ApiResponse<CompetitionPlayerSortingTaskVO> shuffleGroupOrder(@PathVariable Long taskId) {
+    return ApiResponse.ok(service.shuffleGroupOrder(taskId));
+  }
+
   @PutMapping("/tasks/{taskId}/roles")
   @PreAuthorize("hasAuthority('competition:player-sorting:create')")
   @AuditLog(module = "competition", action = "player-sorting:roles",
@@ -129,8 +138,11 @@ public class CompetitionPlayerSortingController {
   @PreAuthorize("hasAuthority('competition:player-sorting:randomize')")
   @AuditLog(module = "competition", action = "player-sorting:draw-workstations",
       targetType = "competition_practical_sorting_task")
-  public ApiResponse<CompetitionPlayerSortingRevealVO> drawNextWorkstation(@PathVariable Long taskId) {
-    return ApiResponse.ok(service.drawNextWorkstation(taskId));
+  public ApiResponse<CompetitionPlayerSortingRevealVO> drawNextWorkstation(
+      @PathVariable Long taskId,
+      @Valid @RequestBody(required = false) CompetitionPlayerSortingWorkstationDrawReq req) {
+    return ApiResponse.ok(service.drawNextWorkstation(
+        taskId, req == null ? null : req.groupNos()));
   }
 
   @PostMapping("/tasks/{taskId}/randomize")

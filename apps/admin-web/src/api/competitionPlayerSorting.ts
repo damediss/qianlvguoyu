@@ -49,6 +49,12 @@ export function saveCompetitionPlayerSortingTaskSelection(
   );
 }
 
+export function shuffleCompetitionPlayerSortingGroupOrder(taskId: CompetitionId) {
+  return unwrap<CompetitionPlayerSortingTask>(
+    apiClient.post(`/competition/player-sorting/tasks/${taskId}/shuffle-group-order`),
+  );
+}
+
 export function saveCompetitionPlayerSortingGroups(
   taskId: CompetitionId,
   payload: CompetitionPlayerSortingGroupsRequest,
@@ -82,9 +88,12 @@ export function drawCompetitionPlayerSortingOrder(taskId: CompetitionId) {
   );
 }
 
-export function drawCompetitionPlayerSortingWorkstations(taskId: CompetitionId) {
+export function drawCompetitionPlayerSortingWorkstations(
+  taskId: CompetitionId,
+  groupNos: number[],
+) {
   return unwrap<CompetitionPlayerSortingReveal>(
-    apiClient.post(`/competition/player-sorting/tasks/${taskId}/draw-workstations`),
+    apiClient.post(`/competition/player-sorting/tasks/${taskId}/draw-workstations`, { groupNos }),
   );
 }
 

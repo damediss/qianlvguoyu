@@ -23,5 +23,6 @@ public record CompetitionPlayerSortingTaskVO(
     List<CompetitionPlayerSortingMemberVO> members,
     String subWorkstationLabel,
     List<String> subWorkstationCodes,
-    List<CompetitionPlayerSortingWorkstationVO> stations) {
+    List<CompetitionPlayerSortingWorkstationVO> stations,
+    Boolean groupOrderShuffled) {
 }

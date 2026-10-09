@@ -262,12 +262,54 @@ public class CompetitionPlayerSortingApplicationService {
       throw new BusinessException(ErrorCode.UNPROCESSABLE_ENTITY, "还有选手未成组，请继续选择成员");
     }
     entity.setPreparationJson(writeJson(
-        new CompetitionPlayerSortingPreparation(current.roleOptions(), rewritten)));
+        new CompetitionPlayerSortingPreparation(current.roleOptions(), rewritten, false)));
     entity.setGroupCount(req.groups().size());
     entity.setPlayersPerGroup(largest);
+    entity.setResultSnapshotJson(null);
     touch(entity);
     if (taskMapper.updateById(entity) != 1) {
       throw new BusinessException(ErrorCode.INTERNAL_ERROR, "分组保存失败");
+    }
+    return toVO(entity, List.of(), true);
+  }
+
+  @Transactional
+  public CompetitionPlayerSortingTaskVO shuffleGroupOrder(Long taskId) {
+    CompetitionPlayerSortingTaskEntity entity = requireTask(taskId);
+    stageService.assertCanManage(entity.getStageId());
+    if (!CREATED.equals(entity.getStatus()) || entity.getPreparationJson() == null) {
+      throw new BusinessException(ErrorCode.CONFLICT, "已开始抽签后不能重新排列各组出场顺序");
+    }
+    CompetitionPlayerSortingPreparation current = readPreparation(entity.getPreparationJson());
+    List<Integer> groupNos = new ArrayList<>();
+    for (CompetitionPlayerSortingPreparation.Member member : current.members()) {
+      if (member.groupNo() == null || member.groupName() == null || member.groupName().isBlank()) {
+        throw new BusinessException(ErrorCode.CONFLICT, "请先完成成组，再排列各组出场顺序");
+      }
+      if (member.drawOrder() != null) {
+        throw new BusinessException(ErrorCode.CONFLICT, "已开始组内抽签后不能重新排列各组出场顺序");
+      }
+      groupNos.add(member.groupNo());
+    }
+    for (CompetitionPlayerSortingAssignmentVO assignment : readAssignments(entity.getResultSnapshotJson())) {
+      if (assignment.workstation() != null && !assignment.workstation().isBlank()) {
+        throw new BusinessException(ErrorCode.CONFLICT, "已抽出工位后不能重新排列各组出场顺序");
+      }
+    }
+    Map<Integer, Integer> oldToNew = CompetitionPlayerSortingPlan.shuffleGroupAppearance(groupNos, RANDOM);
+    List<CompetitionPlayerSortingPreparation.Member> rewritten = new ArrayList<>();
+    for (CompetitionPlayerSortingPreparation.Member member : current.members()) {
+      Integer newGroupNo = oldToNew.get(member.groupNo());
+      rewritten.add(new CompetitionPlayerSortingPreparation.Member(
+          member.contestantProfileId(), member.orgName(), member.role(), newGroupNo,
+          member.groupName(), null));
+    }
+    entity.setPreparationJson(writeJson(
+        new CompetitionPlayerSortingPreparation(current.roleOptions(), rewritten, true)));
+    entity.setResultSnapshotJson(null);
+    touch(entity);
+    if (taskMapper.updateById(entity) != 1) {
+      throw new BusinessException(ErrorCode.INTERNAL_ERROR, "组出场顺序保存失败");
     }
     return toVO(entity, List.of(), true);
   }
@@ -315,7 +357,8 @@ public class CompetitionPlayerSortingApplicationService {
     if (!roleByProfileId.isEmpty()) {
       throw new BusinessException(ErrorCode.UNPROCESSABLE_ENTITY, "角色名单与已选选手不一致，请刷新后重试");
     }
-    entity.setPreparationJson(writeJson(new CompetitionPlayerSortingPreparation(roleOptions, members)));
+    entity.setPreparationJson(writeJson(
+        new CompetitionPlayerSortingPreparation(roleOptions, members, current.groupOrderShuffled())));
     touch(entity);
     if (taskMapper.updateById(entity) != 1) {
       throw new BusinessException(ErrorCode.INTERNAL_ERROR, "组内角色保存失败");
@@ -329,9 +372,16 @@ public class CompetitionPlayerSortingApplicationService {
     CompetitionPlayerSortingTaskEntity entity = requireTask(taskId);
     stageService.assertCanManage(entity.getStageId());
     if (entity.getPreparationJson() == null
-        || (!ORDERED.equals(entity.getStatus()) && !DRAWN.equals(entity.getStatus()))) {
-      throw new BusinessException(ErrorCode.CONFLICT, "请先完成组内排序抽签，再创建工位");
+        || (!CREATED.equals(entity.getStatus()) && !ORDERED.equals(entity.getStatus())
+            && !DRAWN.equals(entity.getStatus()))) {
+      throw new BusinessException(ErrorCode.CONFLICT, "请先完成成组，再设置工位");
     }
+    CompetitionPlayerSortingPreparation preparation = readPreparation(entity.getPreparationJson());
+    int groupCount = countPreparationGroups(preparation);
+    if (groupCount < 1) {
+      throw new BusinessException(ErrorCode.CONFLICT, "请先完成成组，再设置工位");
+    }
+    requireGroupOrderShuffled(preparation);
     String label = normalizeLabel(req == null ? null : req.label(), "请填写工位描述");
     String subLabel = normalizeLabel(req == null ? null : req.subLabel(), "请填写子工位描述");
     if (label.equals(subLabel)) {
@@ -339,7 +389,6 @@ public class CompetitionPlayerSortingApplicationService {
     }
     List<CompetitionPlayerSortingWorkstationVO> stations = normalizeStations(
         req == null ? null : req.stations());
-    int groupCount = countAssignmentGroups(readAssignments(entity.getResultSnapshotJson()));
     if (stations.size() < groupCount) {
       throw new BusinessException(ErrorCode.UNPROCESSABLE_ENTITY,
           "已绑定子工位的工位数量不能少于组数，当前共 " + groupCount + " 组");
@@ -349,11 +398,12 @@ public class CompetitionPlayerSortingApplicationService {
     entity.setSubWorkstationLabel(subLabel);
     entity.setSubWorkstationCodesJson(null);
     entity.setWorkstationCount(stations.size());
-    if (ORDERED.equals(entity.getStatus()) || DRAWN.equals(entity.getStatus())) {
-      entity.setResultSnapshotJson(writeJson(clearWorkstations(
-          readAssignments(entity.getResultSnapshotJson()))));
-      entity.setStatus(ORDERED);
+    List<CompetitionPlayerSortingAssignmentVO> assignments =
+        readAssignments(entity.getResultSnapshotJson());
+    if (!assignments.isEmpty()) {
+      entity.setResultSnapshotJson(writeJson(clearWorkstations(assignments)));
     }
+    entity.setStatus(allOrdersDrawn(preparation) ? ORDERED : CREATED);
     touch(entity);
     if (taskMapper.updateById(entity) != 1) {
       throw new BusinessException(ErrorCode.INTERNAL_ERROR, "工位编号保存失败");
@@ -371,7 +421,11 @@ public class CompetitionPlayerSortingApplicationService {
           ORDERED.equals(entity.getStatus()) || DRAWN.equals(entity.getStatus())
               ? "组内排序号已全部抽取" : "请先完成成组，再点击抽签");
     }
+    if (!stationsConfigured(entity)) {
+      throw new BusinessException(ErrorCode.UNPROCESSABLE_ENTITY, "请先设置工位，再进行组内抽签");
+    }
     CompetitionPlayerSortingPreparation preparation = readPreparation(entity.getPreparationJson());
+    requireGroupOrderShuffled(preparation);
     List<CompetitionPlayerSortingPreparation.Member> members = new ArrayList<>(preparation.members());
     Map<Integer, List<Integer>> indexesByGroup = new TreeMap<>();
     for (int index = 0; index < members.size(); index++) {
@@ -420,12 +474,15 @@ public class CompetitionPlayerSortingApplicationService {
     }
     boolean allCompleted = members.stream().allMatch(member -> member.drawOrder() != null);
     entity.setPreparationJson(writeJson(
-        new CompetitionPlayerSortingPreparation(preparation.roleOptions(), members)));
-    List<CompetitionPlayerSortingAssignmentVO> assignments = List.of();
+        new CompetitionPlayerSortingPreparation(
+            preparation.roleOptions(), members, preparation.groupOrderShuffled())));
+    if (groupCompleted) {
+      syncCompletedGroups(entity, members);
+    }
+    List<CompetitionPlayerSortingAssignmentVO> assignments =
+        readAssignments(entity.getResultSnapshotJson());
     if (allCompleted) {
-      assignments = materializeDraw(entity, members);
-      entity.setResultSnapshotJson(writeJson(assignments));
-      entity.setStatus(ORDERED);
+      entity.setStatus(allGroupsAssigned(indexesByGroup.keySet(), assignments) ? DRAWN : ORDERED);
     }
     touch(entity);
     if (taskMapper.updateById(entity) != 1) {
@@ -434,7 +491,8 @@ public class CompetitionPlayerSortingApplicationService {
     CompetitionStagePaperAssignmentPlayerVO candidate =
         candidateMap(entity.getStageId()).get(parseId(current.contestantProfileId()));
     return new CompetitionPlayerSortingRevealVO(
-        toVO(entity, withMobile(entity.getStageId(), assignments), true),
+        toVO(entity, withMobile(entity.getStageId(),
+            readAssignments(entity.getResultSnapshotJson())), true),
         current.contestantProfileId(),
         candidate == null ? null : candidate.name(),
         current.groupName(), current.orgName(), picked, picked == 1,
@@ -443,40 +501,40 @@ public class CompetitionPlayerSortingApplicationService {
 
   @Transactional
   public CompetitionPlayerSortingRevealVO drawNextWorkstation(Long taskId) {
+    return drawNextWorkstation(taskId, null);
+  }
+
+  @Transactional
+  public CompetitionPlayerSortingRevealVO drawNextWorkstation(Long taskId, List<Integer> requestedGroupNos) {
     CompetitionPlayerSortingTaskEntity entity = requireTaskForUpdate(taskId);
     stageService.assertCanManage(entity.getStageId());
-    if (!ORDERED.equals(entity.getStatus())) {
-      throw new BusinessException(ErrorCode.CONFLICT,
-          DRAWN.equals(entity.getStatus()) ? "工位已全部抽取" : "请先完成组内排序抽签，再抽取工位");
-    }
-    List<CompetitionPlayerSortingWorkstationVO> stations = readStations(entity.getWorkstationCodesJson());
-    if (entity.getWorkstationLabel() == null || entity.getWorkstationLabel().isBlank()
-        || entity.getSubWorkstationLabel() == null || entity.getSubWorkstationLabel().isBlank()
-        || stations.isEmpty()) {
-      throw new BusinessException(ErrorCode.UNPROCESSABLE_ENTITY, "请先保存工位，并为其绑定子工位");
-    }
-    List<CompetitionPlayerSortingAssignmentVO> current = new ArrayList<>(
-        readAssignments(entity.getResultSnapshotJson()));
-    Map<Integer, List<Integer>> indexesByGroup = new TreeMap<>();
-    for (int index = 0; index < current.size(); index++) {
-      indexesByGroup.computeIfAbsent(current.get(index).groupNo(), key -> new ArrayList<>()).add(index);
-    }
-    if (stations.size() < indexesByGroup.size()) {
-      throw new BusinessException(ErrorCode.UNPROCESSABLE_ENTITY,
-          "已绑定子工位的工位数量不能少于组数，当前共 " + indexesByGroup.size() + " 组");
-    }
-    Integer targetGroup = null;
-    for (Map.Entry<Integer, List<Integer>> entry : indexesByGroup.entrySet()) {
-      CompetitionPlayerSortingAssignmentVO sample = current.get(entry.getValue().get(0));
-      if (sample.workstation() == null || sample.workstation().isBlank()
-          || sample.subWorkstation() == null || sample.subWorkstation().isBlank()) {
-        targetGroup = entry.getKey();
-        break;
-      }
-    }
-    if (targetGroup == null) {
+    if (DRAWN.equals(entity.getStatus())) {
       throw new BusinessException(ErrorCode.CONFLICT, "工位已全部抽取");
     }
+    if (entity.getPreparationJson() == null
+        || (!CREATED.equals(entity.getStatus()) && !ORDERED.equals(entity.getStatus()))) {
+      throw new BusinessException(ErrorCode.CONFLICT, "请先完成成组并设置工位，再抽取工位");
+    }
+    List<CompetitionPlayerSortingWorkstationVO> stations = readStations(entity.getWorkstationCodesJson());
+    if (!stationsConfigured(entity)) {
+      throw new BusinessException(ErrorCode.UNPROCESSABLE_ENTITY, "请先保存工位，并为其绑定子工位");
+    }
+    CompetitionPlayerSortingPreparation preparation = readPreparation(entity.getPreparationJson());
+    requireGroupOrderShuffled(preparation);
+    Map<Integer, List<CompetitionPlayerSortingPreparation.Member>> membersByGroup = new TreeMap<>();
+    for (CompetitionPlayerSortingPreparation.Member member : preparation.members()) {
+      if (member.groupNo() == null) {
+        throw new BusinessException(ErrorCode.UNPROCESSABLE_ENTITY, "请先为全部选手成组并填写组名");
+      }
+      membersByGroup.computeIfAbsent(member.groupNo(), key -> new ArrayList<>()).add(member);
+    }
+    if (stations.size() < membersByGroup.size()) {
+      throw new BusinessException(ErrorCode.UNPROCESSABLE_ENTITY,
+          "已绑定子工位的工位数量不能少于组数，当前共 " + membersByGroup.size() + " 组");
+    }
+    List<CompetitionPlayerSortingAssignmentVO> current = syncCompletedGroups(
+        entity, preparation.members());
+    List<Integer> targets = workstationTargets(requestedGroupNos, membersByGroup, current);
     Set<String> usedCodes = new HashSet<>();
     for (CompetitionPlayerSortingAssignmentVO assignment : current) {
       if (assignment.workstation() != null && !assignment.workstation().isBlank()) {
@@ -489,35 +547,41 @@ public class CompetitionPlayerSortingApplicationService {
         remaining.add(station);
       }
     }
-    if (remaining.isEmpty()) {
-      throw new BusinessException(ErrorCode.CONFLICT, "没有可抽取的工位");
+    if (remaining.size() < targets.size()) {
+      throw new BusinessException(ErrorCode.CONFLICT, "可抽取的工位少于所选组数");
     }
-    CompetitionPlayerSortingWorkstationVO picked = remaining.get(RANDOM.nextInt(remaining.size()));
-    if (picked.subCodes() == null || picked.subCodes().isEmpty()) {
-      throw new BusinessException(ErrorCode.UNPROCESSABLE_ENTITY, "工位 " + picked.code() + " 未绑定子工位");
-    }
-    String station = picked.code();
-    String subStation = String.join("、", picked.subCodes());
     CompetitionPlayerSortingAssignmentVO sample = null;
-    for (int index : indexesByGroup.get(targetGroup)) {
-      CompetitionPlayerSortingAssignmentVO assignment = current.get(index);
-      if (sample == null) {
+    String station = null;
+    String subStation = null;
+    for (Integer targetGroup : targets) {
+      CompetitionPlayerSortingWorkstationVO picked = remaining.remove(RANDOM.nextInt(remaining.size()));
+      if (picked.subCodes() == null || picked.subCodes().isEmpty()) {
+        throw new BusinessException(ErrorCode.UNPROCESSABLE_ENTITY, "工位 " + picked.code() + " 未绑定子工位");
+      }
+      station = picked.code();
+      subStation = String.join("、", picked.subCodes());
+      boolean targetFound = false;
+      for (int index = 0; index < current.size(); index++) {
+        CompetitionPlayerSortingAssignmentVO assignment = current.get(index);
+        if (assignment.groupNo() != targetGroup) {
+          continue;
+        }
+        targetFound = true;
         sample = assignment;
+        current.set(index, copyStations(assignment, station, subStation));
       }
-      current.set(index, copyStations(assignment, station, subStation));
-    }
-    boolean allCompleted = true;
-    for (List<Integer> indexes : indexesByGroup.values()) {
-      CompetitionPlayerSortingAssignmentVO assignment = current.get(indexes.get(0));
-      if (assignment.workstation() == null || assignment.workstation().isBlank()
-          || assignment.subWorkstation() == null || assignment.subWorkstation().isBlank()) {
-        allCompleted = false;
-        break;
+      if (!targetFound) {
+        throw new BusinessException(ErrorCode.UNPROCESSABLE_ENTITY, "该组的组内抽签结果不完整，请刷新后重试");
       }
     }
+    boolean allCompleted = allGroupsAssigned(membersByGroup.keySet(), current);
     entity.setResultSnapshotJson(writeJson(current));
     if (allCompleted) {
       entity.setStatus(DRAWN);
+    } else if (allOrdersDrawn(preparation)) {
+      entity.setStatus(ORDERED);
+    } else {
+      entity.setStatus(CREATED);
     }
     touch(entity);
     if (taskMapper.updateById(entity) != 1) {
@@ -1128,12 +1192,178 @@ public class CompetitionPlayerSortingApplicationService {
     return List.copyOf(unique);
   }
 
-  private int countAssignmentGroups(List<CompetitionPlayerSortingAssignmentVO> assignments) {
+  private int countPreparationGroups(CompetitionPlayerSortingPreparation preparation) {
     Set<Integer> groupNos = new HashSet<>();
-    for (CompetitionPlayerSortingAssignmentVO assignment : assignments) {
-      groupNos.add(assignment.groupNo());
+    if (preparation == null || preparation.members() == null) {
+      return 0;
+    }
+    for (CompetitionPlayerSortingPreparation.Member member : preparation.members()) {
+      if (member.groupNo() != null && member.groupName() != null && !member.groupName().isBlank()) {
+        groupNos.add(member.groupNo());
+      }
     }
     return groupNos.size();
+  }
+
+  private boolean allOrdersDrawn(CompetitionPlayerSortingPreparation preparation) {
+    if (preparation == null || preparation.members() == null || preparation.members().isEmpty()) {
+      return false;
+    }
+    for (CompetitionPlayerSortingPreparation.Member member : preparation.members()) {
+      if (member.groupNo() == null || member.drawOrder() == null) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  private boolean stationsConfigured(CompetitionPlayerSortingTaskEntity entity) {
+    if (entity.getWorkstationLabel() == null || entity.getWorkstationLabel().isBlank()
+        || entity.getSubWorkstationLabel() == null || entity.getSubWorkstationLabel().isBlank()) {
+      return false;
+    }
+    List<CompetitionPlayerSortingWorkstationVO> stations = readStations(entity.getWorkstationCodesJson());
+    if (stations.isEmpty()) {
+      return false;
+    }
+    for (CompetitionPlayerSortingWorkstationVO station : stations) {
+      if (station == null || station.code() == null || station.code().isBlank()
+          || station.subCodes() == null || station.subCodes().isEmpty()) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  /** 把已经完成组内抽签的小组写入名单快照，已有工位结果保持不变。 */
+  private List<CompetitionPlayerSortingAssignmentVO> syncCompletedGroups(
+      CompetitionPlayerSortingTaskEntity entity,
+      List<CompetitionPlayerSortingPreparation.Member> members) {
+    List<CompetitionPlayerSortingAssignmentVO> existing =
+        new ArrayList<>(readAssignments(entity.getResultSnapshotJson()));
+    Set<Integer> present = new HashSet<>();
+    for (CompetitionPlayerSortingAssignmentVO assignment : existing) {
+      present.add(assignment.groupNo());
+    }
+    Map<Integer, List<CompetitionPlayerSortingPreparation.Member>> byGroup = new TreeMap<>();
+    for (CompetitionPlayerSortingPreparation.Member member : members) {
+      if (member.groupNo() == null) {
+        continue;
+      }
+      byGroup.computeIfAbsent(member.groupNo(), key -> new ArrayList<>()).add(member);
+    }
+    List<CompetitionPlayerSortingPreparation.Member> missing = new ArrayList<>();
+    for (Map.Entry<Integer, List<CompetitionPlayerSortingPreparation.Member>> entry : byGroup.entrySet()) {
+      boolean complete = true;
+      for (CompetitionPlayerSortingPreparation.Member member : entry.getValue()) {
+        if (member.drawOrder() == null) {
+          complete = false;
+          break;
+        }
+      }
+      if (complete && !present.contains(entry.getKey())) {
+        missing.addAll(entry.getValue());
+      }
+    }
+    if (missing.isEmpty()) {
+      return existing;
+    }
+    existing.addAll(materializeDraw(entity, missing));
+    existing.sort(java.util.Comparator
+        .comparingInt(CompetitionPlayerSortingAssignmentVO::groupNo)
+        .thenComparingInt(CompetitionPlayerSortingAssignmentVO::groupOrder));
+    entity.setResultSnapshotJson(writeJson(existing));
+    return existing;
+  }
+
+  private boolean allGroupsAssigned(
+      Set<Integer> groupNos, List<CompetitionPlayerSortingAssignmentVO> assignments) {
+    if (groupNos == null || groupNos.isEmpty()) {
+      return false;
+    }
+    Set<Integer> assigned = new HashSet<>();
+    for (CompetitionPlayerSortingAssignmentVO assignment : assignments) {
+      if (assignment.workstation() != null && !assignment.workstation().isBlank()
+          && assignment.subWorkstation() != null && !assignment.subWorkstation().isBlank()) {
+        assigned.add(assignment.groupNo());
+      }
+    }
+    return assigned.containsAll(groupNos);
+  }
+
+  private List<Integer> workstationTargets(
+      List<Integer> requestedGroupNos,
+      Map<Integer, List<CompetitionPlayerSortingPreparation.Member>> membersByGroup,
+      List<CompetitionPlayerSortingAssignmentVO> current) {
+    if (requestedGroupNos == null || requestedGroupNos.isEmpty()) {
+      CompetitionPlayerSortingPlan.WorkstationDrawChoice choice = chooseWorkstationGroup(
+          membersByGroup, current);
+      if (choice.gate() == CompetitionPlayerSortingPlan.WorkstationDrawGate.NEED_GROUP_ORDER) {
+        throw new BusinessException(ErrorCode.CONFLICT, "请先完成至少一组的组内抽签，再抽取工位");
+      }
+      if (choice.gate() == CompetitionPlayerSortingPlan.WorkstationDrawGate.WAIT_FOR_REMAINING_GROUPS) {
+        throw new BusinessException(ErrorCode.CONFLICT, "已完成组内抽签的小组都已抽取工位，请先完成其余小组的组内抽签");
+      }
+      if (choice.gate() != CompetitionPlayerSortingPlan.WorkstationDrawGate.READY || choice.groupNo() == null) {
+        throw new BusinessException(ErrorCode.CONFLICT, "工位已全部抽取");
+      }
+      return List.of(choice.groupNo());
+    }
+    LinkedHashSet<Integer> unique = new LinkedHashSet<>();
+    for (Integer groupNo : requestedGroupNos) {
+      if (groupNo == null || !unique.add(groupNo)) {
+        throw new BusinessException(ErrorCode.BAD_REQUEST, "请选择要抽取工位的小组，且不能重复");
+      }
+      List<CompetitionPlayerSortingPreparation.Member> members = membersByGroup.get(groupNo);
+      if (members == null || members.isEmpty()) {
+        throw new BusinessException(ErrorCode.UNPROCESSABLE_ENTITY, "所选小组不存在，请刷新后重试");
+      }
+      for (CompetitionPlayerSortingPreparation.Member member : members) {
+        if (member.drawOrder() == null) {
+          String groupName = member.groupName() == null || member.groupName().isBlank()
+              ? "第" + groupNo + "组" : member.groupName();
+          throw new BusinessException(ErrorCode.CONFLICT, groupName + "尚未完成组内抽签，不能抽取工位");
+        }
+      }
+      for (CompetitionPlayerSortingAssignmentVO assignment : current) {
+        if (assignment.groupNo() == groupNo
+            && assignment.workstation() != null
+            && !assignment.workstation().isBlank()) {
+          String groupName = assignment.groupName() == null || assignment.groupName().isBlank()
+              ? "第" + groupNo + "组" : assignment.groupName();
+          throw new BusinessException(ErrorCode.CONFLICT, groupName + "已经抽取工位");
+        }
+      }
+    }
+    return List.copyOf(unique);
+  }
+
+  private CompetitionPlayerSortingPlan.WorkstationDrawChoice chooseWorkstationGroup(
+      Map<Integer, List<CompetitionPlayerSortingPreparation.Member>> membersByGroup,
+      List<CompetitionPlayerSortingAssignmentVO> assignments) {
+    Set<Integer> orderCompleted = new HashSet<>();
+    for (Map.Entry<Integer, List<CompetitionPlayerSortingPreparation.Member>> entry
+        : membersByGroup.entrySet()) {
+      boolean complete = true;
+      for (CompetitionPlayerSortingPreparation.Member member : entry.getValue()) {
+        if (member.drawOrder() == null) {
+          complete = false;
+          break;
+        }
+      }
+      if (complete) {
+        orderCompleted.add(entry.getKey());
+      }
+    }
+    Set<Integer> workstationAssigned = new HashSet<>();
+    for (CompetitionPlayerSortingAssignmentVO assignment : assignments) {
+      if (assignment.workstation() != null && !assignment.workstation().isBlank()
+          && assignment.subWorkstation() != null && !assignment.subWorkstation().isBlank()) {
+        workstationAssigned.add(assignment.groupNo());
+      }
+    }
+    return CompetitionPlayerSortingPlan.chooseWorkstationGroup(
+        new ArrayList<>(membersByGroup.keySet()), orderCompleted, workstationAssigned);
   }
 
   private List<CompetitionPlayerSortingAssignmentVO> clearWorkstations(
@@ -1186,7 +1416,14 @@ public class CompetitionPlayerSortingApplicationService {
         preparation == null ? BALANCED : COMPANY,
         entity.getWorkstationLabel(), stationCodes(stations),
         roleOptions, members, entity.getSubWorkstationLabel(),
-        List.of(), stations);
+        List.of(), stations,
+        preparation != null && Boolean.TRUE.equals(preparation.groupOrderShuffled()));
+  }
+
+  private void requireGroupOrderShuffled(CompetitionPlayerSortingPreparation preparation) {
+    if (preparation == null || !Boolean.TRUE.equals(preparation.groupOrderShuffled())) {
+      throw new BusinessException(ErrorCode.CONFLICT, "请先随机排列各组的出场顺序，再设置工位");
+    }
   }
 
   private PlatformUserPrincipal currentUser() {

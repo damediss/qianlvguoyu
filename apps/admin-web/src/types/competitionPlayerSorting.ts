@@ -20,6 +20,7 @@ export interface CompetitionPlayerSortingTask {
   subWorkstationLabel?: string | null;
   subWorkstationCodes?: string[] | null;
   stations?: CompetitionPlayerSortingStation[] | null;
+  groupOrderShuffled?: boolean | null;
 }
 
 export interface CompetitionPlayerSortingStation {
