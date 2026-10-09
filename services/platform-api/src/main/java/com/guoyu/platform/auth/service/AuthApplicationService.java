@@ -47,7 +47,13 @@ public class AuthApplicationService {
   private final PasswordEncoder passwordEncoder;
   private final TrainingOperatorScopeService trainingOperatorScopeService;
   private final LoginFailureGuard loginFailureGuard;
+  private final int warnFailures;
   private final SecureRandom secureRandom = new SecureRandom();
+
+  private static final String FAILURE_GENERIC_MESSAGE = "Invalid username or password";
+  /** 连续失败达告警阈值后的模糊提示：不报剩余次数与锁定时长，避免给攻击者调速预言机。 */
+  private static final String FAILURE_WARN_MESSAGE =
+      "密码错误次数较多，再次失败账号将被临时锁定，请确认密码后重试";
 
   public AuthApplicationService(
       TenantMapper tenantMapper,
@@ -57,8 +63,9 @@ public class AuthApplicationService {
       MenuMapper menuMapper,
       PasswordEncoder passwordEncoder,
       TrainingOperatorScopeService trainingOperatorScopeService,
-      LoginFailureGuard loginFailureGuard
-  ) {
+      LoginFailureGuard loginFailureGuard,
+      @org.springframework.beans.factory.annotation.Value(
+          "${platform.security.login.warn-failures:3}") int warnFailures) {
     this.tenantMapper = tenantMapper;
     this.userMapper = userMapper;
     this.userRoleMapper = userRoleMapper;
@@ -67,6 +74,7 @@ public class AuthApplicationService {
     this.passwordEncoder = passwordEncoder;
     this.trainingOperatorScopeService = trainingOperatorScopeService;
     this.loginFailureGuard = loginFailureGuard;
+    this.warnFailures = warnFailures;
   }
 
   @Transactional(readOnly = true)
@@ -79,7 +87,7 @@ public class AuthApplicationService {
     if (lockSeconds > 0) {
       log.warn("登录被锁定拒绝 tenantCode={} username={} remainingSeconds={}",
           req.tenantCode(), req.username(), lockSeconds);
-      throw new BusinessException(ErrorCode.TOO_MANY_REQUESTS, "尝试次数过多，请稍后再试");
+      throw new BusinessException(ErrorCode.TOO_MANY_REQUESTS, lockedMessage(lockSeconds));
     }
 
     // 2. Original tenant/user/password verification
@@ -88,8 +96,7 @@ public class AuthApplicationService {
         .eq(TenantEntity::getStatus, "enabled")
         .eq(TenantEntity::getDeleted, 0));
     if (tenant == null) {
-      loginFailureGuard.recordFailure(req.tenantCode(), req.username());
-      throw new BusinessException(ErrorCode.UNAUTHORIZED, "Invalid username or password");
+      throw failureException(req.tenantCode(), req.username());
     }
     // 登录按 tenantCode 解析出租户后，立即把上下文租户设为该租户 id，再查用户/角色/菜单。
     // 否则浏览器残留的旧 X-Tenant-Id（如租户归一前的 1）会让多租户拦截器把 user 查询过滤为空 → 401。
@@ -102,8 +109,7 @@ public class AuthApplicationService {
         .eq(UserEntity::getStatus, "enabled")
         .eq(UserEntity::getDeleted, 0));
     if (user == null || !passwordEncoder.matches(req.password(), user.getPasswordHash())) {
-      loginFailureGuard.recordFailure(req.tenantCode(), req.username());
-      throw new BusinessException(ErrorCode.UNAUTHORIZED, "Invalid username or password");
+      throw failureException(req.tenantCode(), req.username());
     }
     loginFailureGuard.clear(req.tenantCode(), req.username());
 
@@ -127,6 +133,26 @@ public class AuthApplicationService {
 
   public void logout() {
     StpUtil.logout();
+  }
+
+  /**
+   * 登录失败的统一出口：记录失败计数后按状态分级响应——
+   * 本次触发锁定 → 429 报剩余分钟；达告警阈值 → 401 模糊警示；否则 → 401 通用文案。
+   */
+  private BusinessException failureException(String tenantCode, String username) {
+    LoginFailureGuard.FailureOutcome outcome = loginFailureGuard.recordFailure(tenantCode, username);
+    if (outcome.justLocked()) {
+      return new BusinessException(
+          ErrorCode.TOO_MANY_REQUESTS, lockedMessage(loginFailureGuard.lockSeconds()));
+    }
+    String message = outcome.count() >= warnFailures ? FAILURE_WARN_MESSAGE : FAILURE_GENERIC_MESSAGE;
+    return new BusinessException(ErrorCode.UNAUTHORIZED, message);
+  }
+
+  /** 锁定文案：剩余秒数向上取整为分钟，锁已生效时报时长不构成额外泄露。 */
+  private String lockedMessage(long lockSeconds) {
+    long minutes = (lockSeconds + 59) / 60;
+    return "账号已临时锁定，请约" + minutes + "分钟后再试";
   }
 
   public CurrentUserVO me() {

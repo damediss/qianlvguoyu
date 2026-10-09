@@ -38,11 +38,13 @@ class LoginFailureGuardTest {
     ValueOperations<String, String> ops = stubOps();
     when(ops.increment(any())).thenReturn(1L, 2L, 3L, 4L, 5L);
 
-    assertFalse(guard.recordFailure("t1", "u1"));
-    assertFalse(guard.recordFailure("t1", "u1"));
-    assertFalse(guard.recordFailure("t1", "u1"));
-    assertFalse(guard.recordFailure("t1", "u1"));
-    assertTrue(guard.recordFailure("t1", "u1"), "第 5 次失败应触发锁定");
+    assertFalse(guard.recordFailure("t1", "u1").justLocked());
+    assertFalse(guard.recordFailure("t1", "u1").justLocked());
+    assertFalse(guard.recordFailure("t1", "u1").justLocked());
+    assertFalse(guard.recordFailure("t1", "u1").justLocked());
+    LoginFailureGuard.FailureOutcome fifth = guard.recordFailure("t1", "u1");
+    assertEquals(5L, fifth.count(), "第 5 次失败计数应为 5");
+    assertTrue(fifth.justLocked(), "第 5 次失败应触发锁定");
   }
 
   @Test
@@ -72,7 +74,9 @@ class LoginFailureGuardTest {
   @DisplayName("Redis 不可用时不阻断登录（fail-open），仅记录告警")
   void failsOpenWhenRedisDown() {
     when(redis.opsForValue()).thenThrow(new IllegalStateException("redis down"));
-    assertFalse(guard.recordFailure("t1", "u1"), "Redis 故障不应把登录判定为锁定");
+    LoginFailureGuard.FailureOutcome outcome = guard.recordFailure("t1", "u1");
+    assertEquals(0L, outcome.count(), "Redis 故障时计数应为 0");
+    assertFalse(outcome.justLocked(), "Redis 故障不应把登录判定为锁定");
   }
 
   @Test

@@ -40,10 +40,21 @@ public class LoginFailureGuard {
     return ttl == null || ttl <= 0 ? 0L : ttl;
   }
 
+  /** 锁定时长（秒），供锁定文案换算剩余分钟。 */
+  public long lockSeconds() {
+    return lockDuration.getSeconds();
+  }
+
+  /** 一次失败记录的结果：当前连续失败次数与是否本次触发锁定。 */
+  public record FailureOutcome(long count, boolean justLocked) {
+    public static final FailureOutcome NONE = new FailureOutcome(0, false);
+  }
+
   /**
-   * 记录一次失败。返回本次之后是否达到锁定（true = 刚被锁定）。
+   * 记录一次失败，返回当前连续失败次数与是否本次触发锁定。
+   * Redis 不可用（fail-open）时返回 {@link FailureOutcome#NONE}。
    */
-  public boolean recordFailure(String tenantCode, String username) {
+  public FailureOutcome recordFailure(String tenantCode, String username) {
     String key = key(tenantCode, username);
     try {
       Long count = redisTemplate.opsForValue().increment(key);
@@ -56,13 +67,13 @@ public class LoginFailureGuard {
         redisTemplate.expire(key, lockDuration);
         log.warn("登录失败达到上限，账号已锁定 tenantCode={} username={} lockSeconds={}",
             tenantCode, username, lockDuration.getSeconds());
-        return true;
+        return new FailureOutcome(count, true);
       }
-      return false;
+      return count == null ? FailureOutcome.NONE : new FailureOutcome(count, false);
     } catch (Exception ex) {
       log.warn("登录失败计数写入 Redis 失败，本次不锁定 tenantCode={} username={} err={}",
           tenantCode, username, ex.getMessage());
-      return false;
+      return FailureOutcome.NONE;
     }
   }
 
