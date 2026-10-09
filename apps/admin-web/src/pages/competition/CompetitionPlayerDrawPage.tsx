@@ -510,7 +510,7 @@ export function CompetitionPlayerDrawPage({
                 preserveSelectedRowKeys: true,
                 onChange: (keys) => setSelectedIds(keys.map(String)),
               }}
-              pagination={{ pageSize: 8, showSizeChanger: true, pageSizeOptions: [8, 20, 50] }}
+              pagination={{ defaultPageSize: 8, showSizeChanger: true, pageSizeOptions: [8, 20, 50] }}
               scroll={{ x: 900, y: 360 }}
               locale={{ emptyText: '当前赛段暂无可抽签选手' }}
             />
@@ -538,7 +538,7 @@ export function CompetitionPlayerDrawPage({
                   size="small"
                   dataSource={selectedCandidates}
                   columns={candidateColumns}
-                  pagination={{ pageSize: 8, showSizeChanger: true, pageSizeOptions: [8, 20, 50] }}
+                  pagination={{ defaultPageSize: 8, showSizeChanger: true, pageSizeOptions: [8, 20, 50] }}
                   scroll={{ x: 900, y: 300 }}
                 />
               </>
@@ -623,7 +623,7 @@ export function CompetitionPlayerDrawPage({
                 rowKey={slotKey}
                 dataSource={detailSlots}
                 columns={slotColumns}
-                pagination={{ pageSize: 8, showSizeChanger: true }}
+                pagination={{ defaultPageSize: 8, showSizeChanger: true, pageSizeOptions: [8, 20, 50] }}
                 scroll={{ x: 900 }}
                 rowClassName={(record) => (
                   nextSlot && slotKey(nextSlot) === slotKey(record) ? 'ant-table-row-selected' : ''

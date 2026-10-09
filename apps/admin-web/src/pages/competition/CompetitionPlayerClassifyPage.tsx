@@ -390,7 +390,7 @@ function CompetitionPlayerClassifyPage({ stageId, stageName }: CompetitionPlayer
               rowKey={(record) => idValue(record.contestantProfileId)}
               loading={candidatesQuery.isFetching}
               dataSource={filteredCandidates}
-              pagination={{ pageSize: 8, showSizeChanger: true, pageSizeOptions: [8, 20, 50] }}
+              pagination={{ defaultPageSize: 8, showSizeChanger: true, pageSizeOptions: [8, 20, 50] }}
               scroll={{ x: 860, y: 360 }}
               locale={{ emptyText: '当前赛段暂无可分类选手' }}
               rowSelection={{

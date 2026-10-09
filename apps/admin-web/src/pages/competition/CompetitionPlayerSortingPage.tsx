@@ -931,7 +931,7 @@ export function CompetitionPlayerSortingPage({
                 preserveSelectedRowKeys: true,
                 onChange: (keys) => setSelectedIds(keys.map(String)),
               }}
-              pagination={{ pageSize: 8, showSizeChanger: true, pageSizeOptions: [8, 20, 50] }}
+              pagination={{ defaultPageSize: 8, showSizeChanger: true, pageSizeOptions: [8, 20, 50] }}
               scroll={{ x: 900, y: 360 }}
               locale={{ emptyText: '当前赛段暂无可排序选手' }}
             />
