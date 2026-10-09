@@ -14,5 +14,11 @@ public record CompetitionPlayerSortingTaskVO(
     Integer playerCount,
     String status,
     LocalDateTime createdAt,
-    List<CompetitionPlayerSortingAssignmentVO> assignments) {
+    List<CompetitionPlayerSortingAssignmentVO> assignments,
+    /** company：按参赛公司分组；balanced：历史的均衡分组。 */
+    String groupingMode,
+    String workstationLabel,
+    List<String> workstationCodes,
+    List<String> roleOptions,
+    List<CompetitionPlayerSortingMemberVO> members) {
 }

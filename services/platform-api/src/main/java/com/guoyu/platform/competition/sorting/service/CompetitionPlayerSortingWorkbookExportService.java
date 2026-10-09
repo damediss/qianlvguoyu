@@ -31,6 +31,15 @@ public class CompetitionPlayerSortingWorkbookExportService {
       String stageName,
       List<CompetitionPlayerSortingAssignmentVO> assignments,
       int groupCount) {
+    return export(stageName, assignments, groupCount, null, List.of());
+  }
+
+  public byte[] export(
+      String stageName,
+      List<CompetitionPlayerSortingAssignmentVO> assignments,
+      int groupCount,
+      String workstationLabel,
+      List<String> workstationCodes) {
     ClassPathResource resource = new ClassPathResource(TEMPLATE_PATH);
     try (InputStream input = resource.getInputStream();
         Workbook workbook = WorkbookFactory.create(input);
@@ -41,9 +50,10 @@ public class CompetitionPlayerSortingWorkbookExportService {
         throw new BusinessException(ErrorCode.INTERNAL_ERROR, "实操出场名单模板缺少工作表");
       }
       setTitle(rosterSheet, stageName);
-      configureRosterColumns(rosterSheet);
+      insertRoleColumn(rosterSheet);
+      configureRosterColumns(rosterSheet, workstationLabel);
       fillRoster(rosterSheet, assignments);
-      fillWorkstations(workstationSheet, assignments, groupCount);
+      fillWorkstations(workstationSheet, assignments, groupCount, workstationLabel, workstationCodes);
       workbook.write(output);
       return output.toByteArray();
     } catch (BusinessException ex) {
@@ -76,35 +86,88 @@ public class CompetitionPlayerSortingWorkbookExportService {
       if (row == null) {
         row = sheet.createRow(rowIndex);
       }
-      copyRowStyle(styleRow, row, 7);
-      setString(row, 0, groupLabel(assignment.groupNo()));
+      copyRowStyle(styleRow, row, 8);
+      setString(row, 0, groupTitle(assignment));
       setNumber(row, 1, assignment.groupOrder());
       setString(row, 2, assignment.workstation());
       setString(row, 3, assignment.name());
-      setString(row, 4, assignment.mobile());
-      setString(row, 5, "");
-      setString(row, 6, "");
+      setString(row, 4, assignment.role());
+      setString(row, 5, leaderLabel(assignment.groupLeader()));
+      setString(row, 6, assignment.mobile());
+      setString(row, 7, assignment.orgName() == null ? "" : assignment.orgName());
       rowIndex++;
     }
   }
 
-  private void configureRosterColumns(Sheet sheet) {
+  private void configureRosterColumns(Sheet sheet, String workstationLabel) {
     Row headerRow = sheet.getRow(4);
     if (headerRow == null) {
       return;
     }
+    setString(headerRow, 0, "组名");
+    setString(headerRow, 2, StringUtils.hasText(workstationLabel) ? workstationLabel.trim() : "对应工位");
     setString(headerRow, 3, "考生姓名");
-    setString(headerRow, 4, "手机号");
-    setString(headerRow, 5, "现场签到");
-    setString(headerRow, 6, "备注");
-    sheet.setColumnWidth(4, sheet.getColumnWidth(3));
-    sheet.setColumnHidden(6, false);
+    setString(headerRow, 4, "组内角色");
+    setString(headerRow, 5, "组长");
+    setString(headerRow, 6, "手机号");
+    setString(headerRow, 7, "参赛公司");
+    sheet.setColumnWidth(5, 12 * 256);
+    sheet.setColumnWidth(6, Math.max(sheet.getColumnWidth(6), sheet.getColumnWidth(3)));
+    sheet.setColumnWidth(7, 24 * 256);
+    sheet.setColumnHidden(7, false);
+  }
+
+  /** 在考生姓名右侧插入角色列，原手机号、签到、备注顺延。 */
+  private void insertRoleColumn(Sheet sheet) {
+    sheet.shiftColumns(4, 6, 1);
+    copyCellStyle(sheet.getRow(4), 3, 4);
+    copyCellStyle(sheet.getRow(5), 3, 4);
+    sheet.setColumnWidth(4, 12 * 256);
+  }
+
+  private void copyCellStyle(Row row, int fromColumn, int toColumn) {
+    if (row == null) {
+      return;
+    }
+    Cell source = row.getCell(fromColumn);
+    if (source == null) {
+      return;
+    }
+    Cell target = row.getCell(toColumn);
+    if (target == null) {
+      target = row.createCell(toColumn);
+    }
+    target.setCellStyle(source.getCellStyle());
+  }
+
+  private String leaderLabel(Boolean groupLeader) {
+    if (groupLeader == null) {
+      return "";
+    }
+    return groupLeader ? "组长" : "";
+  }
+
+  private String groupTitle(CompetitionPlayerSortingAssignmentVO assignment) {
+    if (StringUtils.hasText(assignment.groupName())) {
+      return assignment.groupName().trim();
+    }
+    return groupLabel(assignment.groupNo());
   }
 
   private void fillWorkstations(
       Sheet sheet,
       List<CompetitionPlayerSortingAssignmentVO> assignments,
-      int groupCount) {
+      int groupCount,
+      String workstationLabel,
+      List<String> workstationCodes) {
+    if (hasGroupWorkstation(assignments)) {
+      fillGroupDrawResult(sheet, assignments, workstationLabel);
+      return;
+    }
+    if (workstationCodes != null && !workstationCodes.isEmpty()) {
+      fillCreatedWorkstations(sheet, workstationLabel, workstationCodes);
+      return;
+    }
     int firstDataRow = 5;
     int noteRow = findNoteRow(sheet);
     int lastDataRow = firstDataRow + groupCount - 1;
@@ -116,7 +179,7 @@ public class CompetitionPlayerSortingWorkbookExportService {
     for (CompetitionPlayerSortingAssignmentVO assignment : assignments) {
       workstationByGroup
           .computeIfAbsent(assignment.groupNo(), key -> new LinkedHashSet<>())
-          .add(assignment.workstation());
+          .add(assignment.workstation() == null ? "" : assignment.workstation());
     }
     Row styleRow = sheet.getRow(firstDataRow);
     for (int groupNo = 1; groupNo <= groupCount; groupNo++) {
@@ -130,6 +193,67 @@ public class CompetitionPlayerSortingWorkbookExportService {
       setString(row, 1, String.join("、",
           workstationByGroup.getOrDefault(groupNo, Set.of())));
       setString(row, 2, "");
+    }
+  }
+
+  private boolean hasGroupWorkstation(List<CompetitionPlayerSortingAssignmentVO> assignments) {
+    for (CompetitionPlayerSortingAssignmentVO assignment : assignments) {
+      if (StringUtils.hasText(assignment.groupName()) && StringUtils.hasText(assignment.workstation())) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /** 每个组一行，工位属于整组而不是单个选手。 */
+  private void fillGroupDrawResult(
+      Sheet sheet,
+      List<CompetitionPlayerSortingAssignmentVO> assignments,
+      String workstationLabel) {
+    Row headerRow = sheet.getRow(4);
+    if (headerRow != null) {
+      setString(headerRow, 0, "组名");
+      setString(headerRow, 1, "参赛公司");
+      setString(headerRow, 2, StringUtils.hasText(workstationLabel) ? workstationLabel.trim() : "工位");
+    }
+    Map<Integer, CompetitionPlayerSortingAssignmentVO> firstByGroup = new LinkedHashMap<>();
+    for (CompetitionPlayerSortingAssignmentVO assignment : assignments) {
+      firstByGroup.putIfAbsent(assignment.groupNo(), assignment);
+    }
+    Row styleRow = sheet.getRow(5);
+    int rowIndex = 5;
+    for (CompetitionPlayerSortingAssignmentVO assignment : firstByGroup.values()) {
+      Row row = sheet.getRow(rowIndex);
+      if (row == null) {
+        row = sheet.createRow(rowIndex);
+      }
+      copyRowStyle(styleRow, row, 3);
+      setString(row, 0, groupTitle(assignment));
+      setString(row, 1, assignment.orgName() == null ? "" : assignment.orgName());
+      setString(row, 2, assignment.workstation());
+      rowIndex++;
+    }
+  }
+
+  private void fillCreatedWorkstations(
+      Sheet sheet, String workstationLabel, List<String> workstationCodes) {
+    Row headerRow = sheet.getRow(4);
+    if (headerRow != null) {
+      setString(headerRow, 0, "工位名称");
+      setString(headerRow, 1, "工位编号");
+    }
+    Row styleRow = sheet.getRow(5);
+    int rowIndex = 5;
+    for (String code : workstationCodes) {
+      Row row = sheet.getRow(rowIndex);
+      if (row == null) {
+        row = sheet.createRow(rowIndex);
+      }
+      copyRowStyle(styleRow, row, 3);
+      setString(row, 0, StringUtils.hasText(workstationLabel) ? workstationLabel.trim() : "");
+      setString(row, 1, code);
+      setString(row, 2, "");
+      rowIndex++;
     }
   }
 

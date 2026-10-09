@@ -3,9 +3,12 @@ import type { PageResponse } from '../types/api';
 import type { CompetitionId } from '../types/competition';
 import type {
   CompetitionPlayerSortingCandidate,
+  CompetitionPlayerSortingGroupsRequest,
+  CompetitionPlayerSortingRolesRequest,
   CompetitionPlayerSortingTask,
   CompetitionPlayerSortingTaskCreateRequest,
   CompetitionPlayerSortingTaskSelectionRequest,
+  CompetitionPlayerSortingWorkstationsRequest,
 } from '../types/competitionPlayerSorting';
 
 export function listCompetitionPlayerSortingCandidates(stageId: CompetitionId) {
@@ -42,6 +45,39 @@ export function saveCompetitionPlayerSortingTaskSelection(
 ) {
   return unwrap<CompetitionPlayerSortingTask>(
     apiClient.put(`/competition/player-sorting/tasks/${taskId}/selection`, payload),
+  );
+}
+
+export function saveCompetitionPlayerSortingGroups(
+  taskId: CompetitionId,
+  payload: CompetitionPlayerSortingGroupsRequest,
+) {
+  return unwrap<CompetitionPlayerSortingTask>(
+    apiClient.put(`/competition/player-sorting/tasks/${taskId}/groups`, payload),
+  );
+}
+
+export function saveCompetitionPlayerSortingRoles(
+  taskId: CompetitionId,
+  payload: CompetitionPlayerSortingRolesRequest,
+) {
+  return unwrap<CompetitionPlayerSortingTask>(
+    apiClient.put(`/competition/player-sorting/tasks/${taskId}/roles`, payload),
+  );
+}
+
+export function saveCompetitionPlayerSortingWorkstations(
+  taskId: CompetitionId,
+  payload: CompetitionPlayerSortingWorkstationsRequest,
+) {
+  return unwrap<CompetitionPlayerSortingTask>(
+    apiClient.put(`/competition/player-sorting/tasks/${taskId}/workstations`, payload),
+  );
+}
+
+export function drawCompetitionPlayerSortingWorkstations(taskId: CompetitionId) {
+  return unwrap<CompetitionPlayerSortingTask>(
+    apiClient.post(`/competition/player-sorting/tasks/${taskId}/draw-workstations`),
   );
 }
 

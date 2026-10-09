@@ -1,6 +1,7 @@
 import {
   DeleteOutlined,
   DownloadOutlined,
+  PlusOutlined,
   ReloadOutlined,
   TeamOutlined,
 } from '@ant-design/icons';
@@ -8,10 +9,9 @@ import {
   Card,
   Alert,
   Button,
-  Descriptions,
-  Form,
-  InputNumber,
+  Input,
   Modal,
+  Pagination,
   Result,
   Select,
   Space,
@@ -34,31 +34,29 @@ import {
   createCompetitionPlayerSortingTask,
   deleteCompetitionPlayerSortingTask,
   downloadCompetitionPlayerSortingRoster,
+  drawCompetitionPlayerSortingWorkstations,
   getCompetitionPlayerSortingTask,
   listCompetitionPlayerSortingCandidates,
   pageCompetitionPlayerSortingTasks,
   randomizeCompetitionPlayerSortingTask,
-  saveCompetitionPlayerSortingTaskSelection,
+  saveCompetitionPlayerSortingGroups,
+  saveCompetitionPlayerSortingRoles,
+  saveCompetitionPlayerSortingWorkstations,
 } from '../../api/competitionPlayerSorting';
 import type { CompetitionEvent, CompetitionId, CompetitionStage } from '../../types/competition';
 import type {
   CompetitionPlayerSortingAssignment,
   CompetitionPlayerSortingCandidate,
+  CompetitionPlayerSortingMember,
   CompetitionPlayerSortingTask,
 } from '../../types/competitionPlayerSorting';
 import { useAuthStore } from '../../stores/authStore';
 import './CompetitionEventManagementPage.css';
 
-interface SortingFormValues {
-  groupCount?: number;
-  workstationCount?: number;
-  playersPerGroup?: number;
-}
-
-interface SortingConfiguration {
-  groupCount: number;
-  workstationCount: number;
-  playersPerGroup: number;
+interface ManualGroup {
+  groupName: string;
+  orgName: string;
+  memberIds: string[];
 }
 
 interface CompetitionPlayerSortingPageProps {
@@ -67,7 +65,7 @@ interface CompetitionPlayerSortingPageProps {
   showTitle?: boolean;
 }
 
-const MAX_SORTING_PLAYER_COUNT = 5000;
+const MISSING_ORG = '未填写参赛公司';
 
 function idValue(value?: CompetitionId | null) {
   return value == null ? '' : String(value);
@@ -92,42 +90,60 @@ function downloadBlob(blob: Blob, filename: string) {
   window.setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
-function taskStatus(status: string, playerCount: number) {
-  if (status === 'created' && playerCount === 0) return <Tag color="warning">待选择选手</Tag>;
-  return status === 'sorted'
-    ? <Tag color="success">已随机排序</Tag>
-    : <Tag color="processing">待随机排序</Tag>;
+function companyName(value?: string | null) {
+  const name = value?.trim();
+  return name || MISSING_ORG;
 }
 
-function groupSizePlan(playerCount: number, groupCount: number) {
-  if (playerCount < 1 || groupCount < 1) return [];
-  const baseSize = Math.floor(playerCount / groupCount);
-  const largerGroupCount = playerCount % groupCount;
-  return Array.from(
-    { length: groupCount },
-    (_, index) => baseSize + (index < largerGroupCount ? 1 : 0),
-  );
+function splitCodes(value: string) {
+  return value.split(/[\s,，、;；]+/).map((item) => item.trim()).filter(Boolean);
 }
 
-function maximumSortingPlayerCount(groupCount: number, playersPerGroup: number) {
-  return Math.min(groupCount * playersPerGroup, MAX_SORTING_PLAYER_COUNT);
+function taskStatus(task: CompetitionPlayerSortingTask) {
+  if (task.groupingMode === 'company' && task.status === 'created') {
+    return task.groupCount > 0
+      ? <Tag color="processing">待完成排序</Tag>
+      : <Tag color="warning">待成组</Tag>;
+  }
+  if (task.status === 'ordered') return <Tag color="processing">待工位抽签</Tag>;
+  if (task.status === 'drawn') return <Tag color="success">已完成工位抽签</Tag>;
+  if (task.status === 'sorted') return <Tag color="success">已随机排序</Tag>;
+  if (task.status === 'created' && task.playerCount === 0) return <Tag color="warning">待选择选手</Tag>;
+  return <Tag color="processing">待随机排序</Tag>;
 }
 
-function workstationLoadHint(playersPerGroup: number, workstationCount: number) {
-  if (playersPerGroup < 1 || workstationCount < 1 || workstationCount > playersPerGroup) return '';
-  const base = Math.floor(playersPerGroup / workstationCount);
-  const extra = playersPerGroup % workstationCount;
-  if (workstationCount === playersPerGroup) {
-    return '每组满员时一人对应一个工位，按出场顺序从第一工位排到最后一工位。本组实际人数更少时，多出的工位空置。';
+function groupAssignments(assignments: CompetitionPlayerSortingAssignment[]) {
+  const groups: Array<{
+    groupNo: number;
+    groupName: string;
+    orgName: string;
+    workstation?: string | null;
+    members: CompetitionPlayerSortingAssignment[];
+  }> = [];
+  for (const assignment of assignments) {
+    const current = groups.find((group) => group.groupNo === assignment.groupNo);
+    if (current) {
+      current.members.push(assignment);
+      if (!current.workstation && assignment.workstation) current.workstation = assignment.workstation;
+      continue;
+    }
+    groups.push({
+      groupNo: assignment.groupNo,
+      groupName: assignment.groupName || `第${assignment.groupNo}组`,
+      orgName: companyName(assignment.orgName),
+      workstation: assignment.workstation,
+      members: [assignment],
+    });
   }
-  if (workstationCount === 1) {
-    return '每组只有 1 个工位，本组选手全部安排在第一工位。';
+  for (const group of groups) {
+    group.members.sort((left, right) => left.groupOrder - right.groupOrder);
   }
-  if (extra === 0) {
-    return `每组满员时，每个工位 ${base} 人，按出场顺序轮转。本组实际人数更少时，仍按人数轮转，排不到的工位空置。`;
-  }
-  const rest = workstationCount - extra;
-  return `每组满员 ${playersPerGroup} 人不能被 ${workstationCount} 个工位整除。按出场顺序轮转后，前 ${extra} 个工位各 ${base + 1} 人，后 ${rest} 个工位各 ${base} 人，相邻工位相差不超过 1 人。实际人数少于上限时仍按本组人数轮转，排不到的工位空置。`;
+  return groups.sort((left, right) => left.groupNo - right.groupNo);
+}
+
+function leaderTag(groupLeader?: boolean | null) {
+  if (groupLeader == null) return '-';
+  return groupLeader ? <Tag color="gold">组长</Tag> : <Tag>组员</Tag>;
 }
 
 export function CompetitionPlayerSortingPage({
@@ -145,12 +161,22 @@ export function CompetitionPlayerSortingPage({
   const [taskPage, setTaskPage] = useState(1);
   const [wizardOpen, setWizardOpen] = useState(false);
   const [wizardStep, setWizardStep] = useState(0);
-  const [configuration, setConfiguration] = useState<SortingConfiguration>();
   const [createdTaskId, setCreatedTaskId] = useState<string>();
-  const [savedPlayerCount, setSavedPlayerCount] = useState(0);
+  const [roleOptions, setRoleOptions] = useState<string[]>(['组员']);
+  const [roleById, setRoleById] = useState<Record<string, string>>({});
+  const [members, setMembers] = useState<CompetitionPlayerSortingMember[]>([]);
+  const [roleDraft, setRoleDraft] = useState('');
+  const [manualGroups, setManualGroups] = useState<ManualGroup[]>([]);
+  const [poolSelection, setPoolSelection] = useState<string[]>([]);
+  const [groupNameDraft, setGroupNameDraft] = useState('');
+  const [workstationLabel, setWorkstationLabel] = useState('');
+  const [workstationCodes, setWorkstationCodes] = useState<string[]>([]);
+  const [codeDraft, setCodeDraft] = useState('');
+  const [previewTask, setPreviewTask] = useState<CompetitionPlayerSortingTask>();
+  const [groupPage, setGroupPage] = useState(1);
+  const [resultGroupPage, setResultGroupPage] = useState(1);
   const [activeTaskId, setActiveTaskId] = useState<string>();
   const [resultOpen, setResultOpen] = useState(false);
-  const [form] = Form.useForm<SortingFormValues>();
   const queryClient = useQueryClient();
 
   const candidatesQuery = useQuery({
@@ -170,73 +196,124 @@ export function CompetitionPlayerSortingPage({
     enabled: Boolean(activeTaskId && resultOpen),
   });
 
-  const groupCount = Form.useWatch('groupCount', form);
-  const workstationCount = Form.useWatch('workstationCount', form);
-  const playersPerGroup = Form.useWatch('playersPerGroup', form);
-  const effectiveGroupCount = configuration?.groupCount ?? Number(groupCount || 0);
-  const effectiveWorkstationCount = configuration?.workstationCount ?? Number(workstationCount || 0);
-  const effectivePlayersPerGroup = configuration?.playersPerGroup ?? Number(playersPerGroup || 0);
-  const minimumPlayerCount = effectiveGroupCount;
-  const maximumPlayerCount = maximumSortingPlayerCount(effectiveGroupCount, effectivePlayersPerGroup);
-  const countMatches = minimumPlayerCount > 0 && effectivePlayersPerGroup > 0
-    && selectedIds.length >= minimumPlayerCount
-    && selectedIds.length <= maximumPlayerCount;
-  const candidateCountInsufficient = candidatesQuery.isSuccess
-    && candidates.length < minimumPlayerCount;
-  const workstationWithinLimit = effectivePlayersPerGroup > 0
-    && effectiveWorkstationCount >= 1
-    && effectiveWorkstationCount <= effectivePlayersPerGroup;
-  const configurationReady = effectiveGroupCount > 0 && workstationWithinLimit;
-  const draftWorkstationHint = workstationLoadHint(
-    Number(playersPerGroup || 0),
-    Number(workstationCount || 0),
-  );
+  const applyDetail = (task: CompetitionPlayerSortingTask) => {
+    const options = task.roleOptions?.filter(Boolean).length ? task.roleOptions!.filter(Boolean) : ['组员'];
+    const nextRoles: Record<string, string> = {};
+    for (const member of task.members || []) {
+      nextRoles[idValue(member.contestantProfileId)] = member.role || options[0];
+    }
+    setCreatedTaskId(idValue(task.id));
+    setRoleOptions(options);
+    setRoleById(nextRoles);
+    setMembers(task.members || []);
+    const formed = new Map<number, ManualGroup>();
+    for (const member of task.members || []) {
+      if (member.groupNo == null || !member.groupName) continue;
+      const current = formed.get(member.groupNo) || {
+        groupName: member.groupName,
+        orgName: companyName(member.orgName),
+        memberIds: [],
+      };
+      current.memberIds.push(idValue(member.contestantProfileId));
+      formed.set(member.groupNo, current);
+    }
+    setManualGroups([...formed.entries()].sort((left, right) => left[0] - right[0]).map((entry) => entry[1]));
+    setPoolSelection([]);
+    setGroupNameDraft('');
+    setWorkstationLabel(task.workstationLabel || '');
+    setWorkstationCodes([...(task.workstationCodes || [])]);
+    setPreviewTask(task);
+  };
+
+  const invalidateTasks = () => {
+    void queryClient.invalidateQueries({ queryKey: ['competition-player-sorting-tasks', stageId] });
+  };
 
   const createMutation = useMutation({
-    mutationFn: (taskConfiguration: SortingConfiguration) => {
+    mutationFn: (contestantProfileIds: string[]) => {
       if (!stageId) throw new Error('请先在选手管理中选择赛事工种、等级和赛段');
-      return createCompetitionPlayerSortingTask(stageId, {
-        ...taskConfiguration,
-        contestantProfileIds: [],
-      });
+      return createCompetitionPlayerSortingTask(stageId, { contestantProfileIds });
     },
     onSuccess: (task) => {
-      const taskId = idValue(task.id);
-      setCreatedTaskId(taskId);
-      setSavedPlayerCount(0);
+      applyDetail(task);
       setWizardStep(1);
-      message.success('排序任务已创建，请选择参加排序的选手');
-      void queryClient.invalidateQueries({ queryKey: ['competition-player-sorting-tasks', stageId] });
+      message.success('选手已保存，请按公司选择成员并成组');
+      invalidateTasks();
     },
     onError: (error) => message.error(errorText(error, '创建排序任务失败')),
   });
 
-  const selectionMutation = useMutation({
-    mutationFn: (contestantProfileIds: string[]) => {
-      if (!createdTaskId) throw new Error('请先创建排序任务');
-      return saveCompetitionPlayerSortingTaskSelection(createdTaskId, { contestantProfileIds });
+  const groupsMutation = useMutation({
+    mutationFn: (groups: ManualGroup[]) => {
+      if (!createdTaskId) throw new Error('请先保存参赛选手');
+      return saveCompetitionPlayerSortingGroups(createdTaskId, {
+        groups: groups.map((group) => ({
+          groupName: group.groupName,
+          contestantProfileIds: group.memberIds,
+        })),
+      });
     },
     onSuccess: (task) => {
-      setSavedPlayerCount(task.playerCount);
+      applyDetail(task);
       setWizardStep(2);
-      message.success('选手名单已保存，请确认后执行随机分组');
-      void queryClient.invalidateQueries({ queryKey: ['competition-player-sorting-tasks', stageId] });
+      message.success('分组已保存，请选择组内角色');
+      invalidateTasks();
     },
-    onError: (error) => message.error(errorText(error, '保存选手名单失败')),
+    onError: (error) => message.error(errorText(error, '保存分组失败')),
+  });
+
+  const rolesMutation = useMutation({
+    mutationFn: () => {
+      if (!createdTaskId) throw new Error('请先创建排序任务');
+      return saveCompetitionPlayerSortingRoles(createdTaskId, {
+        roleOptions,
+        members: members.map((member) => ({
+          contestantProfileId: member.contestantProfileId,
+          role: roleById[idValue(member.contestantProfileId)] || roleOptions[0],
+        })),
+      });
+    },
+    onSuccess: (task) => {
+      applyDetail(task);
+      setWizardStep(3);
+      message.success('组内角色已保存，可以随机排出场顺序并选取组长');
+      invalidateTasks();
+    },
+    onError: (error) => message.error(errorText(error, '保存组内角色失败')),
   });
 
   const randomizeMutation = useMutation({
     mutationFn: randomizeCompetitionPlayerSortingTask,
     onSuccess: (task) => {
-      const taskId = idValue(task.id);
-      message.success('随机分组排序已完成');
-      queryClient.setQueryData(['competition-player-sorting-task', taskId], task);
-      void queryClient.invalidateQueries({ queryKey: ['competition-player-sorting-tasks', stageId] });
-      setActiveTaskId(taskId);
-      setWizardOpen(false);
-      setResultOpen(true);
+      applyDetail(task);
+      setGroupPage(1);
+      setWizardStep(3);
+      message.success('已随机排出场顺序，并在每组指定一名组长');
+      queryClient.setQueryData(['competition-player-sorting-task', idValue(task.id)], task);
+      invalidateTasks();
     },
     onError: (error) => message.error(errorText(error, '随机排序失败')),
+  });
+
+  const workstationsMutation = useMutation({
+    mutationFn: async () => {
+      if (!createdTaskId) throw new Error('请先完成随机排序');
+      await saveCompetitionPlayerSortingWorkstations(createdTaskId, {
+        label: workstationLabel.trim(),
+        codes: workstationCodes,
+      });
+      return drawCompetitionPlayerSortingWorkstations(createdTaskId);
+    },
+    onSuccess: (task) => {
+      const taskId = idValue(task.id);
+      message.success('工位已随机分配到各组选手');
+      queryClient.setQueryData(['competition-player-sorting-task', taskId], task);
+      invalidateTasks();
+      setWizardOpen(false);
+      setActiveTaskId(taskId);
+      setResultOpen(true);
+    },
+    onError: (error) => message.error(errorText(error, '工位抽签失败')),
   });
 
   const downloadMutation = useMutation({
@@ -250,16 +327,20 @@ export function CompetitionPlayerSortingPage({
 
   const deleteMutation = useMutation({
     mutationFn: deleteCompetitionPlayerSortingTask,
-    onSuccess: () => {
+    onSuccess: (_result, taskId) => {
       message.success('排序任务已删除');
-      void queryClient.invalidateQueries({ queryKey: ['competition-player-sorting-tasks', stageId] });
+      if (idValue(taskId) === activeTaskId) {
+        setResultOpen(false);
+        setActiveTaskId(undefined);
+      }
+      invalidateTasks();
     },
     onError: (error) => message.error(errorText(error, '删除排序任务失败')),
   });
 
   const candidateColumns = useMemo(() => [
     { title: '选手姓名', dataIndex: 'name', width: 140, render: (value: string) => value || '-' },
-    { title: '所属企业', dataIndex: 'orgName', width: 220, render: (value: string) => value || '-' },
+    { title: '参赛公司', dataIndex: 'orgName', width: 220, render: (value?: string) => companyName(value) },
     { title: '赛事工种', dataIndex: 'workTypeName', width: 180, render: (value: string) => value || '-' },
     {
       title: '技能等级',
@@ -270,46 +351,250 @@ export function CompetitionPlayerSortingPage({
   ], []);
 
   const assignmentColumns = useMemo(() => [
-    { title: '抽签组别', dataIndex: 'groupNo', width: 130, render: (value: number) => `第${value}组` },
-    { title: '组内顺序', dataIndex: 'groupOrder', width: 110 },
-    { title: '对应工位', dataIndex: 'workstation', width: 240 },
-    { title: '手机号', dataIndex: 'mobile', width: 180, render: (value?: string | null) => value || '-' },
-    { title: '考生姓名', dataIndex: 'name', width: 140, render: (value: string) => value || '-' },
-  ], []);
+    {
+      title: '组名',
+      dataIndex: 'groupName',
+      width: 160,
+      render: (value: string | null | undefined, record: CompetitionPlayerSortingAssignment) => value || `第${record.groupNo}组`,
+    },
+    {
+      title: '参赛公司',
+      dataIndex: 'orgName',
+      width: 220,
+      render: (value?: string | null) => companyName(value),
+    },
+    { title: '出场顺序', dataIndex: 'groupOrder', width: 100 },
+    { title: '组内角色', dataIndex: 'role', width: 110, render: (value?: string | null) => value || '-' },
+    {
+      title: '组长',
+      dataIndex: 'groupLeader',
+      width: 90,
+      render: (value?: boolean | null) => leaderTag(value),
+    },
+    {
+      title: taskDetailQuery.data?.workstationLabel || previewTask?.workstationLabel || '工位',
+      dataIndex: 'workstation',
+      width: 140,
+      render: (value?: string | null) => value || '-',
+    },
+    { title: '手机号', dataIndex: 'mobile', width: 150, render: (value?: string | null) => value || '-' },
+    { title: '考生姓名', dataIndex: 'name', width: 120, render: (value: string) => value || '-' },
+  ], [previewTask?.workstationLabel, taskDetailQuery.data?.workstationLabel]);
+
+  const selectedCandidates = useMemo(() => {
+    const candidateById = new Map(candidates.map((candidate) => [idValue(candidate.contestantProfileId), candidate]));
+    return selectedIds
+      .map((id) => candidateById.get(id))
+      .filter((candidate): candidate is CompetitionPlayerSortingCandidate => Boolean(candidate));
+  }, [candidates, selectedIds]);
+
+  const companyGroups = useMemo(() => {
+    const groups: Array<{ orgName: string; players: CompetitionPlayerSortingCandidate[] }> = [];
+    for (const candidate of selectedCandidates) {
+      const orgName = companyName(candidate.orgName);
+      const current = groups.find((group) => group.orgName === orgName);
+      if (current) current.players.push(candidate);
+      else groups.push({ orgName, players: [candidate] });
+    }
+    return groups;
+  }, [selectedCandidates]);
+
+  const roleGroups = useMemo(() => {
+    const groups: Array<{ groupNo: number; groupName: string; orgName: string; members: CompetitionPlayerSortingMember[] }> = [];
+    for (const member of members) {
+      if (member.groupNo == null) continue;
+      const current = groups.find((group) => group.groupNo === member.groupNo);
+      if (current) current.members.push(member);
+      else groups.push({
+        groupNo: member.groupNo,
+        groupName: member.groupName || `第${member.groupNo}组`,
+        orgName: companyName(member.orgName),
+        members: [member],
+      });
+    }
+    return groups.sort((left, right) => left.groupNo - right.groupNo);
+  }, [members]);
+
+  const groupedMemberIds = useMemo(
+    () => new Set(manualGroups.flatMap((group) => group.memberIds)),
+    [manualGroups],
+  );
+  const poolByCompany = useMemo(() => {
+    const groups: Array<{ orgName: string; members: CompetitionPlayerSortingMember[] }> = [];
+    for (const member of members) {
+      if (groupedMemberIds.has(idValue(member.contestantProfileId))) continue;
+      const orgName = companyName(member.orgName);
+      const current = groups.find((group) => group.orgName === orgName);
+      if (current) current.members.push(member);
+      else groups.push({ orgName, members: [member] });
+    }
+    return groups;
+  }, [groupedMemberIds, members]);
+
+  const candidateById = useMemo(
+    () => new Map(candidates.map((candidate) => [idValue(candidate.contestantProfileId), candidate])),
+    [candidates],
+  );
+  const openWizard = () => {
+    setCreatedTaskId(undefined);
+    setPreviewTask(undefined);
+    setMembers([]);
+    setRoleOptions(['组员']);
+    setRoleById({});
+    setRoleDraft('');
+    setManualGroups([]);
+    setPoolSelection([]);
+    setGroupNameDraft('');
+    setWorkstationLabel('');
+    setWorkstationCodes([]);
+    setCodeDraft('');
+    setSelectedIds([]);
+    setWizardStep(0);
+    setWizardOpen(true);
+  };
+
+  const resumeTask = async (task: CompetitionPlayerSortingTask) => {
+    try {
+      const detail = await queryClient.fetchQuery({
+        queryKey: ['competition-player-sorting-task', idValue(task.id)],
+        queryFn: () => getCompetitionPlayerSortingTask(task.id),
+      });
+      applyDetail(detail);
+      const ungrouped = (detail.members || []).some((member) => member.groupNo == null || !member.groupName);
+      const missingRole = (detail.members || []).some((member) => !member.role);
+      if (detail.status === 'drawn') setWizardStep(4);
+      else if (detail.status === 'ordered') {
+        setGroupPage(1);
+        setWizardStep(3);
+      }
+      else if (ungrouped) setWizardStep(1);
+      else setWizardStep(missingRole ? 2 : 3);
+      setWizardOpen(true);
+    } catch (error) {
+      message.error(errorText(error, '排序任务加载失败'));
+    }
+  };
+
+  const formGroup = () => {
+    const selected = poolSelection.filter((id) => !groupedMemberIds.has(id));
+    if (!selected.length) {
+      message.warning('请先勾选要成组的选手');
+      return;
+    }
+    const orgs = new Set(selected.map((id) => companyName(members.find((member) => idValue(member.contestantProfileId) === id)?.orgName)));
+    if (orgs.size !== 1) {
+      message.warning('同一组只能选择同一参赛公司的选手');
+      return;
+    }
+    const groupName = groupNameDraft.trim();
+    if (!groupName) {
+      message.warning('请填写组名');
+      return;
+    }
+    if (manualGroups.some((group) => group.groupName === groupName)) {
+      message.warning('组名已存在');
+      return;
+    }
+    setManualGroups((current) => [...current, { groupName, orgName: [...orgs][0], memberIds: selected }]);
+    setPoolSelection([]);
+    setGroupNameDraft('');
+  };
+
+  const addRole = () => {
+    const role = roleDraft.trim();
+    if (!role) return;
+    if (roleOptions.includes(role)) {
+      message.warning('该角色已存在');
+      return;
+    }
+    if (roleOptions.length >= 20) {
+      message.warning('组内角色最多 20 个');
+      return;
+    }
+    setRoleOptions((current) => [...current, role]);
+    setRoleDraft('');
+  };
+
+  const removeRole = (role: string) => {
+    if (roleOptions.length <= 1) return;
+    const nextOptions = roleOptions.filter((item) => item !== role);
+    setRoleOptions(nextOptions);
+    setRoleById((current) => {
+      const next = { ...current };
+      for (const [profileId, value] of Object.entries(next)) {
+        if (value === role) next[profileId] = nextOptions[0];
+      }
+      return next;
+    });
+  };
+
+  const addCodes = (value: string) => {
+    const incoming = splitCodes(value);
+    if (!incoming.length) return;
+    setWorkstationCodes((current) => {
+      const next = [...current];
+      let duplicated = 0;
+      for (const code of incoming) {
+        if (next.includes(code)) duplicated += 1;
+        else if (next.length < 500) next.push(code);
+      }
+      if (duplicated) message.warning('重复的工位编号已跳过');
+      return next;
+    });
+    setCodeDraft('');
+  };
 
   const taskColumns = [
-    { title: '组数', dataIndex: 'groupCount', width: 70 },
-    { title: '每组人数上限', dataIndex: 'playersPerGroup', width: 105 },
-    { title: '每组工位', dataIndex: 'workstationCount', width: 90 },
+    {
+      title: '分组',
+      key: 'groups',
+      width: 140,
+      render: (_: unknown, record: CompetitionPlayerSortingTask) => (
+        record.groupingMode === 'company'
+          ? (record.groupCount > 0 ? `已成 ${record.groupCount} 组` : '待成组')
+          : `${record.groupCount} 组`
+      ),
+    },
     { title: '选手数', dataIndex: 'playerCount', width: 80 },
+    {
+      title: '工位',
+      key: 'stations',
+      width: 160,
+      render: (_: unknown, record: CompetitionPlayerSortingTask) => (
+        record.groupingMode === 'company'
+          ? (record.workstationLabel
+            ? `${record.workstationLabel} ${record.workstationCodes?.length || record.workstationCount || 0} 个`
+            : '待创建')
+          : `${record.workstationCount} 个`
+      ),
+    },
     {
       title: '任务状态',
       dataIndex: 'status',
-      width: 120,
-      render: (value: string, record: CompetitionPlayerSortingTask) => taskStatus(value, record.playerCount),
+      width: 140,
+      render: (_: string, record: CompetitionPlayerSortingTask) => taskStatus(record),
     },
-    { title: '创建时间', dataIndex: 'createdAt', width: 180, render: (value: string) => value ? value.replace('T', ' ').slice(0, 16) : '-' },
+    { title: '创建时间', dataIndex: 'createdAt', width: 170, render: (value: string) => value ? value.replace('T', ' ').slice(0, 16) : '-' },
     {
       title: '操作',
       key: 'actions',
-      width: 300,
+      width: 420,
       render: (_: unknown, record: CompetitionPlayerSortingTask) => (
-        <Space>
-          {record.status === 'created' && record.playerCount === 0 && canCreate && (
-            <Button
-              type="link"
-              onClick={() => resumeTask(record)}
-            >选择选手</Button>
+        <Space wrap>
+          {record.groupingMode === 'company' && record.status === 'created' && canCreate && (
+            <Button type="link" onClick={() => void resumeTask(record)}>继续</Button>
           )}
-          {record.status === 'created' && record.playerCount > 0 && canRandomize && (
-            <Button type="link" onClick={() => resumeTask(record)}>确认执行</Button>
+          {record.groupingMode === 'company' && (record.status === 'ordered' || record.status === 'drawn') && canCreate && (
+            <Button type="link" onClick={() => void resumeTask(record)}>
+              {record.status === 'drawn' ? '调整工位' : '工位抽签'}
+            </Button>
           )}
-          {record.status === 'sorted' && canView && (
-            <Button type="link" onClick={() => { setActiveTaskId(idValue(record.id)); setResultOpen(true); }}>
+          {(record.status === 'sorted' || record.status === 'drawn' || record.status === 'ordered') && canView && (
+            <Button type="link" onClick={() => { setResultGroupPage(1); setActiveTaskId(idValue(record.id)); setResultOpen(true); }}>
               查看名单
             </Button>
           )}
-          {record.status === 'sorted' && canExport && (
+          {(record.status === 'sorted' || record.status === 'drawn' || record.status === 'ordered') && canExport && (
             <Button
               type="link"
               icon={<DownloadOutlined />}
@@ -317,7 +602,7 @@ export function CompetitionPlayerSortingPage({
               onClick={() => downloadMutation.mutate(record.id)}
             >导出 Excel</Button>
           )}
-          {record.status === 'created' && canDelete && (
+          {canDelete && (
             <Button
               type="link"
               danger
@@ -325,7 +610,9 @@ export function CompetitionPlayerSortingPage({
               loading={deleteMutation.isPending && deleteMutation.variables === idValue(record.id)}
               onClick={() => Modal.confirm({
                 title: '删除排序任务',
-                content: '删除后，该未执行的排序任务将从任务列表中移除。确认删除吗？',
+                content: record.status === 'created'
+                  ? '删除后，该未完成的排序任务将从任务列表中移除。确认删除吗？'
+                  : '删除后，该任务的分组、出场顺序和工位抽签结果将一并移除。确认删除吗？',
                 okText: '删除',
                 okButtonProps: { danger: true },
                 cancelText: '取消',
@@ -338,62 +625,19 @@ export function CompetitionPlayerSortingPage({
     },
   ];
 
-  const selectedCandidates = useMemo(() => {
-    const candidateById = new Map(
-      candidates.map((candidate) => [idValue(candidate.contestantProfileId), candidate]),
-    );
-    return selectedIds
-      .map((id) => candidateById.get(id))
-      .filter((candidate): candidate is CompetitionPlayerSortingCandidate => Boolean(candidate));
-  }, [candidates, selectedIds]);
-
-  const openWizard = () => {
-    form.resetFields();
-    setConfiguration(undefined);
-    setCreatedTaskId(undefined);
-    setSavedPlayerCount(0);
-    setSelectedIds([]);
-    setWizardStep(0);
-    setWizardOpen(true);
-  };
-
-  const resumeTask = (task: CompetitionPlayerSortingTask) => {
-    setConfiguration({
-      groupCount: task.groupCount,
-      workstationCount: task.workstationCount,
-      playersPerGroup: task.playersPerGroup,
-    });
-    setCreatedTaskId(idValue(task.id));
-    setSavedPlayerCount(task.playerCount);
-    setSelectedIds([]);
-    setWizardStep(task.playerCount === 0 ? 1 : 2);
-    setWizardOpen(true);
-  };
-
-  const closeWizard = () => {
-    setWizardOpen(false);
-    setWizardStep(0);
-  };
-
-  const createTaskAndOpenSelection = async () => {
-    try {
-      const values = await form.validateFields();
-      const nextConfiguration = {
-        groupCount: Number(values.groupCount),
-        workstationCount: Number(values.workstationCount),
-        playersPerGroup: Number(values.playersPerGroup),
-      };
-      setConfiguration(nextConfiguration);
-      createMutation.mutate(nextConfiguration);
-    } catch {
-      // Ant Design displays the field validation messages in the form.
-    }
-  };
-
-  const saveSelectionAndReview = () => {
-    if (!countMatches || !workstationWithinLimit) return;
-    selectionMutation.mutate(selectedIds);
-  };
+  const orderedAssignments = previewTask?.assignments || [];
+  const assignmentGroups = useMemo(
+    () => groupAssignments(previewTask?.assignments || []),
+    [previewTask?.assignments],
+  );
+  const resultGroups = useMemo(
+    () => groupAssignments(taskDetailQuery.data?.assignments || []),
+    [taskDetailQuery.data?.assignments],
+  );
+  const assignmentGroupPage = Math.min(groupPage, Math.max(assignmentGroups.length, 1));
+  const currentAssignmentGroup = assignmentGroups[assignmentGroupPage - 1];
+  const resultGroupIndex = Math.min(resultGroupPage, Math.max(resultGroups.length, 1));
+  const currentResultGroup = resultGroups[resultGroupIndex - 1];
 
   if (!canView) return <Result status="403" title="暂无排序分组查看权限" />;
   return (
@@ -402,7 +646,7 @@ export function CompetitionPlayerSortingPage({
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap' }}>
           <div>
             {showTitle && <Typography.Title level={4} style={{ margin: 0 }}><TeamOutlined /> 排序分组</Typography.Title>}
-            <Typography.Text type="secondary">赛段：{stageName || stageId} · 历史任务与名单</Typography.Text>
+            <Typography.Text type="secondary">赛段：{stageName || stageId} · 先按公司选人成组，再抽签排工位</Typography.Text>
           </div>
           <Space>
             <Button
@@ -432,50 +676,70 @@ export function CompetitionPlayerSortingPage({
             onChange: (page) => setTaskPage(page),
           }}
           locale={{ emptyText: '当前赛段还没有排序任务' }}
-          scroll={{ x: 950 }}
+          scroll={{ x: 1100 }}
         />
       </Space>
 
       <Modal
-        title={`排序任务 · ${['创建排序任务', '选择选手', '确认并执行'][wizardStep]}`}
+        title={`排序任务 · ${['选择选手', '手动成组', '选择组内角色', '随机出场与组长', '工位抽签'][wizardStep]}`}
         open={wizardOpen}
-        onCancel={closeWizard}
-        width={920}
+        onCancel={() => setWizardOpen(false)}
+        width={980}
         centered
         destroyOnClose
         styles={{ body: { maxHeight: 'calc(100vh - 220px)', overflowY: 'auto' } }}
         footer={(
           <Space>
-            {wizardStep < 2 && <Button onClick={closeWizard}>取消</Button>}
+            {wizardStep < 3 && <Button onClick={() => setWizardOpen(false)}>取消</Button>}
             {wizardStep === 0 && (
               <Button
                 type="primary"
                 loading={createMutation.isPending}
-                disabled={!configurationReady}
-                onClick={() => void createTaskAndOpenSelection()}
-              >
-                创建任务并选择选手
-              </Button>
+                disabled={!selectedIds.length}
+                onClick={() => createMutation.mutate(selectedIds)}
+              >保存选手并进入成组</Button>
             )}
             {wizardStep === 1 && (
               <Button
                 type="primary"
-                loading={selectionMutation.isPending}
-                disabled={!countMatches || !workstationWithinLimit || !canCreate}
-                onClick={saveSelectionAndReview}
-              >保存选手并确认</Button>
+                loading={groupsMutation.isPending}
+                disabled={!canCreate || groupedMemberIds.size !== members.length || !members.length || manualGroups.some((group) => !group.groupName.trim())}
+                onClick={() => groupsMutation.mutate(manualGroups)}
+              >保存分组</Button>
             )}
             {wizardStep === 2 && (
+              <Button
+                type="primary"
+                loading={rolesMutation.isPending}
+                disabled={!canCreate || !members.length || !roleOptions.length}
+                onClick={() => rolesMutation.mutate()}
+              >保存角色</Button>
+            )}
+            {wizardStep === 3 && (
               <>
-                <Button onClick={closeWizard}>稍后处理</Button>
+                <Button onClick={() => setWizardOpen(false)}>稍后处理</Button>
                 {canRandomize && (
                   <Button
                     type="primary"
                     loading={randomizeMutation.isPending}
-                    disabled={!createdTaskId || !workstationWithinLimit}
+                    disabled={!createdTaskId}
                     onClick={() => createdTaskId && randomizeMutation.mutate(createdTaskId)}
-                  >确认并执行随机分组</Button>
+                  >随机排序并选取组长</Button>
                 )}
+                {orderedAssignments.length > 0 && (
+                  <Button onClick={() => setWizardStep(4)}>进入工位抽签</Button>
+                )}
+              </>
+            )}
+            {wizardStep === 4 && (
+              <>
+                <Button onClick={() => setWizardStep(3)}>返回出场顺序</Button>
+                <Button
+                  type="primary"
+                  loading={workstationsMutation.isPending}
+                  disabled={!workstationLabel.trim() || assignmentGroups.length < 1 || workstationCodes.length < assignmentGroups.length}
+                  onClick={() => workstationsMutation.mutate()}
+                >执行工位抽签</Button>
               </>
             )}
           </Space>
@@ -484,88 +748,26 @@ export function CompetitionPlayerSortingPage({
         <Steps
           current={wizardStep}
           items={[
-            { title: '创建排序任务' },
             { title: '选择选手' },
-            { title: '确认并执行' },
+            { title: '手动成组' },
+            { title: '组内角色' },
+            { title: '出场与组长' },
+            { title: '工位抽签' },
           ]}
           style={{ marginBottom: 24 }}
         />
 
         {wizardStep === 0 && (
-          <Space direction="vertical" size={16} style={{ width: '100%' }}>
-            <Alert
-              type="info"
-              showIcon
-              message={`当前赛段：${stageName || stageId}`}
-              description="先设置组数和每组人数上限，再设置每组工位数量。工位数量不能大于每组人数上限。选手至少与组数相同以保证每组有人；人数不整除组数时，各组人数尽量均衡，相差不超过 1 人。"
-            />
-            <Form<SortingFormValues> form={form} layout="vertical" requiredMark>
-              <Space size={20} wrap align="start">
-                <Form.Item name="groupCount" label="组数量" rules={[{ required: true, message: '请输入组数量' }]}>
-                  <InputNumber min={1} max={200} precision={0} placeholder="例如 5" style={{ width: 180 }} />
-                </Form.Item>
-                <Form.Item name="playersPerGroup" label="每组人数上限" rules={[{ required: true, message: '请输入每组人数上限' }]}>
-                  <InputNumber min={1} max={5000} precision={0} placeholder="例如 9" style={{ width: 180 }} />
-                </Form.Item>
-                <Form.Item
-                  name="workstationCount"
-                  label="工位数量"
-                  dependencies={['playersPerGroup']}
-                  rules={[
-                    { required: true, message: '请输入工位数量' },
-                    ({ getFieldValue }) => ({
-                      validator(_, value) {
-                        const cap = getFieldValue('playersPerGroup');
-                        if (value == null || cap == null || Number(value) <= Number(cap)) {
-                          return Promise.resolve();
-                        }
-                        return Promise.reject(new Error('工位数量不能大于每组人数上限'));
-                      },
-                    }),
-                  ]}
-                >
-                  <InputNumber
-                    min={1}
-                    max={Number(playersPerGroup) > 0 ? Number(playersPerGroup) : 5000}
-                    precision={0}
-                    placeholder="不超过每组人数上限"
-                    style={{ width: 180 }}
-                  />
-                </Form.Item>
-              </Space>
-            </Form>
-            {playersPerGroup && workstationCount && workstationCount > playersPerGroup && (
-              <Alert type="warning" showIcon message="工位数量不能大于每组人数上限。请先确定每组人数上限，再填写不超过该上限的工位数量。" />
-            )}
-            <Typography.Text type="secondary">
-              工位按每组单独编号，组内按出场顺序轮转。工位数等于人数上限时一人一工位；工位数为 1 时全组共用第一工位。每个赛段分别创建排序任务，单次最多选择 5000 名选手。
-            </Typography.Text>
-            {draftWorkstationHint && (
-              <Typography.Text type="secondary">{draftWorkstationHint}</Typography.Text>
-            )}
-          </Space>
-        )}
-
-        {wizardStep === 1 && (
           <Space direction="vertical" size={12} style={{ width: '100%' }}>
             {candidatesQuery.isError && (
               <Alert type="error" showIcon message={errorText(candidatesQuery.error, '当前赛段选手加载失败')} />
             )}
             <Alert
-              type={countMatches ? 'success' : 'warning'}
+              type="info"
               showIcon
-              message={`当前赛段选手 ${candidates.length} 人；已选 ${selectedIds.length} 人；允许选择 ${minimumPlayerCount}–${maximumPlayerCount} 人。`}
-              description={countMatches
-                ? '人数校验通过。系统会随机打乱选手，再均衡分组，各组人数相差不超过 1 人。'
-                : candidateCountInsufficient
-                  ? `当前赛段只有 ${candidates.length} 名候选，少于组数 ${minimumPlayerCount}。请降低组数后重新创建任务，或先补充赛段选手。`
-                  : selectedIds.length < minimumPlayerCount
-                    ? `至少选择 ${minimumPlayerCount} 人，保证每组至少 1 人。`
-                    : `最多选择 ${maximumPlayerCount} 人（每组不超过 ${effectivePlayersPerGroup} 人，单次上限 5000 人）。`}
+              message={`已选 ${selectedIds.length} 人，涉及 ${companyGroups.length || 0} 家参赛公司。`}
+              description="先确定参加排序的选手。下一步会按公司列出成员，由你勾选成员、填写组名后再成组。同一公司可以分成多组。"
             />
-            {!workstationWithinLimit && (
-              <Alert type="warning" showIcon message="工位数量不能大于每组人数上限。请删除该任务后重新创建。" />
-            )}
             <Space wrap>
               <Button
                 disabled={!candidates.length || candidatesQuery.isFetching}
@@ -585,57 +787,210 @@ export function CompetitionPlayerSortingPage({
               }}
               pagination={{ pageSize: 8, showSizeChanger: true, pageSizeOptions: [8, 20, 50] }}
               scroll={{ x: 900, y: 360 }}
-              locale={{ emptyText: '当前赛段暂无可抽签选手' }}
+              locale={{ emptyText: '当前赛段暂无可排序选手' }}
             />
           </Space>
         )}
 
-        {wizardStep === 2 && configuration && (
-          <Space direction="vertical" size={16} style={{ width: '100%' }}>
+        {wizardStep === 1 && (
+          <Space direction="vertical" size={12} style={{ width: '100%' }}>
             <Alert
-              type="success"
+              type={groupedMemberIds.size === members.length && members.length > 0 ? 'success' : 'info'}
               showIcon
-              message="任务配置与选手人数已核对"
-              description={`已创建并保存任务 ${createdTaskId || ''}。确认后将对选手进行随机排序，并在每组内按出场顺序轮转工位。`}
+              message={`已成组 ${groupedMemberIds.size} / ${members.length} 人，共 ${manualGroups.length} 组。`}
+              description="在同一家公司中勾选成员，填写组名后成组。同一公司可以分成多组，例如 8 人分成“银海一组”和“银海二组”。全部选手成组后才能保存。"
             />
-            {!workstationWithinLimit && (
-              <Alert type="warning" showIcon message="工位数量不能大于每组人数上限。请删除该任务后重新创建。" />
-            )}
-            <Descriptions bordered size="small" column={2}>
-              <Descriptions.Item label="所属赛段">{stageName || stageId}</Descriptions.Item>
-              <Descriptions.Item label="选手人数">{savedPlayerCount} 人</Descriptions.Item>
-              <Descriptions.Item label="组数量">{configuration.groupCount} 组</Descriptions.Item>
-              <Descriptions.Item label="每组人数上限">{configuration.playersPerGroup} 人</Descriptions.Item>
-              <Descriptions.Item label="工位数量">{configuration.workstationCount} 个</Descriptions.Item>
-              <Descriptions.Item label="分组人数校验">
-                已选 {savedPlayerCount} 人；允许 {configuration.groupCount}–{maximumSortingPlayerCount(configuration.groupCount, configuration.playersPerGroup)} 人，通过
-              </Descriptions.Item>
-              <Descriptions.Item label="预计各组人数" span={2}>
-                {groupSizePlan(savedPlayerCount, configuration.groupCount)
-                  .map((size, index) => `第${index + 1}组 ${size}人`).join('；')}
-              </Descriptions.Item>
-              <Descriptions.Item label="工位分配" span={2}>
-                {workstationLoadHint(configuration.playersPerGroup, configuration.workstationCount)
-                  || '工位数量不能大于每组人数上限。'}
-              </Descriptions.Item>
-            </Descriptions>
-            {selectedCandidates.length > 0 ? (
-              <>
-                <Typography.Text strong>已选选手</Typography.Text>
-                <Table<CompetitionPlayerSortingCandidate>
+            <Space wrap>
+              <Input
+                value={groupNameDraft}
+                maxLength={32}
+                placeholder="组名，如银海一组"
+                style={{ width: 240 }}
+                onChange={(event) => setGroupNameDraft(event.target.value)}
+                onPressEnter={formGroup}
+              />
+              <Button type="primary" icon={<PlusOutlined />} onClick={formGroup}>成组</Button>
+            </Space>
+            {poolByCompany.map((company) => (
+              <Card key={company.orgName} size="small" title={`${company.orgName} · 未成组 ${company.members.length} 人`}>
+                <Table<CompetitionPlayerSortingMember>
                   rowKey={(record) => idValue(record.contestantProfileId)}
                   size="small"
-                  dataSource={selectedCandidates}
-                  columns={candidateColumns}
-                  pagination={{ pageSize: 8, showSizeChanger: true, pageSizeOptions: [8, 20, 50] }}
-                  scroll={{ x: 900, y: 300 }}
+                  pagination={false}
+                  dataSource={company.members}
+                  rowSelection={{
+                    selectedRowKeys: poolSelection.filter((id) => company.members.some((member) => idValue(member.contestantProfileId) === id)),
+                    onChange: (keys) => setPoolSelection(keys.map(String)),
+                  }}
+                  columns={[{
+                    title: '考生姓名',
+                    key: 'name',
+                    render: (_, record) => candidateById.get(idValue(record.contestantProfileId))?.name || '-',
+                  }]}
                 />
-              </>
-            ) : (
-              <Typography.Text type="secondary">
-                选手名单已保存在任务中（{savedPlayerCount} 人），执行时将再次校验赛段成员。
-              </Typography.Text>
+              </Card>
+            ))}
+            {manualGroups.map((group, index) => (
+              <Card
+                key={`${group.orgName}-${index}`}
+                size="small"
+                title={`${group.groupName || '未命名'} · ${group.orgName} · ${group.memberIds.length}人`}
+                extra={<Button type="link" danger onClick={() => {
+                  setManualGroups((current) => current.filter((_, groupIndex) => groupIndex !== index));
+                }}
+                >解散</Button>}
+              >
+                <Space direction="vertical" size={8} style={{ width: '100%' }}>
+                  <Input
+                    value={group.groupName}
+                    maxLength={32}
+                    onChange={(event) => {
+                      const groupName = event.target.value;
+                      setManualGroups((current) => current.map((item, groupIndex) => (
+                        groupIndex === index ? { ...item, groupName } : item
+                      )));
+                    }}
+                  />
+                  <Typography.Text>
+                    {group.memberIds.map((id) => candidateById.get(id)?.name || id).join('、')}
+                  </Typography.Text>
+                </Space>
+              </Card>
+            ))}
+          </Space>
+        )}
+
+        {wizardStep === 2 && (
+          <Space direction="vertical" size={12} style={{ width: '100%' }}>
+            <Alert
+              type="info"
+              showIcon
+              message="为每名选手选择组内角色。组长不在这里指定，下一步会在每组随机选取。"
+            />
+            <Space wrap>
+              {roleOptions.map((role) => (
+                <Tag key={role} closable={roleOptions.length > 1} onClose={(event) => { event.preventDefault(); removeRole(role); }}>
+                  {role}
+                </Tag>
+              ))}
+              <Input
+                value={roleDraft}
+                maxLength={16}
+                placeholder="添加角色，如主操"
+                style={{ width: 180 }}
+                onChange={(event) => setRoleDraft(event.target.value)}
+                onPressEnter={addRole}
+              />
+              <Button icon={<PlusOutlined />} onClick={addRole}>添加角色</Button>
+            </Space>
+            {roleGroups.map((group) => (
+              <Card key={group.groupNo} size="small" title={`${group.groupName} · ${group.orgName} · ${group.members.length}人`}>
+                <Table<CompetitionPlayerSortingMember>
+                  rowKey={(record) => idValue(record.contestantProfileId)}
+                  size="small"
+                  pagination={false}
+                  dataSource={group.members}
+                  columns={[
+                    {
+                      title: '考生姓名',
+                      key: 'name',
+                      render: (_, record) => candidateById.get(idValue(record.contestantProfileId))?.name || '-',
+                    },
+                    {
+                      title: '组内角色',
+                      key: 'role',
+                      width: 220,
+                      render: (_, record) => (
+                        <Select
+                          value={roleById[idValue(record.contestantProfileId)] || roleOptions[0]}
+                          options={roleOptions.map((role) => ({ value: role, label: role }))}
+                          style={{ width: 180 }}
+                          onChange={(value) => setRoleById((current) => ({
+                            ...current,
+                            [idValue(record.contestantProfileId)]: value,
+                          }))}
+                        />
+                      ),
+                    },
+                  ]}
+                />
+              </Card>
+            ))}
+          </Space>
+        )}
+
+        {wizardStep === 3 && (
+          <Space direction="vertical" size={12} style={{ width: '100%' }}>
+            <Alert
+              type={orderedAssignments.length ? 'success' : 'info'}
+              showIcon
+              message={orderedAssignments.length ? '出场顺序和组长已生成。每次只查看一个组，确认后进入工位抽签。' : '确认角色后，系统会在每个已命名的组内打乱出场顺序，并随机指定 1 名组长。'}
+            />
+            {currentAssignmentGroup && (
+              <Card
+                size="small"
+                title={`${currentAssignmentGroup.groupName} · ${currentAssignmentGroup.orgName} · ${currentAssignmentGroup.members.length}人`}
+              >
+                <Table<CompetitionPlayerSortingAssignment>
+                  rowKey={(record) => `${record.groupNo}-${record.groupOrder}-${record.contestantProfileId}`}
+                  size="small"
+                  dataSource={currentAssignmentGroup.members}
+                  columns={assignmentColumns}
+                  pagination={false}
+                  scroll={{ x: 980 }}
+                />
+              </Card>
             )}
+            {assignmentGroups.length > 1 && (
+              <Pagination
+                current={assignmentGroupPage}
+                pageSize={1}
+                total={assignmentGroups.length}
+                showSizeChanger={false}
+                onChange={setGroupPage}
+                showTotal={(total, range) => `第 ${range[0]} / ${total} 组`}
+              />
+            )}
+          </Space>
+        )}
+
+        {wizardStep === 4 && (
+          <Space direction="vertical" size={12} style={{ width: '100%' }}>
+            <Alert
+              type={assignmentGroups.length > 0 && workstationCodes.length >= assignmentGroups.length ? 'success' : 'warning'}
+              showIcon
+              message={`共 ${assignmentGroups.length} 个组，当前已创建 ${workstationCodes.length} 个工位编号。`}
+              description="先自行填写工位描述，再创建对应编号，如 703、704、715 或 B6、A4。抽签以组为单位，每个组抽到一个工位，组内成员共用该结果。编号数量不能少于组数。"
+            />
+            <Input
+              value={workstationLabel}
+              maxLength={16}
+              placeholder="填写工位描述"
+              style={{ width: 240 }}
+              onChange={(event) => setWorkstationLabel(event.target.value)}
+            />
+            <Space wrap>
+              <Input
+                value={codeDraft}
+                maxLength={32}
+                placeholder="输入编号，多个可用逗号或空格分隔"
+                style={{ width: 320 }}
+                onChange={(event) => setCodeDraft(event.target.value)}
+                onPressEnter={() => addCodes(codeDraft)}
+              />
+              <Button icon={<PlusOutlined />} onClick={() => addCodes(codeDraft)}>添加编号</Button>
+              <Button disabled={!workstationCodes.length} onClick={() => setWorkstationCodes([])}>清空编号</Button>
+            </Space>
+            <Space wrap>
+              {workstationCodes.map((code) => (
+                <Tag key={code} closable onClose={(event) => {
+                  event.preventDefault();
+                  setWorkstationCodes((current) => current.filter((item) => item !== code));
+                }}
+                >{code}</Tag>
+              ))}
+              {!workstationCodes.length && <Typography.Text type="secondary">还没有工位编号</Typography.Text>}
+            </Space>
           </Space>
         )}
       </Modal>
@@ -644,10 +999,20 @@ export function CompetitionPlayerSortingPage({
         title={taskDetailQuery.data?.stageName ? `${taskDetailQuery.data.stageName} · 实操出场名单` : '实操出场名单'}
         open={resultOpen}
         onCancel={() => setResultOpen(false)}
-        width={920}
+        width={980}
         footer={(
           <Space>
             <Button onClick={() => setResultOpen(false)}>关闭</Button>
+            {taskDetailQuery.data?.groupingMode === 'company' && taskDetailQuery.data.status === 'drawn' && canCreate && (
+              <Button onClick={() => {
+                if (!taskDetailQuery.data) return;
+                applyDetail(taskDetailQuery.data);
+                setResultOpen(false);
+                setWizardStep(4);
+                setWizardOpen(true);
+              }}
+              >重新抽签工位</Button>
+            )}
             {activeTaskId && canExport && (
               <Button
                 type="primary"
@@ -664,16 +1029,40 @@ export function CompetitionPlayerSortingPage({
           : (
             <>
               {taskDetailQuery.data && (
-                <Alert style={{ marginBottom: 12 }} type="success" showIcon
-                  message={`共 ${taskDetailQuery.data.playerCount} 人，${taskDetailQuery.data.groupCount} 组（${groupSizePlan(taskDetailQuery.data.playerCount, taskDetailQuery.data.groupCount).map((size, index) => `第${index + 1}组${size}人`).join('、')}）；每组人数上限 ${taskDetailQuery.data.playersPerGroup} 人；每组工位 ${taskDetailQuery.data.workstationCount} 个，按出场顺序轮转。`} />
+                <Alert
+                  style={{ marginBottom: 12 }}
+                  type="success"
+                  showIcon
+                  message={taskDetailQuery.data.groupingMode === 'company'
+                    ? `共 ${taskDetailQuery.data.playerCount} 人，分为 ${taskDetailQuery.data.groupCount} 组；每组随机指定 1 名组长${taskDetailQuery.data.workstationLabel ? `；工位名称 ${taskDetailQuery.data.workstationLabel}` : ''}。`
+                    : `共 ${taskDetailQuery.data.playerCount} 人，${taskDetailQuery.data.groupCount} 组；每组工位 ${taskDetailQuery.data.workstationCount} 个。`}
+                />
               )}
-              <Table<CompetitionPlayerSortingAssignment>
-                rowKey={(record) => `${record.groupNo}-${record.groupOrder}-${record.contestantProfileId}`}
-                dataSource={taskDetailQuery.data?.assignments || []}
-                columns={assignmentColumns}
-                pagination={{ pageSize: 10, showSizeChanger: true }}
-                scroll={{ x: 800 }}
-              />
+              {currentResultGroup && (
+                <Card
+                  size="small"
+                  title={`${currentResultGroup.groupName} · ${currentResultGroup.orgName} · ${currentResultGroup.members.length}人${currentResultGroup.workstation ? ` · ${taskDetailQuery.data?.workstationLabel || '工位'} ${currentResultGroup.workstation}` : ''}`}
+                >
+                  <Table<CompetitionPlayerSortingAssignment>
+                    rowKey={(record) => `${record.groupNo}-${record.groupOrder}-${record.contestantProfileId}`}
+                    dataSource={currentResultGroup.members}
+                    columns={assignmentColumns}
+                    pagination={false}
+                    scroll={{ x: 1000 }}
+                  />
+                </Card>
+              )}
+              {resultGroups.length > 1 && (
+                <Pagination
+                  style={{ marginTop: 12 }}
+                  current={resultGroupIndex}
+                  pageSize={1}
+                  total={resultGroups.length}
+                  showSizeChanger={false}
+                  onChange={setResultGroupPage}
+                  showTotal={(total, range) => `第 ${range[0]} / ${total} 组`}
+                />
+              )}
             </>
           )}
       </Modal>

@@ -4,8 +4,11 @@ import com.guoyu.platform.common.api.ApiResponse;
 import com.guoyu.platform.common.api.PageQuery;
 import com.guoyu.platform.common.api.PageResponse;
 import com.guoyu.platform.common.audit.AuditLog;
+import com.guoyu.platform.competition.sorting.dto.CompetitionPlayerSortingGroupsReq;
+import com.guoyu.platform.competition.sorting.dto.CompetitionPlayerSortingRolesReq;
 import com.guoyu.platform.competition.sorting.dto.CompetitionPlayerSortingTaskCreateReq;
 import com.guoyu.platform.competition.sorting.dto.CompetitionPlayerSortingTaskSelectionReq;
+import com.guoyu.platform.competition.sorting.dto.CompetitionPlayerSortingWorkstationsReq;
 import com.guoyu.platform.competition.sorting.service.CompetitionPlayerSortingApplicationService;
 import com.guoyu.platform.competition.sorting.vo.CompetitionPlayerSortingTaskVO;
 import com.guoyu.platform.competition.vo.CompetitionStagePaperAssignmentPlayerVO;
@@ -81,6 +84,44 @@ public class CompetitionPlayerSortingController {
       @PathVariable Long taskId,
       @Valid @RequestBody CompetitionPlayerSortingTaskSelectionReq req) {
     return ApiResponse.ok(service.selectContestants(taskId, req));
+  }
+
+  @PutMapping("/tasks/{taskId}/groups")
+  @PreAuthorize("hasAuthority('competition:player-sorting:create')")
+  @AuditLog(module = "competition", action = "player-sorting:groups",
+      targetType = "competition_practical_sorting_task")
+  public ApiResponse<CompetitionPlayerSortingTaskVO> saveGroups(
+      @PathVariable Long taskId,
+      @Valid @RequestBody CompetitionPlayerSortingGroupsReq req) {
+    return ApiResponse.ok(service.saveGroups(taskId, req));
+  }
+
+  @PutMapping("/tasks/{taskId}/roles")
+  @PreAuthorize("hasAuthority('competition:player-sorting:create')")
+  @AuditLog(module = "competition", action = "player-sorting:roles",
+      targetType = "competition_practical_sorting_task")
+  public ApiResponse<CompetitionPlayerSortingTaskVO> saveRoles(
+      @PathVariable Long taskId,
+      @Valid @RequestBody CompetitionPlayerSortingRolesReq req) {
+    return ApiResponse.ok(service.saveRoles(taskId, req));
+  }
+
+  @PutMapping("/tasks/{taskId}/workstations")
+  @PreAuthorize("hasAuthority('competition:player-sorting:create')")
+  @AuditLog(module = "competition", action = "player-sorting:workstations",
+      targetType = "competition_practical_sorting_task")
+  public ApiResponse<CompetitionPlayerSortingTaskVO> saveWorkstations(
+      @PathVariable Long taskId,
+      @Valid @RequestBody CompetitionPlayerSortingWorkstationsReq req) {
+    return ApiResponse.ok(service.saveWorkstations(taskId, req));
+  }
+
+  @PostMapping("/tasks/{taskId}/draw-workstations")
+  @PreAuthorize("hasAuthority('competition:player-sorting:randomize')")
+  @AuditLog(module = "competition", action = "player-sorting:draw-workstations",
+      targetType = "competition_practical_sorting_task")
+  public ApiResponse<CompetitionPlayerSortingTaskVO> drawWorkstations(@PathVariable Long taskId) {
+    return ApiResponse.ok(service.drawWorkstations(taskId));
   }
 
   @PostMapping("/tasks/{taskId}/randomize")
