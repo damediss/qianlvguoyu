@@ -19,6 +19,8 @@ public class CompetitionPlayerSortingTaskEntity extends BaseEntity {
   private String workstationLabel;
   private String workstationCodesJson;
   private String preparationJson;
+  private String subWorkstationLabel;
+  private String subWorkstationCodesJson;
 
   public Long getEventId() { return eventId; }
   public void setEventId(Long eventId) { this.eventId = eventId; }
@@ -59,5 +61,13 @@ public class CompetitionPlayerSortingTaskEntity extends BaseEntity {
   public String getPreparationJson() { return preparationJson; }
   public void setPreparationJson(String preparationJson) {
     this.preparationJson = preparationJson;
+  }
+  public String getSubWorkstationLabel() { return subWorkstationLabel; }
+  public void setSubWorkstationLabel(String subWorkstationLabel) {
+    this.subWorkstationLabel = subWorkstationLabel;
+  }
+  public String getSubWorkstationCodesJson() { return subWorkstationCodesJson; }
+  public void setSubWorkstationCodesJson(String subWorkstationCodesJson) {
+    this.subWorkstationCodesJson = subWorkstationCodesJson;
   }
 }

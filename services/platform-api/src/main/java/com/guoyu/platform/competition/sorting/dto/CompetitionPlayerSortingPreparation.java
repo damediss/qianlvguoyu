@@ -12,6 +12,7 @@ public record CompetitionPlayerSortingPreparation(
       String orgName,
       String role,
       Integer groupNo,
-      String groupName) {
+      String groupName,
+      Integer drawOrder) {
   }
 }

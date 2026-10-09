@@ -10,6 +10,7 @@ import com.guoyu.platform.competition.sorting.dto.CompetitionPlayerSortingTaskCr
 import com.guoyu.platform.competition.sorting.dto.CompetitionPlayerSortingTaskSelectionReq;
 import com.guoyu.platform.competition.sorting.dto.CompetitionPlayerSortingWorkstationsReq;
 import com.guoyu.platform.competition.sorting.service.CompetitionPlayerSortingApplicationService;
+import com.guoyu.platform.competition.sorting.vo.CompetitionPlayerSortingRevealVO;
 import com.guoyu.platform.competition.sorting.vo.CompetitionPlayerSortingTaskVO;
 import com.guoyu.platform.competition.vo.CompetitionStagePaperAssignmentPlayerVO;
 import jakarta.validation.Valid;
@@ -116,12 +117,20 @@ public class CompetitionPlayerSortingController {
     return ApiResponse.ok(service.saveWorkstations(taskId, req));
   }
 
+  @PostMapping("/tasks/{taskId}/draw-order")
+  @PreAuthorize("hasAuthority('competition:player-sorting:randomize')")
+  @AuditLog(module = "competition", action = "player-sorting:draw-order",
+      targetType = "competition_practical_sorting_task")
+  public ApiResponse<CompetitionPlayerSortingRevealVO> drawNextOrder(@PathVariable Long taskId) {
+    return ApiResponse.ok(service.drawNextOrder(taskId));
+  }
+
   @PostMapping("/tasks/{taskId}/draw-workstations")
   @PreAuthorize("hasAuthority('competition:player-sorting:randomize')")
   @AuditLog(module = "competition", action = "player-sorting:draw-workstations",
       targetType = "competition_practical_sorting_task")
-  public ApiResponse<CompetitionPlayerSortingTaskVO> drawWorkstations(@PathVariable Long taskId) {
-    return ApiResponse.ok(service.drawWorkstations(taskId));
+  public ApiResponse<CompetitionPlayerSortingRevealVO> drawNextWorkstation(@PathVariable Long taskId) {
+    return ApiResponse.ok(service.drawNextWorkstation(taskId));
   }
 
   @PostMapping("/tasks/{taskId}/randomize")

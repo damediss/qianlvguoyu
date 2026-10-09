@@ -17,6 +17,14 @@ export interface CompetitionPlayerSortingTask {
   workstationCodes?: string[] | null;
   roleOptions?: string[] | null;
   members?: CompetitionPlayerSortingMember[];
+  subWorkstationLabel?: string | null;
+  subWorkstationCodes?: string[] | null;
+  stations?: CompetitionPlayerSortingStation[] | null;
+}
+
+export interface CompetitionPlayerSortingStation {
+  code: string;
+  subCodes: string[];
 }
 
 export interface CompetitionPlayerSortingMember {
@@ -25,6 +33,7 @@ export interface CompetitionPlayerSortingMember {
   role?: string | null;
   groupNo?: number | null;
   groupName?: string | null;
+  drawOrder?: number | null;
 }
 
 export interface CompetitionPlayerSortingAssignment {
@@ -39,6 +48,7 @@ export interface CompetitionPlayerSortingAssignment {
   orgName?: string | null;
   groupName?: string | null;
   role?: string | null;
+  subWorkstation?: string | null;
 }
 
 export interface CompetitionPlayerSortingTaskCreateRequest {
@@ -60,7 +70,24 @@ export interface CompetitionPlayerSortingRolesRequest {
 
 export interface CompetitionPlayerSortingWorkstationsRequest {
   label: string;
-  codes: string[];
+  subLabel: string;
+  stations: CompetitionPlayerSortingStation[];
+}
+
+export interface CompetitionPlayerSortingReveal {
+  task: CompetitionPlayerSortingTask;
+  contestantProfileId?: string | null;
+  name?: string | null;
+  groupName?: string | null;
+  orgName?: string | null;
+  drawOrder?: number | null;
+  leader?: boolean | null;
+  workstationLabel?: string | null;
+  workstation?: string | null;
+  subWorkstationLabel?: string | null;
+  subWorkstation?: string | null;
+  groupCompleted: boolean;
+  allCompleted: boolean;
 }
 
 export type CompetitionPlayerSortingCandidate = CompetitionStagePaperAssignmentPlayer;

@@ -20,5 +20,8 @@ public record CompetitionPlayerSortingTaskVO(
     String workstationLabel,
     List<String> workstationCodes,
     List<String> roleOptions,
-    List<CompetitionPlayerSortingMemberVO> members) {
+    List<CompetitionPlayerSortingMemberVO> members,
+    String subWorkstationLabel,
+    List<String> subWorkstationCodes,
+    List<CompetitionPlayerSortingWorkstationVO> stations) {
 }

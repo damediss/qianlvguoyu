@@ -116,6 +116,6 @@ class CompetitionPlayerSortingLeaderAssignmentTest {
       String profileId, String name, int groupNo, int groupOrder, boolean groupLeader) {
     return new CompetitionPlayerSortingAssignmentVO(
         profileId, "NO" + profileId, name, "138****000" + profileId,
-        groupNo, groupOrder, "第一工位", groupLeader, null, null, null);
+        groupNo, groupOrder, "第一工位", groupLeader, null, null, null, null);
   }
 }

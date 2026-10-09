@@ -4,6 +4,7 @@ import type { CompetitionId } from '../types/competition';
 import type {
   CompetitionPlayerSortingCandidate,
   CompetitionPlayerSortingGroupsRequest,
+  CompetitionPlayerSortingReveal,
   CompetitionPlayerSortingRolesRequest,
   CompetitionPlayerSortingTask,
   CompetitionPlayerSortingTaskCreateRequest,
@@ -75,8 +76,14 @@ export function saveCompetitionPlayerSortingWorkstations(
   );
 }
 
+export function drawCompetitionPlayerSortingOrder(taskId: CompetitionId) {
+  return unwrap<CompetitionPlayerSortingReveal>(
+    apiClient.post(`/competition/player-sorting/tasks/${taskId}/draw-order`),
+  );
+}
+
 export function drawCompetitionPlayerSortingWorkstations(taskId: CompetitionId) {
-  return unwrap<CompetitionPlayerSortingTask>(
+  return unwrap<CompetitionPlayerSortingReveal>(
     apiClient.post(`/competition/player-sorting/tasks/${taskId}/draw-workstations`),
   );
 }

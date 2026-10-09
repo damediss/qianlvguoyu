@@ -30,6 +30,11 @@ class CompetitionPlayerSortingPlanTest {
   }
 
   @Test
+  void lastClickStillDrawsTheOnlyRemainingOrder() {
+    assertEquals(2, CompetitionPlayerSortingPlan.drawUnusedOrder(3, java.util.Set.of(1, 3), new Random(1)));
+  }
+
+  @Test
   void drawAssignsOneDistinctCodeToEachGroup() {
     List<String> drawn = CompetitionPlayerSortingPlan.drawForGroups(
         2, List.of("703", "704", "715"), new Random(3));

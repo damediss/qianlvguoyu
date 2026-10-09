@@ -12,6 +12,8 @@ public record CompetitionPlayerSortingAssignmentVO(
     Boolean groupLeader,
     String orgName,
     String groupName,
-    /** 手动选择的组内角色。与组长标记相互独立。 */
-    String role) {
+    /** 手动选择的组内角色。点击抽签流程不再使用。 */
+    String role,
+    /** 子工位编号，与主工位同属一个组。 */
+    String subWorkstation) {
 }

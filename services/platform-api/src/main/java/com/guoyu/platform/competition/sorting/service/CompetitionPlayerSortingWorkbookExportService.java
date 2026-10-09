@@ -40,6 +40,16 @@ public class CompetitionPlayerSortingWorkbookExportService {
       int groupCount,
       String workstationLabel,
       List<String> workstationCodes) {
+    return export(stageName, assignments, groupCount, workstationLabel, workstationCodes, null);
+  }
+
+  public byte[] export(
+      String stageName,
+      List<CompetitionPlayerSortingAssignmentVO> assignments,
+      int groupCount,
+      String workstationLabel,
+      List<String> workstationCodes,
+      String subWorkstationLabel) {
     ClassPathResource resource = new ClassPathResource(TEMPLATE_PATH);
     try (InputStream input = resource.getInputStream();
         Workbook workbook = WorkbookFactory.create(input);
@@ -51,7 +61,7 @@ public class CompetitionPlayerSortingWorkbookExportService {
       }
       setTitle(rosterSheet, stageName);
       insertRoleColumn(rosterSheet);
-      configureRosterColumns(rosterSheet, workstationLabel);
+      configureRosterColumns(rosterSheet, workstationLabel, subWorkstationLabel);
       fillRoster(rosterSheet, assignments);
       fillWorkstations(workstationSheet, assignments, groupCount, workstationLabel, workstationCodes);
       workbook.write(output);
@@ -86,7 +96,7 @@ public class CompetitionPlayerSortingWorkbookExportService {
       if (row == null) {
         row = sheet.createRow(rowIndex);
       }
-      copyRowStyle(styleRow, row, 8);
+      copyRowStyle(styleRow, row, 9);
       setString(row, 0, groupTitle(assignment));
       setNumber(row, 1, assignment.groupOrder());
       setString(row, 2, assignment.workstation());
@@ -95,11 +105,12 @@ public class CompetitionPlayerSortingWorkbookExportService {
       setString(row, 5, leaderLabel(assignment.groupLeader()));
       setString(row, 6, assignment.mobile());
       setString(row, 7, assignment.orgName() == null ? "" : assignment.orgName());
+      setString(row, 8, assignment.subWorkstation());
       rowIndex++;
     }
   }
 
-  private void configureRosterColumns(Sheet sheet, String workstationLabel) {
+  private void configureRosterColumns(Sheet sheet, String workstationLabel, String subWorkstationLabel) {
     Row headerRow = sheet.getRow(4);
     if (headerRow == null) {
       return;
@@ -111,6 +122,9 @@ public class CompetitionPlayerSortingWorkbookExportService {
     setString(headerRow, 5, "组长");
     setString(headerRow, 6, "手机号");
     setString(headerRow, 7, "参赛公司");
+    setString(headerRow, 8, StringUtils.hasText(subWorkstationLabel) ? subWorkstationLabel.trim() : "子工位");
+    sheet.setColumnWidth(8, 16 * 256);
+    sheet.setColumnHidden(8, false);
     sheet.setColumnWidth(5, 12 * 256);
     sheet.setColumnWidth(6, Math.max(sheet.getColumnWidth(6), sheet.getColumnWidth(3)));
     sheet.setColumnWidth(7, 24 * 256);
@@ -145,6 +159,14 @@ public class CompetitionPlayerSortingWorkbookExportService {
       return "";
     }
     return groupLeader ? "组长" : "";
+  }
+
+  private String joinStations(CompetitionPlayerSortingAssignmentVO assignment) {
+    if (!StringUtils.hasText(assignment.subWorkstation())) {
+      return assignment.workstation() == null ? "" : assignment.workstation();
+    }
+    String main = assignment.workstation() == null ? "" : assignment.workstation();
+    return main + " / " + assignment.subWorkstation();
   }
 
   private String groupTitle(CompetitionPlayerSortingAssignmentVO assignment) {
@@ -230,7 +252,7 @@ public class CompetitionPlayerSortingWorkbookExportService {
       copyRowStyle(styleRow, row, 3);
       setString(row, 0, groupTitle(assignment));
       setString(row, 1, assignment.orgName() == null ? "" : assignment.orgName());
-      setString(row, 2, assignment.workstation());
+      setString(row, 2, joinStations(assignment));
       rowIndex++;
     }
   }
