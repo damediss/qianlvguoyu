@@ -102,10 +102,10 @@ public class CompetitionPlayerSortingWorkbookExportService {
       setString(row, 2, assignment.workstation());
       setString(row, 3, assignment.name());
       setString(row, 4, assignment.role());
-      setString(row, 5, leaderLabel(assignment.groupLeader()));
-      setString(row, 6, assignment.mobile());
-      setString(row, 7, assignment.orgName() == null ? "" : assignment.orgName());
-      setString(row, 8, assignment.subWorkstation());
+      setString(row, 5, assignment.mobile());
+      setString(row, 6, assignment.orgName() == null ? "" : assignment.orgName());
+      setString(row, 7, assignment.subWorkstation());
+      setString(row, 8, "");
       rowIndex++;
     }
   }
@@ -119,15 +119,15 @@ public class CompetitionPlayerSortingWorkbookExportService {
     setString(headerRow, 2, StringUtils.hasText(workstationLabel) ? workstationLabel.trim() : "对应工位");
     setString(headerRow, 3, "考生姓名");
     setString(headerRow, 4, "组内角色");
-    setString(headerRow, 5, "组长");
-    setString(headerRow, 6, "手机号");
-    setString(headerRow, 7, "参赛公司");
-    setString(headerRow, 8, StringUtils.hasText(subWorkstationLabel) ? subWorkstationLabel.trim() : "子工位");
-    sheet.setColumnWidth(8, 16 * 256);
-    sheet.setColumnHidden(8, false);
-    sheet.setColumnWidth(5, 12 * 256);
-    sheet.setColumnWidth(6, Math.max(sheet.getColumnWidth(6), sheet.getColumnWidth(3)));
-    sheet.setColumnWidth(7, 24 * 256);
+    setString(headerRow, 5, "手机号");
+    setString(headerRow, 6, "参赛公司");
+    setString(headerRow, 7, StringUtils.hasText(subWorkstationLabel) ? subWorkstationLabel.trim() : "子工位");
+    setString(headerRow, 8, "");
+    sheet.setColumnHidden(8, true);
+    sheet.setColumnWidth(5, Math.max(sheet.getColumnWidth(5), sheet.getColumnWidth(3)));
+    sheet.setColumnWidth(6, 24 * 256);
+    sheet.setColumnHidden(6, false);
+    sheet.setColumnWidth(7, 16 * 256);
     sheet.setColumnHidden(7, false);
   }
 
@@ -152,13 +152,6 @@ public class CompetitionPlayerSortingWorkbookExportService {
       target = row.createCell(toColumn);
     }
     target.setCellStyle(source.getCellStyle());
-  }
-
-  private String leaderLabel(Boolean groupLeader) {
-    if (groupLeader == null) {
-      return "";
-    }
-    return groupLeader ? "组长" : "";
   }
 
   private String joinStations(CompetitionPlayerSortingAssignmentVO assignment) {

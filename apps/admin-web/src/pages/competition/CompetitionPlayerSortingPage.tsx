@@ -148,11 +148,6 @@ function groupAssignments(assignments: CompetitionPlayerSortingAssignment[]) {
   return groups.sort((left, right) => left.groupNo - right.groupNo);
 }
 
-function leaderTag(groupLeader?: boolean | null) {
-  if (groupLeader == null) return '-';
-  return groupLeader ? <Tag color="gold">组长</Tag> : <Tag>组员</Tag>;
-}
-
 export function CompetitionPlayerSortingPage({
   stageId,
   stageName,
@@ -293,7 +288,7 @@ export function CompetitionPlayerSortingPage({
     onSuccess: (task) => {
       applyDetail(task);
       setWizardStep(4);
-      message.success('组内角色已保存，可以随机排出场顺序并选取组长');
+      message.success('组内角色已保存，可以随机排出场顺序');
       invalidateTasks();
     },
     onError: (error) => message.error(errorText(error, '保存组内角色失败')),
@@ -305,7 +300,7 @@ export function CompetitionPlayerSortingPage({
       applyDetail(task);
       setGroupPage(1);
       setWizardStep(4);
-      message.success('已随机排出场顺序，并在每组指定一名组长');
+      message.success('已随机排出场顺序');
       queryClient.setQueryData(['competition-player-sorting-task', idValue(task.id)], task);
       invalidateTasks();
     },
@@ -425,12 +420,6 @@ export function CompetitionPlayerSortingPage({
     },
     { title: '出场顺序', dataIndex: 'groupOrder', width: 100 },
     { title: '组内角色', dataIndex: 'role', width: 110, render: (value?: string | null) => value || '-' },
-    {
-      title: '组长',
-      dataIndex: 'groupLeader',
-      width: 90,
-      render: (value?: boolean | null) => leaderTag(value),
-    },
     {
       title: taskDetailQuery.data?.workstationLabel || previewTask?.workstationLabel || '工位',
       dataIndex: 'workstation',
@@ -1089,11 +1078,7 @@ export function CompetitionPlayerSortingPage({
 
         {wizardStep === 4 && (
           <Space direction="vertical" size={16} style={{ width: '100%' }}>
-            <Card
-              size="small"
-              title="组内抽签"
-              extra={<Typography.Text type="secondary">抽到 1 的选手为组长</Typography.Text>}
-            >
+            <Card size="small" title="组内抽签">
               {currentRoleGroup && (
                 <>
                   <Typography.Text>
@@ -1117,7 +1102,7 @@ export function CompetitionPlayerSortingPage({
                         width: 140,
                         render: (value?: number | null, record?: CompetitionPlayerSortingMember) => {
                           if (value != null) {
-                            return <Typography.Text strong style={{ fontSize: 20 }}>{value}{value === 1 ? ' · 组长' : ''}</Typography.Text>;
+                            return <Typography.Text strong style={{ fontSize: 20 }}>{value}</Typography.Text>;
                           }
                           const current = Boolean(
                             record && nextDrawMember
@@ -1206,10 +1191,10 @@ export function CompetitionPlayerSortingPage({
           <div style={{ textAlign: 'center', padding: '12px 0 4px' }}>
             {reveal.drawOrder != null ? (
               <>
-                <div style={{ fontSize: 88, fontWeight: 700, lineHeight: 1, color: reveal.leader ? '#d48806' : '#1677ff' }}>{reveal.drawOrder}</div>
+                <div style={{ fontSize: 88, fontWeight: 700, lineHeight: 1, color: '#1677ff' }}>{reveal.drawOrder}</div>
                 <div style={{ fontSize: 28, fontWeight: 600, marginTop: 16 }}>{reveal.name || '选手'}</div>
                 <div style={{ fontSize: 16, marginTop: 8 }}>{reveal.groupName} · {companyName(reveal.orgName)}</div>
-                {reveal.leader ? <Tag color="gold" style={{ marginTop: 16, fontSize: 18, padding: '4px 16px' }}>组长</Tag> : <div style={{ marginTop: 16, fontSize: 16 }}>排序号</div>}
+                <div style={{ marginTop: 16, fontSize: 16 }}>排序号</div>
                 {reveal.groupCompleted && (
                   <div style={{ marginTop: 16, fontSize: 16 }}>本组组内抽签已完成，可以抽取工位</div>
                 )}
@@ -1268,7 +1253,7 @@ export function CompetitionPlayerSortingPage({
                   type="success"
                   showIcon
                   message={taskDetailQuery.data.groupingMode === 'company'
-                    ? `共 ${taskDetailQuery.data.playerCount} 人，分为 ${taskDetailQuery.data.groupCount} 组；每组随机指定 1 名组长${taskDetailQuery.data.workstationLabel ? `；工位名称 ${taskDetailQuery.data.workstationLabel}` : ''}。`
+                    ? `共 ${taskDetailQuery.data.playerCount} 人，分为 ${taskDetailQuery.data.groupCount} 组${taskDetailQuery.data.workstationLabel ? `；工位名称 ${taskDetailQuery.data.workstationLabel}` : ''}。`
                     : `共 ${taskDetailQuery.data.playerCount} 人，${taskDetailQuery.data.groupCount} 组；每组工位 ${taskDetailQuery.data.workstationCount} 个。`}
                 />
               )}

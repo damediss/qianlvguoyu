@@ -8,7 +8,7 @@ public record CompetitionPlayerSortingAssignmentVO(
     int groupNo,
     int groupOrder,
     String workstation,
-    /** 组内随机指定的组长。历史快照没有该字段时为 null。 */
+    /** 历史字段。组内抽签和随机排序不再指定组长，新结果为 null。 */
     Boolean groupLeader,
     String orgName,
     String groupName,

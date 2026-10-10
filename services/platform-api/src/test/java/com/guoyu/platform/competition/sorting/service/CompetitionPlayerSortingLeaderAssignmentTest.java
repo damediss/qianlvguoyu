@@ -2,7 +2,6 @@ package com.guoyu.platform.competition.sorting.service;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
-import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -11,10 +10,9 @@ import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import com.fasterxml.jackson.module.paramnames.ParameterNamesModule;
 import com.guoyu.platform.competition.sorting.vo.CompetitionPlayerSortingAssignmentVO;
 import java.io.ByteArrayInputStream;
-import java.util.HashSet;
 import java.util.List;
-import java.util.Random;
-import java.util.Set;
+import org.apache.poi.ss.usermodel.Cell;
+import org.apache.poi.ss.usermodel.CellType;
 import org.apache.poi.ss.usermodel.Row;
 import org.apache.poi.ss.usermodel.Sheet;
 import org.apache.poi.ss.usermodel.Workbook;
@@ -22,49 +20,6 @@ import org.apache.poi.ss.usermodel.WorkbookFactory;
 import org.junit.jupiter.api.Test;
 
 class CompetitionPlayerSortingLeaderAssignmentTest {
-
-  @Test
-  void leaderOrderStaysInsideTheGroupAndCanLandOnAnySeat() {
-    int[] sequence = {0, 2, 4, 1, 3};
-    Random random = new Random() {
-      private int index;
-
-      @Override
-      public int nextInt(int bound) {
-        int value = sequence[index % sequence.length];
-        index++;
-        if (value >= bound) {
-          throw new AssertionError("scripted value " + value + " is outside " + bound);
-        }
-        return value;
-      }
-    };
-
-    assertEquals(1, CompetitionPlayerSortingApplicationService.leaderGroupOrder(5, random));
-    assertEquals(3, CompetitionPlayerSortingApplicationService.leaderGroupOrder(5, random));
-    assertEquals(5, CompetitionPlayerSortingApplicationService.leaderGroupOrder(5, random));
-
-    Random singleSeat = new Random() {
-      @Override
-      public int nextInt(int bound) {
-        assertEquals(1, bound);
-        return 0;
-      }
-    };
-    assertEquals(1, CompetitionPlayerSortingApplicationService.leaderGroupOrder(1, singleSeat));
-  }
-
-  @Test
-  void repeatedDrawsCoverEverySeatInAGroup() {
-    Random random = new Random(42);
-    Set<Integer> seen = new HashSet<>();
-    for (int i = 0; i < 200; i++) {
-      int order = CompetitionPlayerSortingApplicationService.leaderGroupOrder(4, random);
-      assertTrue(order >= 1 && order <= 4);
-      seen.add(order);
-    }
-    assertEquals(Set.of(1, 2, 3, 4), seen);
-  }
 
   @Test
   void historicalSnapshotWithoutLeaderStillReads() throws Exception {
@@ -88,7 +43,7 @@ class CompetitionPlayerSortingLeaderAssignmentTest {
   }
 
   @Test
-  void rosterExportShowsExactlyOneLeaderPerGroup() throws Exception {
+  void rosterExportKeepsOrderNumbersAndOmitsLeaderColumn() throws Exception {
     List<CompetitionPlayerSortingAssignmentVO> assignments = List.of(
         assignment("1", "甲", 1, 1, true),
         assignment("2", "乙", 1, 2, false),
@@ -102,13 +57,27 @@ class CompetitionPlayerSortingLeaderAssignmentTest {
       Sheet sheet = workbook.getSheet("实操出场名单");
       Row header = sheet.getRow(4);
       assertEquals("组内角色", header.getCell(4).getStringCellValue());
-      assertEquals("组长", header.getCell(5).getStringCellValue());
-      assertEquals("手机号", header.getCell(6).getStringCellValue());
-      assertEquals("组长", sheet.getRow(5).getCell(5).getStringCellValue());
-      assertEquals("", sheet.getRow(6).getCell(5).getStringCellValue());
-      assertEquals("组长", sheet.getRow(8).getCell(5).getStringCellValue());
+      assertEquals("手机号", header.getCell(5).getStringCellValue());
+      assertEquals("参赛公司", header.getCell(6).getStringCellValue());
+      assertEquals("子工位", header.getCell(7).getStringCellValue());
+      assertEquals(1D, sheet.getRow(5).getCell(1).getNumericCellValue());
       assertEquals("甲", sheet.getRow(5).getCell(3).getStringCellValue());
-      assertEquals("138****0001", sheet.getRow(5).getCell(6).getStringCellValue());
+      assertEquals("138****0001", sheet.getRow(5).getCell(5).getStringCellValue());
+      assertEquals(2D, sheet.getRow(6).getCell(1).getNumericCellValue());
+      for (int rowIndex = 4; rowIndex <= 8; rowIndex++) {
+        Row row = sheet.getRow(rowIndex);
+        if (row == null) {
+          continue;
+        }
+        for (int column = 0; column <= 8; column++) {
+          Cell cell = row.getCell(column);
+          if (cell == null || cell.getCellType() != CellType.STRING) {
+            continue;
+          }
+          assertEquals(false, "组长".equals(cell.getStringCellValue()),
+              "row " + rowIndex + " column " + column);
+        }
+      }
     }
   }
 

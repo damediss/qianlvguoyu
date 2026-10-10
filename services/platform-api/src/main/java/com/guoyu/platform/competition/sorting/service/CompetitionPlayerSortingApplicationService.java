@@ -495,7 +495,7 @@ public class CompetitionPlayerSortingApplicationService {
             readAssignments(entity.getResultSnapshotJson())), true),
         current.contestantProfileId(),
         candidate == null ? null : candidate.name(),
-        current.groupName(), current.orgName(), picked, picked == 1,
+        current.groupName(), current.orgName(), picked, null,
         null, null, null, null, groupCompleted, allCompleted);
   }
 
@@ -649,7 +649,6 @@ public class CompetitionPlayerSortingApplicationService {
     int selectedIndex = 0;
     for (int groupNo = 1; groupNo <= entity.getGroupCount(); groupNo++) {
       int groupSize = baseGroupSize + (groupNo <= largerGroupCount ? 1 : 0);
-      int leaderOrder = leaderGroupOrder(groupSize, RANDOM);
       for (int groupOrder = 1; groupOrder <= groupSize; groupOrder++) {
         CompetitionStagePaperAssignmentPlayerVO candidate = selected.get(selectedIndex++);
         assignments.add(new CompetitionPlayerSortingAssignmentVO(
@@ -657,7 +656,7 @@ public class CompetitionPlayerSortingApplicationService {
             mobileByProfileId.get(parseId(candidate.contestantProfileId())),
             groupNo, groupOrder,
             CompetitionPlayerSortingWorkstations.assign(groupOrder, workstationCount),
-            groupOrder == leaderOrder, null, null, null, null));
+            null, null, null, null, null));
       }
     }
 
@@ -826,17 +825,6 @@ public class CompetitionPlayerSortingApplicationService {
     }
   }
 
-  /** 每组恰好一名组长，组内顺序均匀随机，返回值从 1 开始。 */
-  static int leaderGroupOrder(int groupSize, java.util.Random random) {
-    if (groupSize < 1) {
-      throw new IllegalArgumentException("group size must be positive");
-    }
-    if (random == null) {
-      throw new IllegalArgumentException("random must not be null");
-    }
-    return 1 + random.nextInt(groupSize);
-  }
-
   private List<CompetitionPlayerSortingAssignmentVO> materializeDraw(
       CompetitionPlayerSortingTaskEntity entity,
       List<CompetitionPlayerSortingPreparation.Member> members) {
@@ -862,7 +850,7 @@ public class CompetitionPlayerSortingApplicationService {
       assignments.add(new CompetitionPlayerSortingAssignmentVO(
           member.contestantProfileId(), candidate.contestantNo(), candidate.name(),
           mobileByProfileId.get(parseId(member.contestantProfileId())),
-          member.groupNo(), drawOrder, null, drawOrder == 1,
+          member.groupNo(), drawOrder, null, null,
           member.orgName(), member.groupName(), null, null));
     }
     assignments.sort(java.util.Comparator
@@ -1058,7 +1046,6 @@ public class CompetitionPlayerSortingApplicationService {
     for (CompetitionPlayerSortingPlan.CompanyGroup group : groups) {
       List<String> profileIds = new ArrayList<>(group.profileIds());
       Collections.shuffle(profileIds, RANDOM);
-      int leaderOrder = leaderGroupOrder(profileIds.size(), RANDOM);
       int groupOrder = 1;
       for (String profileId : profileIds) {
         CompetitionStagePaperAssignmentPlayerVO candidate =
@@ -1071,7 +1058,7 @@ public class CompetitionPlayerSortingApplicationService {
         assignments.add(new CompetitionPlayerSortingAssignmentVO(
             profileId, candidate.contestantNo(), candidate.name(),
             mobileByProfileId.get(parseId(profileId)),
-            group.groupNo(), groupOrder, null, groupOrder == leaderOrder,
+            group.groupNo(), groupOrder, null, null,
             member == null ? group.orgName() : member.orgName(), group.groupName(),
             member == null ? null : member.role(), null));
         groupOrder++;
