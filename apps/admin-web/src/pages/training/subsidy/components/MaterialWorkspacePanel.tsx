@@ -23,7 +23,8 @@ type Props = {
   onReplaceFile?: (file: File) => void | Promise<void>;
   replaceLoading?: boolean;
   onFillFromTemplate?: () => void;
-  onOfficeSaved?: () => void;
+  /** OnlyOffice / 字段编辑保存后刷新清单与预览（可 async） */
+  onOfficeSaved?: () => void | Promise<void>;
 };
 
 type PreviewTarget = {
@@ -114,40 +115,47 @@ export function MaterialWorkspacePanel({
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
   const [editing, setEditing] = useState(false);
   const [savingCells, setSavingCells] = useState(false);
-  const [wordEditorMode, setWordEditorMode] = useState<'meta' | 'office'>('meta');
+  /** Word 默认进 OnlyOffice；服务不可用时再回退字段编辑 */
+  const [wordEditorMode, setWordEditorMode] = useState<'meta' | 'office'>('office');
   /** 文件名无扩展名时，用 MIME 嗅探结果决定编辑器 */
   const [sniffedKind, setSniffedKind] = useState<FilePreviewKind | null>(null);
-  /** OnlyOffice 是否可用（未部署则不展示入口） */
+  /** OnlyOffice 是否可用（探测完成后才为最终值） */
   const [onlyOfficeAvailable, setOnlyOfficeAvailable] = useState(false);
+  const [onlyOfficeChecked, setOnlyOfficeChecked] = useState(false);
 
   const targets = useMemo(() => (item ? buildSlotTargets(item) : []), [item]);
 
   useEffect(() => {
     setSelectedKey(null);
     setEditing(false);
-    setWordEditorMode('meta');
+    setWordEditorMode('office');
     setSniffedKind(null);
     setOnlyOfficeAvailable(false);
+    setOnlyOfficeChecked(false);
   }, [item?.id]);
 
   useEffect(() => {
     if (!item?.hasFile || !item?.id) {
       setOnlyOfficeAvailable(false);
+      setOnlyOfficeChecked(true);
       return;
     }
     let cancelled = false;
+    setOnlyOfficeChecked(false);
     void trainApi
       .getSubsidyMaterialOfficeConfig(item.id)
       .then((cfg) => {
         if (!cancelled) {
           const ok = !!cfg.enabled && !!cfg.config && !!cfg.apiScriptUrl;
           setOnlyOfficeAvailable(ok);
+          setOnlyOfficeChecked(true);
           if (!ok) setWordEditorMode('meta');
         }
       })
       .catch(() => {
         if (!cancelled) {
           setOnlyOfficeAvailable(false);
+          setOnlyOfficeChecked(true);
           setWordEditorMode('meta');
         }
       });
@@ -278,13 +286,31 @@ export function MaterialWorkspacePanel({
     }
   };
 
+  const refreshAfterSave = async () => {
+    try {
+      await onOfficeSaved?.();
+    } catch {
+      /* 上层已提示 */
+    }
+  };
+
   const enterEditing = () => {
     if (editing) {
+      // 退出编辑前拉一次最新版本，避免预览仍显示打开编辑前的旧文件
+      setWordEditorMode('office');
       setEditing(false);
+      void refreshAfterSave();
       return;
     }
     if (sniffedKind == null && item.materialType === 'application_form' && !spreadsheet) {
       setSniffedKind('docx');
+    }
+    const isWord =
+      !spreadsheet
+      && (wordDoc || sniffedKind === 'docx' || item.materialType === 'application_form');
+    if (isWord) {
+      // 已确认 OnlyOffice 不可用 → 字段编辑；否则优先进在线排版（失败再回退）
+      setWordEditorMode(onlyOfficeChecked && !onlyOfficeAvailable ? 'meta' : 'office');
     }
     setEditing(true);
   };
@@ -409,25 +435,30 @@ export function MaterialWorkspacePanel({
           editable
         />
       ) : active && showWordEditor ? (
-        wordEditorMode === 'office' && onlyOfficeAvailable ? (
+        wordEditorMode === 'office' ? (
           <div>
             <div style={{ padding: '8px 12px' }}>
-              <Button type="link" size="small" onClick={() => setWordEditorMode('meta')}>
-                ← 返回字段编辑
+              <Button
+                type="link"
+                size="small"
+                onClick={() => {
+                  setWordEditorMode('meta');
+                  void refreshAfterSave();
+                }}
+              >
+                ← 改用字段编辑
               </Button>
             </div>
             <DocxOfficeEditor
               instanceId={item.id}
               versionKey={item.currentVersionId ?? item.versionNo}
-              onUnavailable={() => {
-                message.info('OnlyOffice 未启用，已切换回字段编辑');
+              onUnavailable={(reason) => {
+                message.info(reason || 'OnlyOffice 不可用，已切换到字段编辑');
                 setWordEditorMode('meta');
                 setOnlyOfficeAvailable(false);
+                setOnlyOfficeChecked(true);
               }}
-              onSaved={() => {
-                onOfficeSaved?.();
-                setEditing(false);
-              }}
+              onSaved={() => refreshAfterSave()}
             />
           </div>
         ) : (
@@ -441,8 +472,7 @@ export function MaterialWorkspacePanel({
                 : undefined
             }
             onSaved={() => {
-              onOfficeSaved?.();
-              setEditing(false);
+              void refreshAfterSave().then(() => setEditing(false));
             }}
           />
         )
@@ -453,6 +483,7 @@ export function MaterialWorkspacePanel({
           fileId={active.fileId}
           filePath={active.filePath}
           fileName={active.fileName || item.fileName}
+          versionKey={item.currentVersionId ?? item.versionNo}
         />
       ) : (
         <Empty description="暂无文件可预览" />

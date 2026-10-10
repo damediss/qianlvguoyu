@@ -28,6 +28,7 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -275,11 +276,34 @@ public class ClassAssistantApplicationService {
     String primary = roleService.primaryRoleOfMember(platformUserId, classId);
     boolean studentMode = isStudentMode(primary);
     String text = body == null || body.get("text") == null ? "" : String.valueOf(body.get("text")).trim();
+    String originalText = text;
+    // 短追问结合近期会话补全指代（如「那正确率呢」），便于意图与模型按上下文答
+    if (studentMode) {
+      String expanded = expandFollowUpWithRecentContext(text, body);
+      if (StringUtils.hasText(expanded) && !expanded.equals(text)) {
+        if (body != null) {
+          body.put("originalText", text);
+        }
+        text = expanded;
+      }
+    }
     // 展示给用户的文案也可能在 intent 旁的 label 里（兼容前端只传 intent 的 chips）
     String intentHint = body != null && body.get("intent") != null
         ? String.valueOf(body.get("intent")).trim() : "";
     String intent = StringUtils.hasText(intentHint) ? intentHint : detectIntent(text, studentMode);
 
+    // 硬纠正：寒暄/打招呼 → 欢迎语，禁止灌整段学情快照
+    if (studentMode && looksLikeGreeting(originalText)) {
+      intent = "help";
+    }
+    // 硬纠正：回忆本会话聊了什么 → chat_history（勿进知识库）
+    if (studentMode && looksLikeChatHistoryQuestion(originalText)) {
+      intent = "chat_history";
+    }
+    // 「再之前」翻页口语也走会话回忆（勿进知识库超时）
+    if (studentMode && looksLikeEarlierChatHistoryFollowUp(originalText)) {
+      intent = "chat_history";
+    }
     // 硬纠正：能力介绍类问句绝不能走 what_now（含「你都可以做什么」）
     if (looksLikeCapabilityQuestion(text) || looksLikeCapabilityQuestion(intentHint)) {
       intent = "help";
@@ -396,7 +420,8 @@ public class ClassAssistantApplicationService {
       case "sync_about" -> replySyncAbout(platformUserId, classId, primary);
       case "data_access" -> replyDataAccess(primary);
       case "draw_hint" -> replyDrawHint(classId, primary);
-      case "help" -> replyHelp(primary);
+      case "chat_history" -> replyChatHistory(primary, body);
+      case "help" -> looksLikeGreeting(originalText) ? replyGreeting(primary) : replyHelp(primary);
       default -> replyUnknown(primary);
     };
   }
@@ -1027,24 +1052,48 @@ public class ClassAssistantApplicationService {
     if ("data_access".equals(soft)) {
       return replyDataAccess(primary);
     }
+    // 寒暄：短欢迎，禁止灌学情快照
+    if (looksLikeGreeting(text)) {
+      return replyGreeting(primary);
+    }
+    // 会话回忆：用前端带来的 recentMessages，勿进知识库
+    if (looksLikeChatHistoryQuestion(text)) {
+      return replyChatHistory(primary, body);
+    }
     // 闲聊/时事/通用百科：直接拒答并引导回学习，避免胡编
     if (looksLikeOffTopicChitchat(text)) {
       return replyOutOfScope(primary, classId, body);
+    }
+    // 能力边界追问：禁止灌学情快照
+    if (looksLikeCapabilityQuestion(text)) {
+      return replyHelp(primary);
     }
     // 数据权限/能否查库：本地说明，不调 WeKnora
     if (looksLikeDataAccessQuestion(text)) {
       return replyDataAccess(primary);
     }
-    // 不像考点/粘贴题/考证：不进 WeKnora（避免「吗」口语空等 RAG 超时）
+    // 不像考点/粘贴题/考证：原先直接拒进 WeKnora，学员体感「啥也答不上」。
+    // 策略改为：个人学情仍走真数据快照；其余尽量进模型结合上下文作答（全能优先、禁止乱灌学情）。
     List<String> earlyImages = parseImageDataUrls(body);
     boolean hasImages = earlyImages != null && !earlyImages.isEmpty();
     if (!hasImages && !looksLikeKnowledgeBaseWorthy(text)) {
-      List<Map<String, Object>> actions = new ArrayList<>();
-      appendSceneAwarePracticeActions(actions, classId, body);
-      return pack("ask_kb", primary,
-          List.of(textReply(buildFreeFormSnapshotFallback(platformUserId, classId, text)
-              + "\n\n问具体考点/工艺/概念或粘贴题干时会查知识库。")),
-          List.of(), actions);
+      if (shouldUseLearningSnapshotFallback(text)) {
+        // 能路由到具体个人意图时，优先专属 Tool，比整段清单更贴题
+        String personal = resolvePersonalDataIntent(text);
+        if (StringUtils.hasText(personal)) {
+          return replyByPersonalDataIntent(platformUserId, classId, primary, text);
+        }
+        List<Map<String, Object>> actions = new ArrayList<>();
+        appendSceneAwarePracticeActions(actions, classId, body);
+        return pack("ask_kb", primary,
+            List.of(textReply(buildFreeFormSnapshotFallback(platformUserId, classId, text)
+                + "\n\n问具体考点/工艺/概念或粘贴题干时会查知识库。")),
+            List.of(), actions);
+      }
+      if (looksLikeNoiseUtterance(text)) {
+        return replyAmbiguous(primary);
+      }
+      // 其余口语：放行进 WeKnora / Agent，用上下文尽量答上来
     }
     if (!weKnoraProperties.isApiReady()) {
       // 考证类无知识库时，至少回班务真数据
@@ -1052,7 +1101,11 @@ public class ClassAssistantApplicationService {
         return replyCertFactsOnly(platformUserId, classId, primary);
       }
       // 随意问仍可用本班快照作答（进度/作业/报考）
-      if (looksLikeInScopeFreeQuestion(text) || looksLikeLearningTopic(text)) {
+      if (shouldUseLearningSnapshotFallback(text)) {
+        String personal = resolvePersonalDataIntent(text);
+        if (StringUtils.hasText(personal)) {
+          return replyByPersonalDataIntent(platformUserId, classId, primary, text);
+        }
         List<Map<String, Object>> actions = new ArrayList<>();
         appendSceneAwarePracticeActions(actions, classId, body);
         return pack("ask_kb", primary,
@@ -1060,9 +1113,8 @@ public class ClassAssistantApplicationService {
                 + "\n\n（知识库暂未开通，考点细则待开通后再补充）")),
             List.of(), actions);
       }
-      return pack("ask_kb", primary,
-          List.of(textReply("知识库问答暂未开通（WeKnora API Key 未配置）。进度与「能不能考过」仍可用真实刷题数据回答。")),
-          List.of(), List.of());
+      // 无知识库时仍尽量给可行动引导，而不是冷拒
+      return replyAmbiguous(primary);
     }
 
     try {
@@ -1084,39 +1136,45 @@ public class ClassAssistantApplicationService {
       boolean certQ = looksLikeCertQuestion(text);
       boolean pasted = looksLikePastedQuestion(text);
       String query = """
-          你是学习伙伴「小培」，辅导本班学习、考证与题库相关问题。
-          学员可能口语随意提问：先理解真实意图，再作答；口语不等于闲聊。
+          你是学习伙伴「小培」，目标：学员问什么学习相关的，都尽量直接答上来。
+          学员口语随意：先理解真实意图，再作答；口语不等于闲聊。
           【学员上下文快照】（个人进度/作业/报考数字只能用这里的；没有就说暂无，禁止编造）
           %s
           【回答规则】
-          1. 先判断意图：进度/能不能考过/错题/作业模考/考证/考点概念/讲题/其它。
-          2. 个人进度、正确率、通过率、错题、作业、模考、报考工种等级：只依据快照，3～8 句直接说清并给下一步；禁止说「知识库没有」「去点某某按钮」。
-          3. 「考什么证 / 怎么拿证 / 考完还能考什么」：先复述快照本班真数据；再结合知识库「%s」补充；库没有就诚实说。
-          4. 考点、概念、工艺、安全规程：优先依据知识库检索；检索不到就明确说「知识库暂未收录」，禁止用通识编造工种知识点。
-          5. 附带图片或粘贴题干：先审题再讲考点与易错点。
-          6. 闲聊、时事、娱乐、天气、股票、星座、旅游、与本班学习无关的百科：不要答实质内容，只说明你是学习伙伴并引导回学习问题。
-          7. 不要让学员「先点快捷指令」才给答案。
-          8. 若检索结果为空：只说「知识库暂未收录」，可给 1 句学习方向，禁止编造具体工艺参数/标准条款。
-          9. 禁止向学员解释知识库结构、FAQ 容器、检索流程、「数据获取说明」等元信息；禁止长篇说明「库里为什么没有个人进度」。
-          10. %s
+          1. 先读【近期会话】再答：遇「那/这个/还有呢/多少呢/为什么」等短追问，必须承接上文主题，禁止当新话题或说「知识库暂未收录」。
+          2. 先判断意图：进度/能不能考过/错题/作业模考/考证/考点概念/讲题/能力说明/其它。
+          3. 个人进度、正确率、通过率、错题、作业、模考、报考工种等级：只依据快照，3～8 句直接说清并给下一步；禁止说「知识库没有」「去点某某按钮」。
+          4. 「考什么证 / 怎么拿证 / 考完还能考什么」：先复述快照本班真数据；再结合知识库「%s」补充；库没有就诚实说。
+          5. 考点、概念、工艺、安全规程：优先依据知识库检索；检索不到就明确说「知识库暂未收录」，可给 1 句学习方向，禁止用通识编造具体工艺参数/标准条款。
+          6. 附带图片或粘贴题干：先审题再讲考点与易错点。
+          7. 闲聊、时事、娱乐、天气、股票、星座、旅游：不要答实质内容，说明你是学习伙伴并引导回学习问题。
+          8. 不要让学员「先点快捷指令」才给答案；不要把整份学情清单当作万能回复——问题与学情无关时禁止罗列正确率/作业/模考。
+          9. 能力/怎么用你：用简短条目说明可聊、可讲、可评估，不要甩学情数字。
+          10. 意图略含糊：先按上文给一句最可能的回答，再补 1 句可选追问；禁止只说「请说具体一点」。
+          11. 禁止向学员解释知识库结构、FAQ 容器、检索流程、「数据获取说明」等元信息。
+          12. %s
           学员问题：%s
           """.formatted(
           context,
           kbName,
           certQ ? "本题偏考证路径，优先班务真数据 + 知识库政策。"
               : (pasted ? "本题是粘贴/拍照题目，按讲题辅导来答。"
-                  : "自由口语问答：能用快照就先用快照，再用知识库补考点。"),
+                  : "自由口语：结合【近期会话】尽量直接答；学情数字只用快照，考点优先知识库。"),
           text);
 
       WeKnoraChatResult result = weKnoraClient.knowledgeChat(
           sessionId, query, kbIds, agentId, images, true);
 
+      boolean hasRecent = body != null && body.get("recentMessages") instanceof List<?> rm && !rm.isEmpty();
       boolean learningAdjacent = pasted
           || hasImages
           || looksLikeLearningTopic(text)
           || looksLikeCertQuestion(text)
           || looksLikeKbConceptTopic(text)
-          || looksLikeKnowledgeBaseWorthy(text);
+          || looksLikeKnowledgeBaseWorthy(text)
+          || looksLikeInScopeFreeQuestion(text)
+          || shouldUseLearningSnapshotFallback(text)
+          || (hasRecent && looksLikeContextualFollowUp(text));
       boolean kbHit = hasKbReferenceHit(result.references());
       // 仅明确闲聊才拒答；已判定值得检索的问题库未命中时用快照/诚实提示，勿 replyOutOfScope
       if (!kbHit && !learningAdjacent && looksLikeOffTopicChitchat(text)) {
@@ -1129,9 +1187,12 @@ public class ClassAssistantApplicationService {
       if (!kbHit && !learningAdjacent) {
         List<Map<String, Object>> actions = new ArrayList<>();
         appendSceneAwarePracticeActions(actions, classId, body);
+        String tip = shouldUseLearningSnapshotFallback(text)
+            ? ("知识库暂未收录该问法。\n"
+                + buildFreeFormSnapshotFallback(platformUserId, classId, text))
+            : "知识库暂未收录该问法。可以换个考点关键词，或问「学得怎么样」「能不能考过」「讲讲这题」。";
         Map<String, Object> noHit = pack("ask_kb", primary,
-            List.of(textReply("知识库暂未收录该问法。\n"
-                + buildFreeFormSnapshotFallback(platformUserId, classId, text))),
+            List.of(textReply(tip)),
             List.of(), actions);
         noHit.put("sessionId", sessionId);
         noHit.put("kbName", kbName);
@@ -1143,18 +1204,24 @@ public class ClassAssistantApplicationService {
       List<Map<String, Object>> replies = new ArrayList<>();
       String answer = sanitizeXiaopeiKbAnswer(result.answer());
       String sourceTag = kbHit ? "weknora" : "weknora_no_hit";
-      // 元话术（检索情况/库结构说明）= 答非所问，一律换成本班快照短答
+      // 元话术（检索情况/库结构说明）= 答非所问
       if (looksLikeKbMetaRetrievalEssay(answer)) {
-        answer = buildFreeFormSnapshotFallback(platformUserId, classId, text);
+        answer = shouldUseLearningSnapshotFallback(text)
+            ? buildFreeFormSnapshotFallback(platformUserId, classId, text)
+            : "我没从知识库拿到可用答案。可以直接问「学得怎么样」「能不能考过」「某个考点是什么意思」或「讲讲这题」。";
         sourceTag = "weknora_meta_replaced";
         kbHit = false;
       } else if (!kbHit) {
-        // 库未命中：优先真数据快照，避免模型通识编造
-        String snapshot = buildFreeFormSnapshotFallback(platformUserId, classId, text);
+        // 库未命中：个人学情问才拼快照；考点问只诚实提示，勿灌整段学情
+        String snapshot = shouldUseLearningSnapshotFallback(text)
+            ? buildFreeFormSnapshotFallback(platformUserId, classId, text) : null;
         if (!StringUtils.hasText(answer)
             || looksLikeLikelyHallucinatedKbAnswer(answer)) {
-          answer = snapshot;
-        } else if (!answer.contains("知识库") && !answer.contains("暂未") && !answer.contains("没有找到")
+          answer = StringUtils.hasText(snapshot)
+              ? snapshot
+              : "知识库暂未收录该考点。可以换个关键词，或问「学得怎么样」「能不能考过」「讲讲这题」。";
+        } else if (StringUtils.hasText(snapshot)
+            && !answer.contains("知识库") && !answer.contains("暂未") && !answer.contains("没有找到")
             && !answer.contains("快照") && !answer.contains("真数据") && !answer.contains("未收录")) {
           answer = "知识库暂未收录该考点。\n"
               + answer
@@ -1162,7 +1229,9 @@ public class ClassAssistantApplicationService {
               + snapshot;
         }
       } else if (!StringUtils.hasText(answer)) {
-        answer = buildFreeFormSnapshotFallback(platformUserId, classId, text);
+        answer = shouldUseLearningSnapshotFallback(text)
+            ? buildFreeFormSnapshotFallback(platformUserId, classId, text)
+            : "知识库暂未给出有效答案。可以换个问法，或问学习进度 / 能不能考过 / 讲讲这题。";
         sourceTag = "weknora_no_hit";
         kbHit = false;
       }
@@ -1211,7 +1280,8 @@ public class ClassAssistantApplicationService {
     if (!StringUtils.hasText(text)) {
       return false;
     }
-    if (looksLikeDataAccessQuestion(text) || looksLikeCapabilityQuestion(text)
+    if (looksLikeGreeting(text) || looksLikeChatHistoryQuestion(text)
+        || looksLikeDataAccessQuestion(text) || looksLikeCapabilityQuestion(text)
         || looksLikeProductAboutQuestion(text, "精准学", "ai精准学", "同步学", "同步练", "同步练习")) {
       return false;
     }
@@ -1507,6 +1577,47 @@ public class ClassAssistantApplicationService {
     if (body != null && body.get("scene") != null) {
       sb.append(" 场景=").append(body.get("scene")).append("。");
     }
+    // 前端带来的近期会话（用于「之前聊了什么」及口语指代）
+    String recent = formatRecentMessagesForLlm(body);
+    if (StringUtils.hasText(recent)) {
+      sb.append(" 【近期会话】").append(recent);
+    }
+    return sb.toString();
+  }
+
+  private static String formatRecentMessagesForLlm(Map<String, Object> body) {
+    if (body == null || !(body.get("recentMessages") instanceof List<?> list) || list.isEmpty()) {
+      return "";
+    }
+    StringBuilder sb = new StringBuilder();
+    int n = 0;
+    for (Object item : list) {
+      if (!(item instanceof Map<?, ?> m)) {
+        continue;
+      }
+      Object roleObj = m.get("role");
+      Object contentObj = m.get("content");
+      if (contentObj == null) {
+        continue;
+      }
+      String content = String.valueOf(contentObj).replaceAll("\\s+", " ").trim();
+      if (!StringUtils.hasText(content)) {
+        continue;
+      }
+      if (content.length() > 120) {
+        content = content.substring(0, 120) + "…";
+      }
+      String role = roleObj == null ? "?" : String.valueOf(roleObj);
+      String who = "user".equalsIgnoreCase(role) || "学员".equals(role) ? "学员" : "小培";
+      if (sb.length() > 0) {
+        sb.append(" | ");
+      }
+      sb.append(who).append("：").append(content);
+      n++;
+      if (n >= 12) {
+        break;
+      }
+    }
     return sb.toString();
   }
 
@@ -1744,6 +1855,9 @@ public class ClassAssistantApplicationService {
     if (!StringUtils.hasText(text)) {
       return false;
     }
+    if (looksLikeGreeting(text)) {
+      return false;
+    }
     if (looksLikeLearningTopic(text)
         || looksLikePastedQuestion(text)
         || looksLikeProgressQuestion(text)
@@ -1770,6 +1884,40 @@ public class ClassAssistantApplicationService {
         "特朗普", "拜登", "谁是总统", "比特币涨");
   }
 
+  /**
+   * 纯寒暄/打招呼：走欢迎语，禁止进知识库或灌学情快照。
+   */
+  static boolean looksLikeGreeting(String text) {
+    if (!StringUtils.hasText(text)) {
+      return false;
+    }
+    String compact = text.trim().toLowerCase(Locale.ROOT)
+        .replaceAll("[\\s\\p{Punct}？?！!。．.、，,·～~…]+", "");
+    if (!StringUtils.hasText(compact) || compact.length() > 18) {
+      return false;
+    }
+    String core = compact.replace("ai小培", "").replace("小培", "");
+    if (!StringUtils.hasText(core)) {
+      return true;
+    }
+    return equalsAny(core,
+        "你好", "您好", "嗨", "哈喽", "哈啰", "hello", "hi", "hey",
+        "在吗", "在不在", "早上好", "下午好", "晚上好", "早", "晚安",
+        "你好呀", "你好啊", "你好吗", "您好呀", "您好啊", "嗨喽");
+  }
+
+  private static boolean equalsAny(String value, String... options) {
+    if (value == null || options == null) {
+      return false;
+    }
+    for (String o : options) {
+      if (value.equals(o)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
   /** 像学习/考证/工种问题（允许进知识库；库未命中时诚实提示）。 */
   private static boolean looksLikeLearningTopic(String text) {
     if (!StringUtils.hasText(text)) {
@@ -1787,29 +1935,299 @@ public class ClassAssistantApplicationService {
         "教材", "讲义", "实训", "技能等级", "学习", "复习", "练习", "备考");
   }
 
+  /** 无信息噪音（嗯/哦/单个标点）：不进模型，给引导。 */
+  static boolean looksLikeNoiseUtterance(String text) {
+    if (!StringUtils.hasText(text)) {
+      return true;
+    }
+    String compact = text.trim().toLowerCase(Locale.ROOT)
+        .replaceAll("[\\s\\p{Punct}？?！!。．.、，,·～~…]+", "");
+    if (!StringUtils.hasText(compact)) {
+      return true;
+    }
+    if (compact.length() <= 1) {
+      return true;
+    }
+    return compact.matches("^[嗯哦啊哈嘿额唉]+$");
+  }
+
+  /** 「之前聊了什么 / 问了什么」→ 会话回忆，勿进知识库。 */
+  static boolean looksLikeChatHistoryQuestion(String text) {
+    if (!StringUtils.hasText(text)) {
+      return false;
+    }
+    String compact = text.trim().toLowerCase(Locale.ROOT)
+        .replaceAll("[\\s\\p{Punct}？?！!。．.、，,·～~…]+", "");
+    return containsAny(compact,
+        "之前聊", "聊了什么", "问了什么", "说了什么", "聊过什么", "问过什么",
+        "刚才聊", "刚才问", "我们聊了", "对话记录", "聊天记录", "会话记录",
+        "之前问", "都聊了", "都问了", "回忆一下", "回顾一下",
+        "聊了什么问题", "问了什么问题");
+  }
+
+  /** 仅「再往前翻回忆」口语；不含「还有呢」（易与考点追问冲突）。 */
+  static boolean looksLikeEarlierChatHistoryFollowUp(String text) {
+    if (!StringUtils.hasText(text)) {
+      return false;
+    }
+    String compact = text.trim().toLowerCase(Locale.ROOT)
+        .replaceAll("[\\s\\p{Punct}？?！!。．.、，,·～~…]+", "");
+    return containsAny(compact, "再之前", "更早的", "再往前", "再早", "还有更早", "更早呢");
+  }
+
+  /** 短追问/指代：需要结合上文，如「那正确率呢」「还有吗」。 */
+  static boolean looksLikeContextualFollowUp(String text) {
+    if (!StringUtils.hasText(text)) {
+      return false;
+    }
+    String raw = text.trim();
+    // 已带「承接上文」补全标记的也算
+    if (raw.contains("承接上文")) {
+      return true;
+    }
+    if (raw.length() > 28) {
+      return false;
+    }
+    String compact = raw.toLowerCase(Locale.ROOT)
+        .replaceAll("[\\s\\p{Punct}？?！!。．.、，,·～~…]+", "");
+    if (!StringUtils.hasText(compact) || compact.length() > 18) {
+      return false;
+    }
+    // 致谢/确认口语不算追问
+    if (containsAny(compact, "谢谢", "好的", "知道了", "明白了", "收到", "嗯嗯", "哦哦")) {
+      return false;
+    }
+    // 须有指代词，避免裸「呢/吗」误伤
+    return containsAny(compact,
+        "那", "这个", "那个", "还有吗", "还有呢", "多少呢", "怎么样", "怎样呢",
+        "继续说", "再说说", "详细说说", "为什么", "为啥", "怎么办", "咋办",
+        "再讲讲", "再解释");
+  }
+
   /**
-   * 口语随意问但仍像「本班学习相关」：允许走知识库/快照作答，避免误拒。
-   * 明确闲聊仍由 {@link #looksLikeOffTopicChitchat} 拦截。
+   * 把短追问补成带上文主题的路由文本，便于规则命中与模型理解。
+   * 无上文或不是追问时返回原文。
+   */
+  static String expandFollowUpWithRecentContext(String text, Map<String, Object> body) {
+    if (!StringUtils.hasText(text) || !looksLikeContextualFollowUp(text)) {
+      return text;
+    }
+    if (text.contains("承接上文")) {
+      return text;
+    }
+    String topic = extractRecentTopicHint(body);
+    if (!StringUtils.hasText(topic)) {
+      return text;
+    }
+    return text.trim() + "（承接上文：" + topic + "）";
+  }
+
+  /** 从上一条学员话或小培回复里抽一句主题提示。 */
+  static String extractRecentTopicHint(Map<String, Object> body) {
+    if (body == null || !(body.get("recentMessages") instanceof List<?> list) || list.isEmpty()) {
+      return null;
+    }
+    String current = body.get("originalText") != null
+        ? String.valueOf(body.get("originalText"))
+        : (body.get("text") == null ? "" : String.valueOf(body.get("text")));
+    String lastUser = null;
+    String lastBot = null;
+    for (Object item : list) {
+      if (!(item instanceof Map<?, ?> m)) {
+        continue;
+      }
+      Object contentObj = m.get("content");
+      if (contentObj == null) {
+        continue;
+      }
+      String content = String.valueOf(contentObj).replaceAll("\\s+", " ").trim();
+      if (!StringUtils.hasText(content)) {
+        continue;
+      }
+      // 跳过当前这句追问本身
+      if (StringUtils.hasText(current) && content.equals(current.trim())) {
+        continue;
+      }
+      if (looksLikeChatHistoryQuestion(content) || looksLikeGreeting(content)) {
+        continue;
+      }
+      Object roleObj = m.get("role");
+      String role = roleObj == null ? "" : String.valueOf(roleObj);
+      if ("user".equalsIgnoreCase(role)) {
+        lastUser = content;
+      } else {
+        lastBot = content;
+      }
+    }
+    String hint = StringUtils.hasText(lastUser) ? lastUser : lastBot;
+    if (!StringUtils.hasText(hint)) {
+      return null;
+    }
+    if (hint.length() > 48) {
+      hint = hint.substring(0, 48) + "…";
+    }
+    return hint;
+  }
+
+  private Map<String, Object> replyChatHistory(String primary, Map<String, Object> body) {
+    LinkedHashSet<String> topics = new LinkedHashSet<>();
+    boolean greeted = false;
+    if (body != null && body.get("recentMessages") instanceof List<?> list) {
+      for (Object item : list) {
+        if (!(item instanceof Map<?, ?> m)) {
+          continue;
+        }
+        Object contentObj = m.get("content");
+        if (contentObj == null) {
+          continue;
+        }
+        String content = String.valueOf(contentObj).replaceAll("\\s+", " ").trim();
+        if (!StringUtils.hasText(content) || looksLikeChatHistoryQuestion(content)) {
+          continue;
+        }
+        Object roleObj = m.get("role");
+        String role = roleObj == null ? "" : String.valueOf(roleObj);
+        boolean user = "user".equalsIgnoreCase(role);
+        String topic = user ? summarizeUserChatTopic(content) : summarizeBotChatTopic(content);
+        if (!StringUtils.hasText(topic)) {
+          continue;
+        }
+        if ("打过招呼".equals(topic)) {
+          greeted = true;
+          continue;
+        }
+        topics.add(topic);
+      }
+    }
+    String tip;
+    if (topics.isEmpty()) {
+      tip = greeted
+          ? "这轮主要是打了个招呼。接下来可以问学得怎么样、有多少错题，或让我讲一道题。"
+          : "这轮还没什么实质话题。想聊进度、错题、讲题或考点，直接说就行。";
+    } else {
+      StringBuilder sb = new StringBuilder();
+      sb.append(greeted ? "这轮先打过招呼，后来主要聊了：\n" : "这轮主要聊了：\n");
+      int i = 1;
+      for (String t : topics) {
+        if (i > 6) {
+          break;
+        }
+        sb.append(i++).append(". ").append(t).append("\n");
+      }
+      sb.append("\n想接着哪一条细问，直接说就行。");
+      tip = sb.toString().trim();
+    }
+    return pack("chat_history", primary, List.of(textReply(tip)), List.of(), List.of());
+  }
+
+  private static String summarizeUserChatTopic(String raw) {
+    String t = raw == null ? "" : raw.trim();
+    if (!StringUtils.hasText(t)) {
+      return null;
+    }
+    if (looksLikeGreeting(t)) {
+      return "打过招呼";
+    }
+    if (looksLikeCapabilityQuestion(t) || containsAny(t, "聊什么", "讲什么", "评估什么")) {
+      return "问过小培能帮什么（聊 / 讲 / 评估）";
+    }
+    if (looksLikeWrongStatsQuestion(t) || t.contains("错题")) {
+      return "问过错题情况";
+    }
+    if (looksLikeExamReadiness(t) || containsAny(t, "正确率", "通过率")) {
+      return "问过正确率 / 能不能考过";
+    }
+    if (looksLikeProgressQuestion(t) || containsAny(t, "学情", "进度")) {
+      return "问过学习进度";
+    }
+    if (looksLikeHomeworkTaskQuestion(t)) {
+      return "问过作业 / 模考";
+    }
+    if (t.contains("薄弱")) {
+      return "问过薄弱点";
+    }
+    if (looksLikeExplainCurrentQuestion(t)) {
+      return "请小培讲过题";
+    }
+    if (looksLikeCertQuestion(t)) {
+      return "问过考证 / 报考";
+    }
+    if (containsAny(t, "同步学", "精准学")) {
+      return "问过同步学 / 精准学";
+    }
+    String shortText = t.length() > 22 ? t.substring(0, 22) + "…" : t;
+    return "提过「" + shortText + "」";
+  }
+
+  private static String summarizeBotChatTopic(String raw) {
+    String t = raw == null ? "" : raw.trim();
+    if (!StringUtils.hasText(t)) {
+      return null;
+    }
+    if (containsAny(t, "你好，我是小培", "可以问学习进度")) {
+      return "打过招呼";
+    }
+    if (containsAny(t, "可聊、可讲、可评估") || (t.contains("聊：") && t.contains("讲：") && t.contains("评估："))) {
+      return "介绍过能聊 / 能讲 / 能评估";
+    }
+    if (containsAny(t, "按你的本班学习记录", "练习正确率", "错题本约")) {
+      return "看过本班学情快照";
+    }
+    return null;
+  }
+
+  /**
+   * 口语随意问但仍像「本班学习相关」：允许尝试作答，避免误拒。
+   * 注意：不等于「可以灌整段学情快照」——快照见 {@link #shouldUseLearningSnapshotFallback}。
    */
   private static boolean looksLikeInScopeFreeQuestion(String text) {
-    if (!StringUtils.hasText(text) || looksLikeOffTopicChitchat(text)) {
+    if (!StringUtils.hasText(text) || looksLikeOffTopicChitchat(text)
+        || looksLikeGreeting(text) || looksLikeCapabilityQuestion(text)) {
       return false;
     }
     if (looksLikeLearningTopic(text) || looksLikeProgressQuestion(text)
         || looksLikeHomeworkTaskQuestion(text) || looksLikeCertQuestion(text)
-        || looksLikeExamReadiness(text) || looksLikeWrongStatsQuestion(text)) {
+        || looksLikeExamReadiness(text) || looksLikeWrongStatsQuestion(text)
+        || looksLikePersonalDataDomain(text)) {
       return true;
     }
     String t = text.trim().toLowerCase(Locale.ROOT);
+    // 长粘贴题干仍视为在域内
     if (t.length() > 160) {
       return true;
     }
-    if (containsAny(t, "吗", "呢", "？", "?", "怎么", "如何", "为什么", "为啥", "啥", "什么",
-        "哪些", "那些", "多少", "能不能", "可不可以", "怎么办", "咋办", "帮我", "告诉我",
-        "想问", "请问", "请教", "解释", "说说", "讲讲")) {
+    // 须有个人/班级主语，禁止仅凭「什么/吗」就认定在域（会答非所问）
+    return containsAny(t, "我的", "本班", "我们班", "这班", "我有", "我还", "我学", "我练")
+        && t.length() <= 100;
+  }
+
+  /**
+   * 只有明确要个人学情/班务数字时，才允许整段学情快照兜底。
+   * 能力问、寒暄、纯考点、含糊「什么」一律禁止灌快照（防答非所问）。
+   */
+  static boolean shouldUseLearningSnapshotFallback(String text) {
+    if (!StringUtils.hasText(text)
+        || looksLikeGreeting(text)
+        || looksLikeChatHistoryQuestion(text)
+        || looksLikeCapabilityQuestion(text)
+        || looksLikeOffTopicChitchat(text)
+        || looksLikeDataAccessQuestion(text)
+        || looksLikeProductAboutQuestion(text, "精准学", "ai精准学", "同步学", "同步练", "同步练习")) {
+      return false;
+    }
+    if (looksLikePersonalDataDomain(text)
+        || looksLikeProgressQuestion(text)
+        || looksLikeHomeworkTaskQuestion(text)
+        || looksLikeCompletedTasksQuestion(text)
+        || looksLikeWrongStatsQuestion(text)
+        || looksLikeExamReadiness(text)) {
       return true;
     }
-    return containsAny(t, "我", "本班", "我们班", "这班", "老师", "同学", "小培") && t.length() <= 100;
+    String t = text.toLowerCase(Locale.ROOT);
+    // 「我的学习/本班情况」类学习口语可给快照；纯考点概念不要灌
+    return looksLikeLearningTopic(t)
+        && containsAny(t, "我的", "本班", "我们班", "我有", "我还", "我学", "我练",
+            "进度", "情况怎么样", "学得怎么样", "掌握情况");
   }
 
   /**
@@ -1817,10 +2235,42 @@ public class ClassAssistantApplicationService {
    */
   /** 包内可见，供意图回归单测调用。 */
   static String softRouteStudentFreeForm(String text) {
-    if (!StringUtils.hasText(text) || looksLikeOffTopicChitchat(text)) {
+    if (!StringUtils.hasText(text) || looksLikeGreeting(text) || looksLikeOffTopicChitchat(text)) {
       return null;
     }
     if (looksLikeCapabilityQuestion(text) || looksLikePastedQuestion(text)) {
+      return null;
+    }
+    // 已补全「承接上文」的短追问：勿再被「然后呢/接下来」拐去今日任务
+    if (text.contains("承接上文")) {
+      if (looksLikeDataAccessQuestion(text)) {
+        return "data_access";
+      }
+      if (looksLikeProductAboutQuestion(text, "精准学", "ai精准学")) {
+        return "precise_about";
+      }
+      if (looksLikeProductAboutQuestion(text, "同步学", "同步练", "同步练习")) {
+        return "sync_about";
+      }
+      if (looksLikeCertQuestion(text)) {
+        return "ask_kb";
+      }
+      if (looksLikeHomeworkTaskQuestion(text) || looksLikeCompletedTasksQuestion(text)) {
+        return "my_homework";
+      }
+      if (looksLikeExamReadiness(text)) {
+        return "exam_readiness";
+      }
+      if (looksLikeWrongStatsQuestion(text)) {
+        return containsAny(text.toLowerCase(Locale.ROOT), "薄弱") ? "weak_points" : "wrong_stats";
+      }
+      if (containsAny(text, "薄弱", "不会的点", "短板")) {
+        return "weak_points";
+      }
+      if (looksLikeProgressQuestion(text)) {
+        return "learn_detail";
+      }
+      // 其余交给知识库/模型按上文续答
       return null;
     }
     if (looksLikeDataAccessQuestion(text)) {
@@ -1853,8 +2303,13 @@ public class ClassAssistantApplicationService {
     if (containsAny(t, "薄弱", "不会的点", "短板")) {
       return "weak_points";
     }
-    if (containsAny(t, "现在做什么", "现在做啥", "接下来", "然后呢", "下一步", "该干嘛",
+    if (containsAny(t, "现在做什么", "现在做啥", "接下来做什么", "接下来干啥", "下一步做什么", "该干嘛",
         "先干啥", "优先做什么", "优先干啥", "今天练啥", "今天刷啥")) {
+      return "what_now";
+    }
+    // 裸「然后呢/接下来」易误伤考点追问，仅当无明显上文补全时才当今日任务
+    if (containsAny(t, "然后呢", "接下来", "下一步")
+        && !containsAny(t, "工艺", "考点", "原理", "焙烧", "电解", "温度", "规程")) {
       return "what_now";
     }
     if (looksLikeProgressQuestion(t)) {
@@ -3040,14 +3495,32 @@ public class ClassAssistantApplicationService {
         List.of(nav("去布置并抽题", "/pages/class/homeworkAssign?classId=" + classId)));
   }
 
+  private Map<String, Object> replyGreeting(String primary) {
+    String tip = isStudentMode(primary)
+        ? "你好，我是小培。可以问学习进度、作业模考、错题、讲题或考点；也可以点「快捷」。"
+        : "你好，我是小培。可问今日安排、本班进度、谁没交，或引导抽题布置。";
+    return pack("help", primary, List.of(textReply(tip)), List.of(), List.of());
+  }
+
+  /** 意图含糊或噪音：给可行动入口，仍保持「能答」的引导感。 */
+  private Map<String, Object> replyAmbiguous(String primary) {
+    String tip = isStudentMode(primary)
+        ? "我在，学习相关的都可以直接问。常用例如：\n"
+            + "· 学得怎么样 / 能不能考过\n"
+            + "· 有多少错题 / 还有啥没做\n"
+            + "· 讲讲这题 / 某个考点是什么意思\n"
+            + "· 你能做什么"
+        : "请说具体一点，例如：今日安排 / 谁没交 / 本班进度。";
+    return pack("help", primary, List.of(textReply(tip)), List.of(), List.of());
+  }
+
   private Map<String, Object> replyHelp(String primary) {
     String tip = isStudentMode(primary)
-        ? "我是小培，可以直接聊：\n"
-            + "· 随意口语问：学得怎么样、还有啥没做、能不能考过\n"
-            + "· 作业与模考：待办、得分、通过情况与学习建议\n"
-            + "· 讲题：当前题、错题、粘贴或拍照\n"
-            + "· 考证 / 考点：本班配置真数据 + 知识库补充\n"
-            + "点「快捷」可展开常用入口；我不会在聊天里替你答题，但可以讲题和指路去练。"
+        ? "我是小培，可聊、可讲、可评估：\n"
+            + "· 聊：学习进度、还有啥没做、作业模考、错题多少、考点/工艺概念、考什么证\n"
+            + "· 讲：当前题、错题、粘贴或拍照的题（讲考点与易错，不替你交卷）\n"
+            + "· 评估：能不能考过、正确率/通过倾向、薄弱点、今天该练啥\n"
+            + "点「快捷」可展开常用入口；直接口语问即可。"
         : "我可以：今日安排、本班进度、谁没交、调课说明、引导抽题布置、跳转 AI 精准学。";
     return pack("help", primary, List.of(textReply(tip)), List.of(), List.of());
   }
@@ -3067,10 +3540,7 @@ public class ClassAssistantApplicationService {
   }
 
   private Map<String, Object> replyUnknown(String primary) {
-    String tip = isStudentMode(primary)
-        ? "我没太听懂。可以直接打字问，或点「快捷」：能不能考过 / 该刷哪 / 讲讲这题。"
-        : "暂未理解。可点快捷指令，或试：今日安排 / 我的作业 / 谁没交 / 该刷哪。";
-    return pack("unknown", primary, List.of(textReply(tip)), List.of(), List.of());
+    return replyAmbiguous(primary);
   }
 
   // ------------------------------------------------------------------
@@ -3144,10 +3614,11 @@ public class ClassAssistantApplicationService {
     card.put("syncStatus", "active");
     card.put("title", str(ov.get("stageName"), "同步学") + " · 第 "
         + ov.getOrDefault("dayIndex", "-") + "/" + ov.getOrDefault("totalDays", "-") + " 天");
-    card.put("subtitle", "今日新题 " + today.getOrDefault("newDone", 0) + "/"
-        + today.getOrDefault("newTarget", 0)
-        + " · 复盘 " + today.getOrDefault("reviewDone", 0) + "/"
-        + today.getOrDefault("reviewTarget", 0));
+    int newDone = toInt(today.get("newDone"), 0);
+    int newTarget = toInt(today.get("newTarget"), 0);
+    int reviewDone = toInt(today.get("reviewDone"), 0);
+    int reviewTarget = toInt(today.get("reviewTarget"), 0);
+    card.put("subtitle", formatTodayProgressSubtitle(newDone, newTarget, reviewDone, reviewTarget));
     card.put("stageName", ov.get("stageName"));
     card.put("dayIndex", ov.get("dayIndex"));
     card.put("totalDays", ov.get("totalDays"));
@@ -3156,6 +3627,22 @@ public class ClassAssistantApplicationService {
     card.put("reviewDone", today.get("reviewDone"));
     card.put("reviewTarget", today.get("reviewTarget"));
     return card;
+  }
+
+  /** 避免「今日新题 0/0」被当成坏数据。 */
+  private static String formatTodayProgressSubtitle(
+      int newDone, int newTarget, int reviewDone, int reviewTarget) {
+    if (newTarget <= 0 && reviewTarget <= 0) {
+      return "今日暂无新题与复盘任务，可点继续练查看安排";
+    }
+    if (newTarget <= 0) {
+      return "今日无新题 · 复盘 " + reviewDone + "/" + reviewTarget;
+    }
+    if (reviewTarget <= 0) {
+      return "今日新题 " + newDone + "/" + newTarget + " · 暂无复盘";
+    }
+    return "今日新题 " + newDone + "/" + newTarget
+        + " · 复盘 " + reviewDone + "/" + reviewTarget;
   }
 
   private static String rewardNowByStage(int stage, String stageName, int newLeft, int reviewLeft) {
@@ -3211,6 +3698,9 @@ public class ClassAssistantApplicationService {
     }
 
     if (studentMode) {
+      if (looksLikeGreeting(t) || looksLikeChatHistoryQuestion(t)) {
+        return looksLikeChatHistoryQuestion(t) ? "chat_history" : "help";
+      }
       if (looksLikeExamReadiness(t)) {
         return "exam_readiness";
       }
@@ -3315,7 +3805,7 @@ public class ClassAssistantApplicationService {
     return "unknown";
   }
 
-  /** 「你能做什么 / 有哪些功能」类 → help，勿进 what_now */
+  /** 「你能做什么 / 有哪些功能 / 聊什么讲什么评估什么」类 → help，勿进学情快照 */
   private static boolean looksLikeCapabilityQuestion(String text) {
     if (!StringUtils.hasText(text)) {
       return false;
@@ -3327,7 +3817,20 @@ public class ClassAssistantApplicationService {
         "能做什么", "都可以做", "可以做什么", "你会什么", "你会做",
         "有什么功能", "有哪些功能", "都能做", "会什么", "能干啥",
         "你是谁", "介绍一下你", "你是干什么", "你是干嘛", "怎么用你",
-        "你会干啥", "你能帮", "帮我什么", "你可以做什么", "你都能做")) {
+        "你会干啥", "你能帮", "帮我什么", "你可以做什么", "你都能做",
+        // 对齐标语「可聊可讲可评估」的元问题
+        "都可以聊", "可以聊什么", "能聊什么", "都能聊", "聊些什么",
+        "都可以讲", "可以讲什么", "能讲什么", "都能讲",
+        "都可以评估", "可以评估什么", "能评估什么", "都能评估",
+        "可聊可讲", "可讲可评估", "聊什么讲什么", "讲什么评估什么")) {
+      return true;
+    }
+    // 「聊什么 + 讲/评估」并列追问能力边界（无「你」也会命中）
+    if (compact.contains("聊什么")
+        && containsAny(compact, "讲什么", "评估什么", "讲", "评估")) {
+      return true;
+    }
+    if (compact.contains("讲什么") && compact.contains("评估")) {
       return true;
     }
     // 「你…做什么/干啥」且带能/会/都 → 能力介绍，不是今日任务

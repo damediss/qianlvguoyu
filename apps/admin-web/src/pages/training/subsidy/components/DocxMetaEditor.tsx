@@ -134,7 +134,7 @@ export function DocxMetaEditor({
             </div>
             {onlyOfficeAvailable && onOpenFullEditor ? (
               <Button type="link" style={{ paddingLeft: 0 }} onClick={onOpenFullEditor}>
-                使用完整排版编辑（OnlyOffice）
+                改用完整排版编辑（OnlyOffice）
               </Button>
             ) : null}
             {onCancel ? (
@@ -151,7 +151,7 @@ export function DocxMetaEditor({
   return (
     <div className="material-docx-meta-editor" style={{ padding: '12px 16px' }}>
       <Typography.Paragraph type="secondary" style={{ marginBottom: 12 }}>
-        修改下列字段后保存即可（无需 OnlyOffice）。后端会写回 docx，保留图片与表格版式。
+        字段编辑（OnlyOffice 不可用或无需改版式时使用）。修改后保存即可写回 docx，保留图片与表格。
         {meta?.fileName ? (
           <>
             {' '}
@@ -162,7 +162,7 @@ export function DocxMetaEditor({
           <>
             {' '}
             <Button type="link" size="small" onClick={onOpenFullEditor}>
-              完整排版编辑（OnlyOffice）
+              改用完整排版编辑（OnlyOffice）
             </Button>
           </>
         ) : null}

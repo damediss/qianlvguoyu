@@ -25,6 +25,13 @@
       <env name="XIAOPEI_AGENT_ID" value="a6223b7c-96ed-494a-b0ef-2c39dac77064" />
       <env name="RENCAI_ENABLED" value="true" />
       <env name="RENCAI_BASE_URL" value="http://127.0.0.1:8001" />
+      <!-- 补贴材料 Word 在线编辑：Document Server 在 VMware Fedora（192.168.136.128:8088） -->
+      <env name="PLATFORM_ONLYOFFICE_ENABLED" value="true" />
+      <env name="PLATFORM_ONLYOFFICE_DOCUMENT_SERVER_URL" value="http://192.168.136.128:8088" />
+      <!-- DS 容器访问本机 API：VMnet8 宿主机地址；端口须与 SERVER_PORT 一致 -->
+      <env name="PLATFORM_ONLYOFFICE_PUBLIC_BASE_URL" value="http://192.168.136.1:8080/api" />
+      <env name="PLATFORM_ONLYOFFICE_JWT_ENABLED" value="true" />
+      <env name="PLATFORM_ONLYOFFICE_JWT_SECRET" value="guoyu-onlyoffice-dev-secret" />
     </envs>
     <module name="platform-api" />
     <option name="PROGRAM_PARAMETERS" value="--server.port=8080" />

@@ -12,13 +12,15 @@ type Props = {
   fileId?: string | number | null;
   filePath?: string | null;
   fileName?: string | null;
+  /** 版本变化时强制重新拉文件（避免仅 filePath 字符串相同或缓存导致旧预览） */
+  versionKey?: string | number | null;
 };
 
 /**
  * 补贴材料工作台内嵌预览：docx（docx-preview）/ xlsx（SheetJS）/ pdf / 图片。
  * 不依赖 OnlyOffice，私有 COS 走鉴权下载。
  */
-export function MaterialFilePreview({ fileId, filePath, fileName }: Props) {
+export function MaterialFilePreview({ fileId, filePath, fileName, versionKey }: Props) {
   const docxRef = useRef<HTMLDivElement>(null);
   const sheetRef = useRef<HTMLDivElement>(null);
   const [loading, setLoading] = useState(false);
@@ -98,7 +100,7 @@ export function MaterialFilePreview({ fileId, filePath, fileName }: Props) {
       cancelled = true;
       if (localUrl) URL.revokeObjectURL(localUrl);
     };
-  }, [fileId, filePath, fileName]);
+  }, [fileId, filePath, fileName, versionKey]);
 
   if (!fileId && !filePath) {
     return <Empty description="暂无文件可预览" />;

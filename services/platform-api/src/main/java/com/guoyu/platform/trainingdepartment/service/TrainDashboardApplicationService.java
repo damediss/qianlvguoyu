@@ -126,7 +126,7 @@ public class TrainDashboardApplicationService {
         .eq(TrainExamListEntity::getDeleted, 0));
 
     List<Long> tenantInfoIds = infoListMapper.selectList(new LambdaQueryWrapper<TrainInfoListEntity>()
-            .eq(TrainInfoListEntity::getTenantId, tenantId)
+        .eq(TrainInfoListEntity::getTenantId, tenantId)
             .eq(TrainInfoListEntity::getDeleted, 0)
             .select(TrainInfoListEntity::getId))
         .stream()

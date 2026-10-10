@@ -109,11 +109,14 @@ export function SubsidyClassWorkbench({ subsidy, onBack, onSubsidyChange }: Prop
     staleTime: 30_000,
   });
 
-  const invalidate = () => {
-    void qc.invalidateQueries({ queryKey: ['subsidies'] });
-    void qc.invalidateQueries({ queryKey: ['subsidy-material-instances', detail.id] });
-    void qc.invalidateQueries({ queryKey: ['subsidy-class-materials', detail.id] });
-    void qc.invalidateQueries({ queryKey: ['subsidy-events', detail.id] });
+  const invalidate = async () => {
+    await Promise.all([
+      qc.invalidateQueries({ queryKey: ['subsidies'] }),
+      qc.invalidateQueries({ queryKey: ['subsidy-material-instances', detail.id] }),
+      qc.invalidateQueries({ queryKey: ['subsidy-class-materials', detail.id] }),
+      qc.invalidateQueries({ queryKey: ['subsidy-events', detail.id] }),
+    ]);
+    await qc.refetchQueries({ queryKey: ['subsidy-material-instances', detail.id] });
   };
 
   const syncMu = useMutation({
@@ -418,9 +421,7 @@ export function SubsidyClassWorkbench({ subsidy, onBack, onSubsidyChange }: Prop
                   }
                 : undefined
             }
-            onOfficeSaved={() => {
-              void qc.invalidateQueries({ queryKey: ['subsidy-material-instances', detail.id] });
-            }}
+            onOfficeSaved={() => invalidate()}
           />
         </Card>
       </div>

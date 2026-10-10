@@ -39,6 +39,13 @@ class XiaopeiIntentRoutingTest {
         "学习情况, learn_detail",
         "刷题情况怎么样, learn_detail",
         "你都可以做什么, help",
+        "都可以聊什么讲什么评估什么, help",
+        "聊什么讲什么评估什么, help",
+        "你好, help",
+        "小培你好, help",
+        "在吗, help",
+        "我之前都和你聊了什么, chat_history",
+        "刚才聊了什么, chat_history",
         "现在做什么, what_now",
         "去做精准学, go_precise",
         "该刷哪, go_sync",
@@ -103,6 +110,16 @@ class XiaopeiIntentRoutingTest {
   class SoftAndKb {
 
     @Test
+    void greetingNotKbWorthyAndNotPersonal() {
+      assertTrue(ClassAssistantApplicationService.looksLikeGreeting("你好"));
+      assertTrue(ClassAssistantApplicationService.looksLikeGreeting("小培你好～"));
+      assertTrue(ClassAssistantApplicationService.looksLikeGreeting("在吗"));
+      assertFalse(ClassAssistantApplicationService.looksLikeKnowledgeBaseWorthy("你好"));
+      assertFalse(ClassAssistantApplicationService.looksLikePersonalDataDomain("你好"));
+      assertEquals(null, ClassAssistantApplicationService.softRouteStudentFreeForm("你好"));
+    }
+
+    @Test
     void softRouteProductAndDataAccess() {
       assertEquals("precise_about",
           ClassAssistantApplicationService.softRouteStudentFreeForm("精准学是什么"));
@@ -164,6 +181,40 @@ class XiaopeiIntentRoutingTest {
       assertTrue(ClassAssistantApplicationService.looksLikeKbMetaRetrievalEssay(sample));
       assertFalse(ClassAssistantApplicationService.looksLikeKbMetaRetrievalEssay(
           "焙烧温度一般按工艺规程控制，以教材为准。"));
+    }
+
+    @Test
+    void snapshotFallbackOnlyForPersonalLearning() {
+      assertTrue(ClassAssistantApplicationService.shouldUseLearningSnapshotFallback("我学到哪里了"));
+      assertTrue(ClassAssistantApplicationService.shouldUseLearningSnapshotFallback("我有多少错题"));
+      assertTrue(ClassAssistantApplicationService.shouldUseLearningSnapshotFallback("能不能考过"));
+      assertFalse(ClassAssistantApplicationService.shouldUseLearningSnapshotFallback("你好"));
+      assertFalse(ClassAssistantApplicationService.shouldUseLearningSnapshotFallback(
+          "都可以聊什么，讲什么，评估什么"));
+      assertFalse(ClassAssistantApplicationService.shouldUseLearningSnapshotFallback("电解槽焙烧温度多少"));
+      assertTrue(ClassAssistantApplicationService.looksLikeNoiseUtterance("嗯"));
+      assertFalse(ClassAssistantApplicationService.looksLikeNoiseUtterance("焙烧怎么控制"));
+      assertTrue(ClassAssistantApplicationService.looksLikeContextualFollowUp("那正确率呢"));
+      assertFalse(ClassAssistantApplicationService.looksLikeContextualFollowUp("好的呢"));
+      assertFalse(ClassAssistantApplicationService.looksLikeContextualFollowUp("知道了吗"));
+    }
+
+    @Test
+    void followUpUsesRecentContext() {
+      assertTrue(ClassAssistantApplicationService.looksLikeContextualFollowUp("那正确率呢"));
+      assertTrue(ClassAssistantApplicationService.looksLikeContextualFollowUp("还有吗"));
+      Map<String, Object> body = new java.util.LinkedHashMap<>();
+      body.put("text", "那正确率呢");
+      body.put("recentMessages", java.util.List.of(
+          java.util.Map.of("role", "user", "content", "我有多少错题"),
+          java.util.Map.of("role", "assistant", "content", "错题本约 54 题")
+      ));
+      String expanded = ClassAssistantApplicationService.expandFollowUpWithRecentContext("那正确率呢", body);
+      assertTrue(expanded.contains("承接上文"));
+      assertTrue(expanded.contains("错题") || expanded.contains("正确率") || expanded.contains("54"));
+      assertEquals(null,
+          ClassAssistantApplicationService.softRouteStudentFreeForm(
+              "然后呢（承接上文：电解槽焙烧温度多少）"));
     }
   }
 }
