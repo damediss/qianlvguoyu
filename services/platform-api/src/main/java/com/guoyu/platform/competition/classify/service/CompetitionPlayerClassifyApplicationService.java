@@ -126,25 +126,23 @@ public class CompetitionPlayerClassifyApplicationService {
 
     List<Long> shuffled = new ArrayList<>(selectedIds);
     Collections.shuffle(shuffled, RANDOM);
-    List<Integer> sizes = CompetitionPlayerClassifyPlan.balancedSizes(shuffled.size(), typeNames.size());
+    List<Integer> typeIndexes = CompetitionPlayerClassifyPlan.shuffledTypeIndexes(
+        shuffled.size(), typeNames.size(), RANDOM);
     Map<Long, CompetitionStagePaperAssignmentPlayerVO> candidateById = candidateMap(stageId);
     List<CompetitionPlayerClassifyAssignmentVO> assignments = new ArrayList<>(shuffled.size());
-    int cursor = 0;
-    for (int typeIndex = 0; typeIndex < typeNames.size(); typeIndex++) {
-      int size = sizes.get(typeIndex);
-      for (int order = 1; order <= size; order++) {
-        Long profileId = shuffled.get(cursor++);
-        CompetitionStagePaperAssignmentPlayerVO candidate = candidateById.get(profileId);
-        assignments.add(new CompetitionPlayerClassifyAssignmentVO(
-            String.valueOf(profileId),
-            candidate == null ? null : candidate.contestantNo(),
-            candidate == null ? null : candidate.name(),
-            candidate == null || candidate.orgName() == null || candidate.orgName().isBlank()
-                ? "未填写参赛公司" : candidate.orgName().trim(),
-            typeIndex + 1,
-            typeNames.get(typeIndex),
-            order));
-      }
+    for (int position = 0; position < shuffled.size(); position++) {
+      Long profileId = shuffled.get(position);
+      int typeIndex = typeIndexes.get(position);
+      CompetitionStagePaperAssignmentPlayerVO candidate = candidateById.get(profileId);
+      assignments.add(new CompetitionPlayerClassifyAssignmentVO(
+          String.valueOf(profileId),
+          candidate == null ? null : candidate.contestantNo(),
+          candidate == null ? null : candidate.name(),
+          candidate == null || candidate.orgName() == null || candidate.orgName().isBlank()
+              ? "未填写参赛公司" : candidate.orgName().trim(),
+          typeIndex + 1,
+          typeNames.get(typeIndex),
+          position + 1));
     }
 
     PlatformUserPrincipal principal = currentUser();
@@ -247,12 +245,9 @@ public class CompetitionPlayerClassifyApplicationService {
     List<CompetitionPlayerClassifyAssignmentVO> assignments = includeAssignments
         ? readAssignments(entity.getResultSnapshotJson())
         : List.of();
-    List<Integer> typeSizes = List.of();
     Integer playerCount = entity.getPlayerCount();
     Integer typeCount = entity.getTypeCount();
-    if (playerCount != null && typeCount != null && typeCount >= 1 && typeCount <= playerCount) {
-      typeSizes = CompetitionPlayerClassifyPlan.balancedSizes(playerCount, typeCount);
-    }
+    List<Integer> typeSizes = typeSizesOf(playerCount, typeCount, assignments);
     return new CompetitionPlayerClassifyTaskVO(
         String.valueOf(entity.getId()),
         String.valueOf(entity.getEventId()),
@@ -265,6 +260,33 @@ public class CompetitionPlayerClassifyApplicationService {
         typeNames,
         typeSizes,
         assignments);
+  }
+
+  private List<Integer> typeSizesOf(
+      Integer playerCount,
+      Integer typeCount,
+      List<CompetitionPlayerClassifyAssignmentVO> assignments) {
+    if (typeCount == null || typeCount < 1) {
+      return List.of();
+    }
+    if (assignments != null && !assignments.isEmpty()) {
+      int[] counts = new int[typeCount];
+      for (CompetitionPlayerClassifyAssignmentVO assignment : assignments) {
+        int index = assignment.typeIndex() - 1;
+        if (index >= 0 && index < typeCount) {
+          counts[index]++;
+        }
+      }
+      List<Integer> sizes = new ArrayList<>(typeCount);
+      for (int count : counts) {
+        sizes.add(count);
+      }
+      return List.copyOf(sizes);
+    }
+    if (playerCount == null || playerCount < 1 || typeCount > playerCount) {
+      return List.of();
+    }
+    return CompetitionPlayerClassifyPlan.balancedSizes(playerCount, typeCount);
   }
 
   private List<String> readTypeNames(String json) {

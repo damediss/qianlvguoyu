@@ -20,9 +20,7 @@ public class CompetitionPlayerClassifyWorkbookExportService {
       throw new BusinessException(ErrorCode.UNPROCESSABLE_ENTITY, "分类结果不完整，无法导出");
     }
     List<CompetitionPlayerClassifyAssignmentVO> ordered = assignments.stream()
-        .sorted(Comparator
-            .comparingInt(CompetitionPlayerClassifyAssignmentVO::typeIndex)
-            .thenComparingInt(CompetitionPlayerClassifyAssignmentVO::orderInType))
+        .sorted(displayOrder(assignments))
         .toList();
     try (XSSFWorkbook workbook = new XSSFWorkbook();
         ByteArrayOutputStream output = new ByteArrayOutputStream()) {
@@ -31,19 +29,19 @@ public class CompetitionPlayerClassifyWorkbookExportService {
       title.createCell(0).setCellValue(
           (stageName == null || stageName.isBlank() ? "赛段" : stageName.trim()) + " 排序分类");
       Row header = sheet.createRow(1);
-      String[] columns = {"分类", "类型内顺序", "姓名", "参赛公司"};
+      String[] columns = {"顺序", "姓名", "分类", "参赛公司"};
       for (int index = 0; index < columns.length; index++) {
         header.createCell(index).setCellValue(columns[index]);
       }
       int rowIndex = 2;
       for (CompetitionPlayerClassifyAssignmentVO assignment : ordered) {
         Row row = sheet.createRow(rowIndex++);
-        row.createCell(0).setCellValue(text(assignment.typeName()));
-        row.createCell(1).setCellValue(assignment.orderInType());
-        row.createCell(2).setCellValue(text(assignment.name()));
+        row.createCell(0).setCellValue(assignment.orderInType());
+        row.createCell(1).setCellValue(text(assignment.name()));
+        row.createCell(2).setCellValue(text(assignment.typeName()));
         row.createCell(3).setCellValue(text(assignment.orgName()));
       }
-      int[] widths = {24, 14, 16, 36};
+      int[] widths = {12, 16, 24, 36};
       for (int index = 0; index < widths.length; index++) {
         sheet.setColumnWidth(index, widths[index] * 256);
       }
@@ -52,6 +50,29 @@ public class CompetitionPlayerClassifyWorkbookExportService {
     } catch (IOException ex) {
       throw new BusinessException(ErrorCode.INTERNAL_ERROR, "排序分类 Excel 生成失败");
     }
+  }
+
+  private Comparator<CompetitionPlayerClassifyAssignmentVO> displayOrder(
+      List<CompetitionPlayerClassifyAssignmentVO> assignments) {
+    if (isGlobalSequence(assignments)) {
+      return Comparator.comparingInt(CompetitionPlayerClassifyAssignmentVO::orderInType);
+    }
+    return Comparator
+        .comparingInt(CompetitionPlayerClassifyAssignmentVO::typeIndex)
+        .thenComparingInt(CompetitionPlayerClassifyAssignmentVO::orderInType);
+  }
+
+  /** 新结果的顺序是不重复的 1..N。旧结果的顺序在每个类型内各自从 1 开始。 */
+  private boolean isGlobalSequence(List<CompetitionPlayerClassifyAssignmentVO> assignments) {
+    boolean[] seen = new boolean[assignments.size()];
+    for (CompetitionPlayerClassifyAssignmentVO assignment : assignments) {
+      int order = assignment.orderInType();
+      if (order < 1 || order > assignments.size() || seen[order - 1]) {
+        return false;
+      }
+      seen[order - 1] = true;
+    }
+    return true;
   }
 
   private String text(String value) {

@@ -11,7 +11,6 @@ import {
   Card,
   Input,
   Modal,
-  Pagination,
   Popconfirm,
   Result,
   Select,
@@ -72,12 +71,23 @@ function errorText(error: unknown, fallback: string) {
   return error instanceof Error && error.message.trim() ? error.message : fallback;
 }
 
-/** 与后端 CompetitionPlayerClassifyPlan 一致：不能整除时，靠前的类型各多 1 人。 */
+/** 与后端 CompetitionPlayerClassifyPlan 一致：均分人数，不能整除时靠前的类型各多 1 人。 */
 function balancedSizes(playerCount: number, typeCount: number) {
   if (playerCount < 1 || typeCount < 1 || typeCount > playerCount) return [];
   const base = Math.floor(playerCount / typeCount);
   const extra = playerCount % typeCount;
   return Array.from({ length: typeCount }, (_, index) => base + (index < extra ? 1 : 0));
+}
+
+function isGlobalSequence(assignments: CompetitionPlayerClassifyAssignment[]) {
+  const seen = new Set<number>();
+  for (const item of assignments) {
+    if (item.orderInType < 1 || item.orderInType > assignments.length || seen.has(item.orderInType)) {
+      return false;
+    }
+    seen.add(item.orderInType);
+  }
+  return assignments.length > 0;
 }
 
 function allocationText(typeNames: string[], sizes: number[]) {
@@ -103,7 +113,6 @@ function CompetitionPlayerClassifyPage({ stageId, stageName }: CompetitionPlayer
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [keyword, setKeyword] = useState('');
   const [viewingId, setViewingId] = useState<string>();
-  const [typePage, setTypePage] = useState(1);
 
   const tasksQuery = useQuery({
     queryKey: ['competition-player-classify-tasks', stageId, page, pageSize],
@@ -173,7 +182,6 @@ function CompetitionPlayerClassifyPage({ stageId, stageName }: CompetitionPlayer
       void queryClient.invalidateQueries({ queryKey: ['competition-player-classify-tasks', stageId] });
       setWizardOpen(false);
       resetWizard();
-      setTypePage(1);
       setViewingId(idValue(task.id));
     },
     onError: (error) => message.error(errorText(error, '排序分类失败')),
@@ -199,19 +207,21 @@ function CompetitionPlayerClassifyPage({ stageId, stageName }: CompetitionPlayer
 
   const detail = detailQuery.data;
   const detailTypes = detail?.typeNames || [];
-  const currentTypeName = detailTypes[typePage - 1];
-  const currentAssignments = (detail?.assignments || [])
-    .filter((item) => item.typeIndex === typePage)
-    .slice()
-    .sort((left, right) => left.orderInType - right.orderInType);
+  const sourceAssignments = detail?.assignments || [];
+  const globalSequence = isGlobalSequence(sourceAssignments);
+  const orderedAssignments = sourceAssignments.slice().sort((left, right) => (
+    globalSequence
+      ? left.orderInType - right.orderInType
+      : left.typeIndex - right.typeIndex || left.orderInType - right.orderInType
+  ));
 
   return (
     <Space direction="vertical" size={16} style={{ width: '100%' }}>
       <Alert
         type="info"
         showIcon
-        message="人数不能被类型数整除时，按类型填写顺序，靠前的类型各多 1 人。"
-        description="例如 32 名选手、3 个类型，结果是 11、11、10。任意两个类型最多相差 1 人。类型数不能多于选手人数，避免出现空类型。"
+        message="出场顺序是 1 到选手人数。各类型人数尽量均分，类型在顺序里的位置随机打乱。"
+        description="例如 32 人、2 个类型时各 16 人，但不会固定成甲、乙、甲、乙。人数不能整除时，靠前的类型各多 1 人，任意两个类型最多相差 1 人。"
       />
       <Card
         bordered={false}
@@ -263,10 +273,7 @@ function CompetitionPlayerClassifyPage({ stageId, stageName }: CompetitionPlayer
                 <Space>
                   <Button
                     type="link"
-                    onClick={() => {
-                      setTypePage(1);
-                      setViewingId(idValue(record.id));
-                    }}
+                    onClick={() => setViewingId(idValue(record.id))}
                   >查看</Button>
                   <Button
                     type="link"
@@ -323,7 +330,7 @@ function CompetitionPlayerClassifyPage({ stageId, stageName }: CompetitionPlayer
       >
         <Steps
           current={wizardStep}
-          items={[{ title: '新增类型' }, { title: '选择选手' }, { title: '确认均分' }]}
+          items={[{ title: '新增类型' }, { title: '选择选手' }, { title: '确认分配' }]}
           style={{ marginBottom: 24 }}
         />
         {wizardStep === 0 && (
@@ -415,8 +422,8 @@ function CompetitionPlayerClassifyPage({ stageId, stageName }: CompetitionPlayer
               showIcon
               message={allocationText(typeNames, sizes)}
               description={selectedIds.length % typeNames.length === 0
-                ? '人数可以被类型数整除，每个类型人数相同。确认后会先打乱选手，再按这个人数切分，类型内顺序即为随机出场顺序。'
-                : `多出的 ${selectedIds.length % typeNames.length} 人按类型填写顺序分给靠前的类型，每个类型最多比其他类型多 1 人。确认后会先打乱选手，再按这个人数切分。`}
+                ? '人数可以被类型数整除，每个类型人数相同。确认后会打乱选手，并把均分后的类型名额再打乱，排成 1 到人数的出场顺序。'
+                : `多出的 ${selectedIds.length % typeNames.length} 人分给靠前的类型，每个类型最多比其他类型多 1 人。确认后会打乱选手，并把均分后的类型名额再打乱。`}
             />
             {typeNames.map((name, index) => (
               <Card key={name} size="small" title={`${name} · ${sizes[index] ?? 0} 人`} />
@@ -442,35 +449,27 @@ function CompetitionPlayerClassifyPage({ stageId, stageName }: CompetitionPlayer
               type="info"
               showIcon
               message={allocationText(detailTypes, detail.typeSizes || [])}
-              description="每次只展示一个类型，避免不同分类的选手混在一起。类型内顺序是随机打乱后的出场顺序。"
+              description="顺序是 1 到选手人数。各类型人数尽量均分，类型出现的位置是随机的。"
             />
             <Space align="center" style={{ width: '100%', justifyContent: 'space-between' }}>
               <Typography.Title level={4} style={{ margin: 0 }}>
-                {currentTypeName || '分类'} · {currentAssignments.length} 人
+                出场顺序 · {orderedAssignments.length} 人
               </Typography.Title>
-              <Space>
-                <Button
-                  icon={<DownloadOutlined />}
-                  loading={downloadMutation.isPending}
-                  onClick={() => viewingId && downloadMutation.mutate(viewingId)}
-                >导出 Excel</Button>
-                <Pagination
-                  simple
-                  current={typePage}
-                  pageSize={1}
-                  total={Math.max(detailTypes.length, 1)}
-                  onChange={setTypePage}
-                />
-              </Space>
+              <Button
+                icon={<DownloadOutlined />}
+                loading={downloadMutation.isPending}
+                onClick={() => viewingId && downloadMutation.mutate(viewingId)}
+              >导出 Excel</Button>
             </Space>
             <Table<CompetitionPlayerClassifyAssignment>
               rowKey={(record) => idValue(record.contestantProfileId)}
-              dataSource={currentAssignments}
-              pagination={false}
-              locale={{ emptyText: '这个类型没有选手' }}
+              dataSource={orderedAssignments}
+              pagination={{ pageSize: 50, showSizeChanger: true, pageSizeOptions: [20, 50, 100] }}
+              locale={{ emptyText: '还没有分类结果' }}
               columns={[
-                { title: '类型内顺序', dataIndex: 'orderInType', width: 120 },
+                { title: '顺序', dataIndex: 'orderInType', width: 90 },
                 { title: '姓名', dataIndex: 'name', width: 160, render: (value?: string | null) => value || '-' },
+                { title: '分类', dataIndex: 'typeName', width: 180, render: (value?: string | null) => value || '-' },
                 { title: '参赛公司', dataIndex: 'orgName', render: (value?: string | null) => value || '-' },
               ]}
             />
