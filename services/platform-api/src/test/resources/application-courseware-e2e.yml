@@ -9,9 +9,9 @@ server:
 spring:
   datasource:
     type: com.alibaba.druid.pool.DruidDataSource
-    url: ${MYSQL_URL:jdbc:mysql://43.138.163.7:3308/gjjddb2026?useUnicode=true&characterEncoding=utf8&useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Shanghai&connectTimeout=5000&socketTimeout=60000&tcpKeepAlive=true}
-    username: ${MYSQL_USERNAME:gjjd}
-    password: "${MYSQL_PASSWORD:w-#Y+=g7jdsJLjD8}"
+    url: ${MYSQL_URL:}
+    username: ${MYSQL_USERNAME:}
+    password: ${MYSQL_PASSWORD:}
     driver-class-name: com.mysql.cj.jdbc.Driver
     druid:
       initial-size: 2

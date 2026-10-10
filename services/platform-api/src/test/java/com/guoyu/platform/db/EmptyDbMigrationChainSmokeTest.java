@@ -21,17 +21,17 @@ import org.junit.jupiter.api.condition.EnabledIfSystemProperty;
 @EnabledIfSystemProperty(named = "emptyDbSmoke", matches = "true")
 class EmptyDbMigrationChainSmokeTest {
 
-  private static final String DEFAULT_URL =
-      "jdbc:mysql://43.138.163.7:3308/gjjddb_empty_check?useUnicode=true&characterEncoding=utf8"
-          + "&useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Shanghai";
-
-  @Test
+  private static final String DEFAULT_URL = System.getenv().getOrDefault("EMPTY_DB_URL", "");
+@Test
   @DisplayName("真空库全量迁移链必须跑通")
   void emptyDatabaseRunsFullMigrationChain() {
     String url = System.getenv().getOrDefault("EMPTY_DB_URL", DEFAULT_URL);
-    String user = System.getenv().getOrDefault("EMPTY_DB_USER", "gjjd");
-    String password = System.getenv().getOrDefault("EMPTY_DB_PASSWORD", "w-#Y+=g7jdsJLjD8");
+    String user = System.getenv().getOrDefault("EMPTY_DB_USER", "");
+    String password = System.getenv().getOrDefault("EMPTY_DB_PASSWORD", "");
 
+    if (url.isBlank() || user.isBlank() || password.isBlank()) {
+      throw new IllegalStateException("Set EMPTY_DB_URL, EMPTY_DB_USER, and EMPTY_DB_PASSWORD before enabling this smoke test.");
+    }
     Flyway flyway = Flyway.configure()
         .dataSource(url, user, password)
         .locations("classpath:db/migration")

@@ -307,7 +307,7 @@ export function MaterialWorkspacePanel({
     }
     const isWord =
       !spreadsheet
-      && (wordDoc || sniffedKind === 'docx' || item.materialType === 'application_form');
+      && (wordDoc || item.materialType === 'application_form');
     if (isWord) {
       // 已确认 OnlyOffice 不可用 → 字段编辑；否则优先进在线排版（失败再回退）
       setWordEditorMode(onlyOfficeChecked && !onlyOfficeAvailable ? 'meta' : 'office');

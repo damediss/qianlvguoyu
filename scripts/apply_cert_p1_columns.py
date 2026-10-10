@@ -1,12 +1,13 @@
 # -*- coding: utf-8 -*-
+import os
 import pymysql
 
 conn = pymysql.connect(
-    host="43.138.163.7",
-    port=3308,
-    user="gjjd",
-    password="w-#Y+=g7jdsJLjD8",
-    database="gjjddb2026",
+    host=os.environ["MYSQL_HOST"],
+    port=int(os.environ.get("MYSQL_PORT", "3306")),
+    user=os.environ["MYSQL_USERNAME"],
+    password=os.environ["MYSQL_PASSWORD"],
+    database=os.environ["MYSQL_DATABASE"],
     charset="utf8mb4",
 )
 cur = conn.cursor()
