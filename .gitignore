@@ -1,2 +1,85 @@
-# Required workspace-policy exclusion: stale duplicate repository.
-/qianlvguoyu_saas-git-dev/
+.DS_Store
+.codex_tmp/
+
+# Local/editor files
+.idea/
+.vscode/
+.qoder/
+.zcode/
+AGENTS.local.md
+# WorkBuddy 智能体的项目记忆目录（本地会话记忆，属机器本地数据，不入库）
+.workbuddy/
+*.swp
+*.tmp
+
+# Windows 设备名误建的文件：Git Bash 里 `2> nul` / `> nul` 会生成真的 nul 文件
+nul
+NUL
+
+# Environment and secrets
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+
+# Node / frontend
+node_modules/
+dist/
+build/
+.next/
+.vite/
+coverage/
+*.tsbuildinfo
+
+# Java / backend
+target/
+.gradle/
+build/
+out/
+
+# Spring Boot fat jar 解压产物 (jar -xf 不小心会泄到根目录)
+BOOT-INF/
+META-INF/
+org/
+# Spring Boot extension registrations under source resources are real source files.
+!services/platform-api/src/main/resources/META-INF/
+services/platform-api/src/main/resources/META-INF/*
+!services/platform-api/src/main/resources/META-INF/spring.factories
+
+# Logs and runtime
+*.log
+logs/
+tmp/
+
+# Generated artifacts can be recreated; keep curated files explicitly if needed.
+outputs/**/.cache/
+
+# Local caches
+.m2/
+.npm-cache/
+/data/cdn/
+/infra/
+/app-stderr.log
+/app-stdout.log
+/app-web-stderr.log
+/app-web-stdout.log
+/deliverable-backend.md
+/deliverable-frontend.md
+/deliverable-frontend.previous.md
+/deliverable-frontend-build.log
+/deliverable-frontend-build2.log
+/deliverable-frontend-build3.log
+/deliverable-frontend-tsc.log
+/deliverable-frontend-vite.log
+/.mavis/
+/outputs/
+!/outputs/README.md
+*.err
+
+# Playwright 测试产物
+apps/admin-web/test-results/
+apps/admin-web/playwright-report/
+
+# 本地运行时文件存储(platform.file.local-root 默认落点)
+storage/

@@ -1,0 +1,556 @@
+body.defense-review-portrait {
+  min-width: 0 !important;
+  width: 100% !important;
+  background: #0f172a;
+}
+
+html:has(body.defense-review-portrait),
+body.defense-review-portrait #root {
+  min-width: 0 !important;
+  width: 100%;
+}
+
+.defense-phone-shell {
+  display: flex;
+  flex-direction: column;
+  width: min(720px, 100vw);
+  height: 100vh;
+  height: 100dvh;
+  max-height: 100vh;
+  max-height: 100dvh;
+  overflow: hidden;
+  margin: 0 auto;
+  background: #eef3f8;
+  color: #172033;
+}
+
+.defense-phone-header,
+.defense-phone-footer {
+  z-index: 20;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  background: rgba(255, 255, 255, 0.97);
+}
+
+.defense-phone-header {
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 16px;
+  padding-top: calc(14px + env(safe-area-inset-top));
+  border-bottom: 1px solid #dbe4ee;
+}
+
+.defense-phone-footer {
+  justify-content: stretch;
+  gap: 8px;
+  padding: 8px 12px calc(8px + env(safe-area-inset-bottom));
+  border-top: 1px solid #dbe4ee;
+}
+
+.defense-phone-footer .ant-btn {
+  flex: 1;
+  height: 36px;
+  padding: 0 10px;
+  font-size: 14px;
+}
+
+.defense-phone-title {
+  flex: 1;
+  min-width: 0;
+}
+
+.defense-phone-header h4.ant-typography {
+  margin: 0;
+}
+
+.defense-phone-actions {
+  display: flex;
+  flex-shrink: 0;
+  gap: 8px;
+}
+
+.defense-phone-back {
+  flex-shrink: 0;
+  height: 36px;
+  padding: 0 10px;
+}
+
+.defense-phone-list,
+.defense-phone-reader {
+  flex: 1;
+  min-height: 0;
+  padding: 12px 12px calc(16px + env(safe-area-inset-bottom));
+}
+
+.defense-phone-list {
+  overflow: auto;
+}
+
+.defense-phone-lanes {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.defense-phone-lane .ant-list-items {
+  display: flex;
+  flex-direction: column;
+}
+
+.defense-phone-lane-bar {
+  position: sticky;
+  top: 0;
+  z-index: 6;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 40px;
+  padding: 0 14px;
+  margin-bottom: 10px;
+  border-radius: 10px;
+  color: #fff;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  box-shadow: 0 6px 16px rgba(15, 23, 42, 0.16);
+}
+
+.defense-phone-lane-label {
+  font-size: 15px;
+}
+
+.defense-phone-lane-count {
+  font-size: 13px;
+  letter-spacing: 0;
+  font-weight: 600;
+  opacity: 0.92;
+}
+
+.defense-phone-lane-senior_technician .defense-phone-lane-bar {
+  background: linear-gradient(90deg, #9a3412 0%, #ea580c 100%);
+}
+
+.defense-phone-lane-technician .defense-phone-lane-bar {
+  background: linear-gradient(90deg, #1d4ed8 0%, #2563eb 100%);
+}
+
+.defense-phone-lane-empty {
+  padding: 18px 12px;
+  margin-bottom: 4px;
+  border: 1px dashed #c5d0dc;
+  border-radius: 12px;
+  color: #64748b;
+  text-align: center;
+  background: rgba(255, 255, 255, 0.7);
+}
+
+.defense-phone-reader {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  padding-bottom: 0;
+}
+
+.defense-phone-card {
+  align-items: center !important;
+  gap: 12px;
+  padding: 16px !important;
+  margin-bottom: 10px;
+  border: 1px solid #dbe4ee !important;
+  border-radius: 16px;
+  background: #fff;
+}
+
+.defense-phone-card .ant-list-item-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.defense-phone-card-main {
+  min-width: 0;
+}
+
+.defense-phone-card .ant-list-item-extra {
+  margin-inline-start: 0;
+}
+
+.defense-phone-card h5.ant-typography {
+  margin: 0 0 4px;
+}
+
+.defense-phone-card-actions {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.defense-phone-card-actions .ant-btn {
+  height: 40px;
+  min-width: 96px;
+  padding: 0 12px;
+}
+
+.defense-phone-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 8px 0;
+}
+
+.defense-phone-candidate {
+  margin-bottom: 12px;
+}
+
+.defense-phone-candidate h3.ant-typography {
+  margin: 0 0 4px;
+}
+
+.defense-pdf-wrap {
+  position: relative;
+  display: flex;
+  flex: 1;
+  width: 100%;
+  min-width: 0;
+  min-height: 0;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid #dbe4ee;
+  border-radius: 16px;
+  background: #525659;
+}
+
+.defense-pdf-pages-wrap {
+  position: relative;
+  display: flex;
+  flex: 1;
+  width: 100%;
+  min-width: 0;
+  min-height: 0;
+  flex-direction: column;
+}
+
+.defense-pdf-pages {
+  flex: 1;
+  width: 100%;
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+  background: #525659;
+}
+
+.defense-pdf-page {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  margin: 0 auto 8px;
+  background: #fff;
+}
+
+.defense-pdf-loading {
+  position: absolute;
+  z-index: 1;
+  top: 24px;
+  left: 50%;
+  transform: translateX(-50%);
+}
+
+.defense-phone-spin {
+  display: block;
+  margin: 48px auto;
+}
+
+@media (orientation: landscape) {
+  .defense-phone-shell::after {
+    position: fixed;
+    z-index: 40;
+    right: 12px;
+    bottom: 12px;
+    padding: 8px 12px;
+    border-radius: 999px;
+    background: rgba(15, 23, 42, 0.85);
+    color: #fff;
+    font-size: 12px;
+    content: '请竖屏阅览业绩评估报告';
+    pointer-events: none;
+  }
+
+  .defense-phone-shell-score::after {
+    content: none;
+  }
+}
+
+.defense-phone-shell-score {
+  width: min(720px, 100vw);
+}
+
+.defense-score-page {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.defense-score-toolbar {
+  flex-shrink: 0;
+  padding: 8px 12px 0;
+}
+
+.defense-score-toolbar .defense-phone-candidate {
+  margin-bottom: 0;
+}
+
+.defense-score-toolbar .defense-phone-candidate h3.ant-typography {
+  margin: 0;
+  font-size: 20px;
+  line-height: 1.3;
+}
+
+.defense-score-toolbar .ant-tabs {
+  margin-bottom: 0;
+}
+
+.defense-score-toolbar .ant-tabs-nav {
+  margin-bottom: 0;
+}
+
+.defense-score-toolbar .ant-tabs-tab {
+  padding-top: 4px;
+  padding-bottom: 8px;
+}
+
+.defense-score-tab-tag {
+  margin-inline-start: 6px;
+}
+
+.defense-score-body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  -webkit-overflow-scrolling: touch;
+  padding: 8px 12px 12px;
+}
+
+.defense-score-actions {
+  z-index: 20;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px calc(8px + env(safe-area-inset-bottom));
+  border-top: 1px solid #dbe4ee;
+  background: rgba(255, 255, 255, 0.97);
+}
+
+.defense-score-actions .ant-btn {
+  height: 36px;
+  padding: 0 10px;
+  font-size: 14px;
+}
+
+.defense-score-actions-score {
+  flex: 1;
+  min-width: 0;
+  color: #334155;
+}
+
+.defense-score-actions-score span {
+  display: block;
+  font-size: 12px;
+}
+
+.defense-score-actions-score strong {
+  font-size: 20px;
+  line-height: 1.1;
+  color: #0f172a;
+}
+
+.defense-paper {
+  padding: 12px 10px 16px;
+  border: 1px solid #1f2937;
+  background: #fffdf7;
+  color: #111827;
+}
+
+.defense-paper-title {
+  margin: 0 0 6px;
+  text-align: center;
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: 1px;
+}
+
+.defense-paper-meta {
+  margin: 0 0 10px;
+  text-align: center;
+  font-size: 12px;
+  color: #334155;
+}
+
+.defense-paper-meta-gap {
+  margin-left: 18px;
+}
+
+.defense-paper-table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+  background: #fff;
+}
+
+.defense-paper-table th,
+.defense-paper-table td {
+  border: 1px solid #111827;
+  padding: 6px 6px;
+  font-size: 12px;
+  line-height: 1.45;
+  vertical-align: middle;
+  word-break: break-word;
+}
+
+.defense-paper-table th {
+  font-weight: 700;
+  background: #f8fafc;
+  text-align: center;
+}
+
+.defense-paper-section {
+  writing-mode: vertical-rl;
+  letter-spacing: 2px;
+  font-size: 13px;
+}
+
+.defense-paper-section span {
+  display: inline;
+  letter-spacing: 0;
+}
+
+.defense-paper-category {
+  text-align: center;
+  letter-spacing: 1px;
+  line-height: 1.45;
+  white-space: normal;
+}
+
+.defense-paper-category span {
+  display: block;
+  margin-top: 4px;
+  letter-spacing: 0;
+  font-weight: 600;
+}
+
+.defense-paper-center {
+  text-align: center;
+  font-weight: 600;
+}
+
+.defense-paper-ticket {
+  white-space: nowrap;
+  letter-spacing: 0.04em;
+  font-variant-numeric: tabular-nums;
+}
+
+.defense-paper-subtotal th,
+.defense-paper-subtotal td,
+.defense-paper-final th,
+.defense-paper-final td {
+  background: #f1f5f9;
+  font-weight: 700;
+}
+
+.defense-paper-subtotal .defense-paper-criteria {
+  font-weight: 400;
+}
+
+.defense-paper-rejects {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  text-align: left;
+}
+
+.defense-paper-score {
+  width: 100%;
+}
+
+.defense-paper-score .ant-select-selector {
+  min-height: 32px !important;
+}
+
+.defense-paper-criteria {
+  text-align: left;
+  font-weight: 400;
+  font-size: 11px;
+  line-height: 1.55;
+  color: #1f2937;
+  vertical-align: top;
+}
+
+.defense-paper-disqualify {
+  display: block;
+  margin-top: 8px;
+  color: #b91c1c;
+  font-size: 12px;
+}
+
+.defense-paper-disqualify .ant-checkbox-wrapper {
+  white-space: normal;
+  color: #b91c1c;
+}
+
+.defense-paper-subtotal.is-rejected th,
+.defense-paper-subtotal.is-rejected td {
+  background: #fef2f2;
+  color: #991b1b;
+}
+
+.defense-sign-pad,
+.defense-sign-native,
+.defense-sign-preview {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.defense-sign-canvas-host {
+  position: relative;
+  width: 100%;
+  height: 200px;
+  overflow: hidden;
+  border: 1px dashed #94a3b8;
+  background: #fff;
+  touch-action: none;
+}
+
+.defense-sign-canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  touch-action: none;
+}
+
+.defense-sign-hint {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  color: #94a3b8;
+  pointer-events: none;
+}
+
+.defense-sign-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.defense-sign-preview img {
+  max-width: 100%;
+  max-height: 180px;
+  object-fit: contain;
+  background: #fff;
+}

@@ -1,0 +1,11 @@
+course_kejian
+demand_train
+exam_operate_paper
+exam_user_auth_course
+task_ximu_audit_records
+train_class_list
+train_declare
+train_people_list
+train_sign_up_people_self
+train_task_log
+train_teacher_bank

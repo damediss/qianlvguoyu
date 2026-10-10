@@ -1,0 +1,81 @@
+package com.guoyu.platform.app.exam.service;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyBoolean;
+import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
+
+import com.guoyu.platform.ai.infrastructure.FaqLlmClient;
+import com.guoyu.platform.ai.mapper.AiGenerationDraftMapper;
+import com.guoyu.platform.common.tenant.TenantContextHolder;
+import com.guoyu.platform.exam.entity.ExamExamDetailEntity;
+import com.guoyu.platform.exam.entity.ExamFaqModelConfigEntity;
+import com.guoyu.platform.exam.mapper.ExamExamDetailMapper;
+import com.guoyu.platform.exam.service.FaqModelConfigApplicationService;
+import com.guoyu.platform.system.mapper.DictMapper;
+import com.guoyu.platform.trainingdepartment.dto.FollowTaskQuestionReq;
+import com.guoyu.platform.trainingdepartment.support.FollowTaskBankQuestionConverter;
+import java.util.List;
+import java.util.Map;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.Test;
+
+/** 题目解析 LLM 调用参数：thinking 必须取模型配置（禁用思考防思维链吃光 max_tokens），maxTokens=800 */
+class QuestionResolveThinkingTest {
+
+  @AfterEach
+  void tearDown() {
+    TenantContextHolder.clear();
+  }
+
+  @Test
+  void thinkingAndMaxTokensComeFromConfig() {
+    ExamExamDetailMapper examDetailMapper = mock(ExamExamDetailMapper.class);
+    FollowTaskBankQuestionConverter converter = mock(FollowTaskBankQuestionConverter.class);
+    FaqLlmClient llmClient = mock(FaqLlmClient.class);
+    FaqModelConfigApplicationService modelConfigService = mock(FaqModelConfigApplicationService.class);
+    DictMapper dictMapper = mock(DictMapper.class);
+    AiGenerationDraftMapper draftMapper = mock(AiGenerationDraftMapper.class);
+    QuestionResolveAssistService service = new QuestionResolveAssistService(
+        examDetailMapper, converter, llmClient, modelConfigService, dictMapper, draftMapper);
+
+    ExamExamDetailEntity detail = new ExamExamDetailEntity();
+    detail.setId(1);
+    detail.setDeleted(0);
+    detail.setType("single");
+    detail.setContent("题干内容");
+    detail.setAnswer("A");
+    when(examDetailMapper.selectById(1)).thenReturn(detail);
+    when(draftMapper.selectOne(any())).thenReturn(null);
+
+    FollowTaskQuestionReq snap = new FollowTaskQuestionReq();
+    snap.setStem("题干内容");
+    snap.setAnswer("A");
+    when(converter.convert(any(), eq(0))).thenReturn(snap);
+
+    ExamFaqModelConfigEntity config = new ExamFaqModelConfigEntity();
+    config.setBaseUrl("https://api.deepseek.com");
+    config.setApiKey("k");
+    config.setModelId("deepseek-flash");
+    config.setThinking("disabled");
+    config.setReasoningEffort("high");
+    when(dictMapper.selectList(any())).thenReturn(List.of());
+    when(modelConfigService.findByModelCode(10159L, "deepseek-review")).thenReturn(config);
+    when(llmClient.chatCompletion(anyString(), anyString(), anyString(), anyString(), anyString(),
+        anyInt(), any(), any(), anyBoolean(), any())).thenReturn("考点：配料；易错：混淆比例。\n按规程选 A。");
+
+    TenantContextHolder.setTenantId(10159L);
+    Map<String, Object> result = service.ensureResolve(1);
+    assertEquals("ai", result.get("source"));
+
+    verify(llmClient).chatCompletion(
+        eq("https://api.deepseek.com"), eq("k"), eq("deepseek-flash"),
+        anyString(), anyString(),
+        eq(800), eq("disabled"), eq("high"), eq(false), eq(10159L));
+  }
+}

@@ -1,0 +1,104 @@
+package com.guoyu.platform.trainingdepartment.controller;
+
+import com.guoyu.platform.common.api.ApiResponse;
+import com.guoyu.platform.trainingdepartment.dto.SignUpRegisterReq;
+import com.guoyu.platform.trainingdepartment.dto.SignUpMineVO;
+import com.guoyu.platform.trainingdepartment.service.SignUpRegisterTestService;
+import com.guoyu.platform.trainingdepartment.vo.SignUpDetailVO;
+import com.guoyu.platform.trainingdepartment.vo.SignUpRegisterResultVO;
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Pattern;
+import lombok.RequiredArgsConstructor;
+import org.springframework.http.MediaType;
+import org.springframework.validation.annotation.Validated;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RequestPart;
+import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.multipart.MultipartFile;
+
+/**
+ * 扫码信息收集 - 学员端 controller（完整字段版）。
+ *
+ * <p>学员匿名链路（生产功能）：学员扫报名二维码后未登录填写，以身份证号(+部分场景手机号)
+ * 做弱身份校验。本 controller 全部端点在 SecurityConfig 中按精确路径放行（不受
+ * PERMIT_TEST_APIS 开关影响）；同前缀下的管理端端点（TrainSignUpSelfController /
+ * TrainSignUpCollectionController）不在白名单内，走 Sa-Token + @PreAuthorize 保护。
+ * 本地联调如需管理端也匿名访问，设 PERMIT_TEST_APIS=true。
+ */
+@RestController
+@RequestMapping("/training/sign-ups")
+@RequiredArgsConstructor
+@Validated
+public class SignUpRegisterTestController {
+
+  private final SignUpRegisterTestService service;
+
+  @GetMapping("/{id}/detail")
+  public ApiResponse<SignUpDetailVO> detail(
+      @PathVariable Long id,
+      @RequestParam(required = false) String idCardNumber) {
+    return ApiResponse.ok(service.getDetail(id, idCardNumber));
+  }
+
+  /**
+   * 扫码端验证前花名册校验。
+   * requireRoster=true 且 inRoster=false 时 App 不得进入填写页。
+   */
+  @GetMapping("/{id}/roster-check")
+  public ApiResponse<java.util.Map<String, Object>> rosterCheck(
+      @PathVariable Long id,
+      @RequestParam @NotBlank @Pattern(regexp = "^\\d{17}[\\dXx]$") String idCardNumber) {
+    return ApiResponse.ok(service.checkRoster(id, idCardNumber));
+  }
+
+  /** 通用文件上传 - 接收 multipart/form-data 的 file 字段，返回公网 URL */
+  @PostMapping(value = "/upload", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+  public ApiResponse<UploadResultVO> upload(@RequestPart("file") MultipartFile file) {
+    String url = service.uploadFile(file);
+    return ApiResponse.ok(new UploadResultVO(url));
+  }
+
+  /** 提交报名（完整字段） */
+  @PostMapping(value = "/{id}/register", consumes = MediaType.APPLICATION_JSON_VALUE)
+  public ApiResponse<SignUpRegisterResultVO> register(
+      @PathVariable Long id,
+      @Valid @RequestBody SignUpRegisterReq req) {
+    return ApiResponse.ok(service.register(id, req));
+  }
+
+  // ==================== 扫码端·"我的报名" ====================
+
+  /**
+   * 查"我"在该计划下的报名记录。
+   * class_prep：仅身份证（手机号可选，不对花名册手机号做门禁）。
+   * 其它计划：仍要手机号+身份证。
+   */
+  @GetMapping("/{id}/mine")
+  public ApiResponse<SignUpMineVO> findMine(
+      @PathVariable Long id,
+      @RequestParam(required = false) String phone,
+      @RequestParam @NotBlank @Pattern(regexp = "^\\d{17}[\\dXx]$") String idCardNumber) {
+    return ApiResponse.ok(service.findMine(id, phone, idCardNumber));
+  }
+
+  /**
+   * 扫码端"修改我的报名"。class_prep 仅用身份证定位；其它计划仍要 phone+idCard。
+   */
+  @PutMapping(value = "/{id}/mine", consumes = MediaType.APPLICATION_JSON_VALUE)
+  public ApiResponse<SignUpRegisterResultVO> updateMine(
+      @PathVariable Long id,
+      @RequestParam(required = false) String phone,
+      @RequestParam @NotBlank @Pattern(regexp = "^\\d{17}[\\dXx]$") String idCardNumber,
+      @Valid @RequestBody SignUpRegisterReq req) {
+    return ApiResponse.ok(service.updateMine(id, phone, idCardNumber, req));
+  }
+
+  public record UploadResultVO(String url) {}
+}

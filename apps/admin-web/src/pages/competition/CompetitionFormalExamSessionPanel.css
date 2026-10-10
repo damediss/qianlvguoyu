@@ -1,0 +1,71 @@
+.competition-formal-exam-session-panel .ant-modal-body {
+  max-height: calc(100vh - 160px);
+  overflow: auto;
+}
+
+.competition-formal-exam-session-panel__hero {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.competition-formal-exam-session-panel__hero h4 {
+  margin: 0 0 4px;
+}
+
+.competition-formal-exam-session-panel__hero-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.competition-formal-exam-session-panel__times {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  margin-top: 8px;
+  color: #1677ff;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.competition-formal-exam-session-panel__stats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.competition-formal-exam-session-panel__papers {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+}
+
+.competition-formal-exam-session-panel__toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.competition-formal-exam-session-panel__check {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.competition-formal-exam-session-panel__check-ok {
+  color: #389e0d;
+  margin-top: 3px;
+}
+
+.competition-formal-exam-session-panel__check-fail {
+  color: #cf1322;
+  margin-top: 3px;
+}
+
+.competition-formal-exam-session-panel__fail-list {
+  margin: 8px 0 0;
+  padding-left: 18px;
+}

@@ -1,0 +1,378 @@
+server:
+  port: ${SERVER_PORT:8080}
+  # 蓝绿发布（docs/05_decisions/生产服务器蓝绿部署方案.md §5.1）：停机时先排空在途请求再退出
+  shutdown: graceful
+  servlet:
+    context-path: /api
+  forward-headers-strategy: native
+  undertow:
+    max-http-post-size: 1GB
+  tomcat:
+    max-http-form-post-size: 50MB
+
+spring:
+  application:
+    name: platform-api
+  lifecycle:
+    # 配合 server.shutdown=graceful：排空在途请求的最长等待（蓝绿方案 §5.1；服务器 systemd TimeoutStopSec=45 兜底）
+    timeout-per-shutdown-phase: 30s
+  servlet:
+    multipart:
+      enabled: true
+      max-file-size: 1GB
+      max-request-size: 1GB
+  jackson:
+    date-format: yyyy-MM-dd HH:mm:ss
+    serialization:
+      write-dates-as-timestamps: false
+  datasource:
+    type: com.alibaba.druid.pool.DruidDataSource
+    # connectTimeout/socketTimeout/tcpKeepAlive：远程 MySQL 经公网/NAT 时降低 Communications link failure 概率
+    url: ${MYSQL_URL:jdbc:mysql://43.138.163.7:3308/gjjddb2026?useUnicode=true&characterEncoding=utf8&useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Shanghai&connectTimeout=5000&socketTimeout=60000&tcpKeepAlive=true&zeroDateTimeBehavior=convertToNull&rewriteBatchedStatements=true&useServerPrepStmts=false}
+    username: ${MYSQL_USERNAME:gjjd}
+    # 密码含 # 必须加引号，否则 YAML 会把 # 后整段当注释截断
+    password: "${MYSQL_PASSWORD:w-#Y+=g7jdsJLjD8}"
+#    url: jdbc:mysql://192.168.1.200:3308/gjjd_test?useUnicode=true&characterEncoding=utf8&useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Shanghai
+#    username: root
+#    password: guoyu_dev!513
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    druid:
+      initial-size: 2
+      min-idle: 2
+      max-active: 20
+      max-wait: 60000
+#      connection-init-sqls:
+#        - "SET SESSION sql_mode = 'NO_ENGINE_SUBSTITUTION,STRICT_TRANS_TABLES'"
+#        - "SET SESSION time_zone = '+08:00'"
+      # 远程库空闲连接常被 NAT/防火墙在 30~60s 掐断；保活间隔需短于该阈值
+      time-between-eviction-runs-millis: 15000
+      min-evictable-idle-time-millis: 60000
+      max-evictable-idle-time-millis: 180000
+      keep-alive: true
+      keep-alive-between-time-millis: 50000
+      phy-timeout-millis: 600000
+      validation-query: SELECT 1
+      validation-query-timeout: 3
+      test-while-idle: true
+      test-on-borrow: false
+      test-on-return: false
+      pool-prepared-statements: true
+      max-pool-prepared-statement-per-connection-size: 20
+      # 关闭监控统计
+      stat-view-servlet:
+        enabled: false
+      web-stat-filter:
+        enabled: false
+      filters: wall
+      filter:
+        wall:
+          enabled: true
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
+      database: ${REDIS_DATABASE:0}
+      # Redis 命令超时：防止 Redis 不响应时 Lettuce 无限等待，
+      # 进而拖垮 DB 连接池（@CacheEvict 卡住 → 事务不提交 → 连接不释放 → 连接池耗尽）
+      timeout: 3s
+      lettuce:
+        # 连接池：Lettuce 默认单连接非池化，一个操作 hang 会堵全部 Redis 操作
+        pool:
+          max-active: 8
+          max-idle: 8
+          min-idle: 2
+          max-wait: 2000ms
+        # 关闭时等待未完成命令的最长时间
+        shutdown-timeout: 100ms
+  flyway:
+    enabled: true
+    locations: classpath:db/migration,classpath:db/migration-test
+    baseline-on-migrate: true
+    out-of-order: true
+    validate-on-migrate: false
+    # 迁移走独立直连（不进业务 Druid 池）：wall 会拦截历史迁移的 PREPARE 动态 SQL
+    # （双库分叉场景的条件化 DDL 必用此写法，踩坑 #7），空库重建/新环境首次部署必撞。
+    # 引用数据源属性而非写死连接串：各环境（含 prod 外置配置）自动跟随，防配置漂移。
+    # 注意属性名是 user 不是 username：username 会被静默忽略，JDBC 驱动回退 OS 用户名导致 Access denied
+    url: ${spring.datasource.url}
+    user: ${spring.datasource.username}
+    password: ${spring.datasource.password}
+  rabbitmq:
+    publisher-confirm-type: correlated
+    publisher-returns: true
+    template:
+      mandatory: true
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics
+  endpoint:
+    health:
+      probes:
+        enabled: true
+  health:
+    # 竞赛通知等才依赖 Rabbit；本地未起 MQ 时默认不把 rabbit 计入 health，避免整体 DOWN
+    # 需要监控时：RABBIT_HEALTH_ENABLED=true
+    rabbit:
+      enabled: ${RABBIT_HEALTH_ENABLED:false}
+
+mybatis-plus:
+  configuration:
+    map-underscore-to-camel-case: true
+  global-config:
+    db-config:
+      id-type: assign_id
+      logic-delete-field: deleted
+      logic-delete-value: 1
+      logic-not-delete-value: 0
+
+flowable:
+  database-schema-update: ${FLOWABLE_DATABASE_SCHEMA_UPDATE:true}
+  database-type: mysql
+  async-executor-activate: true
+  history-level: full
+  # 关闭 Spring Boot 内置自动部署，避免 ACT_RE_PROCDEF 版本冲突（见 FlowableProcessDeploymentRunner）
+  check-process-definitions: false
+  process-definition-location-prefix: classpath:/workflows/bpmn/
+  process-definition-location-suffixes:
+    - "**.bpmn20.xml"
+
+weknora:
+  base-url: ${WEKNORA_BASE_URL:http://43.138.163.7:8088}
+  channel-id: ${WEKNORA_CHANNEL_ID:aa3a676b-a1cb-4719-8e06-6636932d9bb2}
+  publish-token: ${WEKNORA_PUBLISH_TOKEN:}
+  origin: ${WEKNORA_ORIGIN:http://localhost:5173}
+
+platform:
+  # 理论试题生成（优化方案 v0.3 P3）：块级并发度（2026-09-08 由 5 扩至 50，跑满 glm-5.3-flash
+  # 并发闸口上限；环境变量 PLATFORM_THEORY_GEN_BLOCK_CONCURRENCY 可覆盖）。
+  # 多批次并行共享闸口 50 并发，先到先得。
+  # 自动补跑：单次编排内缺口点最多补跑 4 轮，轮间退避基数如下（第 n 轮退避 n×基数）
+  theory:
+    gen:
+      block-concurrency: ${PLATFORM_THEORY_GEN_BLOCK_CONCURRENCY:50}
+      retry-backoff-base-millis: ${PLATFORM_THEORY_GEN_RETRY_BACKOFF:10000}
+  # 操作技能试题生成（方案 v1.1 T3）：1 考评点 = 1 块（产出 5 题三件套，单块输出体量大），
+  # 块级并发默认 5（可配，受 glm-5.3-flash 全局闸口 50 约束）；自动补跑默认 4 轮，轮间退避同理论口径。
+  skill:
+    gen:
+      batch-concurrency: ${PLATFORM_SKILL_GEN_BATCH_CONCURRENCY:2}
+      block-concurrency: ${PLATFORM_SKILL_GEN_BLOCK_CONCURRENCY:5}
+      retry-backoff-base-millis: ${PLATFORM_SKILL_GEN_RETRY_BACKOFF:10000}
+  # 知识归属修正（方案 v1.2 §7.3）：单行分类并发；失败补跑 3 轮，轮间退避第 n 轮 n×基数。
+  # FIX-12/v1.7：默认 5 → 30（实测基线 2 次调用/秒@并发5、单次约 2.5s、每行 4 次调用；
+  # 3 万行 ≈17h@5 / ≈2.8h@30）。上界为 glm-5.3-flash 全局公平信号量 50（下方 ai.glm-max-concurrency），
+  # 并需给理论/技能试题生成留余量；环境变量 PLATFORM_KNOWLEDGEFIX_LLM_CONCURRENCY 可覆盖。
+  knowledgefix:
+    llm-concurrency: ${PLATFORM_KNOWLEDGEFIX_LLM_CONCURRENCY:30}
+    retry-backoff-base-millis: ${PLATFORM_KNOWLEDGEFIX_RETRY_BACKOFF:5000}
+  # LLM 并发闸口（方案 A，2026-09-08）：glm-5.3-flash 单模型全局在飞调用上限，
+  # 超出排队等待（FaqLlmClient 公平信号量统一执行）；仅此模型受限，
+  # 同账户其它 GLM 模型与其它平台不受影响
+  ai:
+    glm-max-concurrency: ${PLATFORM_AI_GLM_MAX_CONCURRENCY:50}
+  bot:
+    # MCP 与 platform-api 必须配置相同的随机值（至少 32 字符），禁止提交真实密钥。
+    actor-context-secret: ${BOT_ACTOR_CONTEXT_SECRET:}
+  competition:
+    question-import:
+      batch-size: ${COMPETITION_QUESTION_IMPORT_BATCH_SIZE:200}
+    player:
+      sms:
+        code-ttl-seconds: ${COMPETITION_PLAYER_SMS_CODE_TTL_SECONDS:300}
+        resend-cooldown-seconds: ${COMPETITION_PLAYER_SMS_RESEND_COOLDOWN_SECONDS:60}
+        daily-limit-per-mobile: ${COMPETITION_PLAYER_SMS_DAILY_LIMIT_PER_MOBILE:5}
+        daily-limit-per-player: ${COMPETITION_PLAYER_SMS_DAILY_LIMIT_PER_PLAYER:5}
+        max-failed-attempts: ${COMPETITION_PLAYER_SMS_MAX_FAILED_ATTEMPTS:5}
+        lock-seconds: ${COMPETITION_PLAYER_SMS_LOCK_SECONDS:1800}
+        aliyun:
+          enabled: ${COMPETITION_PLAYER_SMS_ALIYUN_ENABLED:false}
+          endpoint: ${COMPETITION_PLAYER_SMS_ALIYUN_ENDPOINT:https://dysmsapi.aliyuncs.com}
+          region-id: ${COMPETITION_PLAYER_SMS_ALIYUN_REGION_ID:cn-hangzhou}
+          sign-name: ${COMPETITION_PLAYER_SMS_ALIYUN_SIGN_NAME:}
+          template-code: ${COMPETITION_PLAYER_SMS_ALIYUN_TEMPLATE_CODE:}
+    messaging:
+      enabled: ${COMPETITION_MESSAGING_ENABLED:false}
+      dispatch-delay-millis: ${COMPETITION_MESSAGING_DISPATCH_DELAY_MILLIS:5000}
+      batch-size: ${COMPETITION_MESSAGING_BATCH_SIZE:50}
+      max-attempts: ${COMPETITION_MESSAGING_MAX_ATTEMPTS:10}
+      exchange: ${COMPETITION_MESSAGING_EXCHANGE:competition.events}
+      routing-key: ${COMPETITION_MESSAGING_ROUTING_KEY:competition.notice.published.v1}
+      queue: ${COMPETITION_MESSAGING_QUEUE:competition.notice.delivery}
+      dead-letter-queue: ${COMPETITION_MESSAGING_DEAD_LETTER_QUEUE:competition.notice.delivery.dlq}
+      dead-letter-exchange: ${COMPETITION_MESSAGING_DEAD_LETTER_EXCHANGE:competition.dlx}
+    formal-exam:
+      node-id: ${COMPETITION_FORMAL_EXAM_NODE_ID:}
+      realtime:
+        enabled: ${COMPETITION_FORMAL_EXAM_REALTIME_ENABLED:true}
+        ticket-ttl-seconds: ${COMPETITION_FORMAL_EXAM_REALTIME_TICKET_TTL_SECONDS:45}
+        heartbeat-seconds: ${COMPETITION_FORMAL_EXAM_REALTIME_HEARTBEAT_SECONDS:20}
+        presence-ttl-seconds: ${COMPETITION_FORMAL_EXAM_REALTIME_PRESENCE_TTL_SECONDS:60}
+        send-queue-limit: ${COMPETITION_FORMAL_EXAM_REALTIME_SEND_QUEUE_LIMIT:32}
+        dispatch-delay-millis: ${COMPETITION_FORMAL_EXAM_REALTIME_DISPATCH_DELAY_MILLIS:100}
+        dispatch-batch-size: ${COMPETITION_FORMAL_EXAM_REALTIME_DISPATCH_BATCH_SIZE:50}
+        dispatch-max-attempts: ${COMPETITION_FORMAL_EXAM_REALTIME_DISPATCH_MAX_ATTEMPTS:8}
+        publishing-lease-seconds: ${COMPETITION_FORMAL_EXAM_REALTIME_PUBLISHING_LEASE_SECONDS:30}
+        catch-up-default-limit: ${COMPETITION_FORMAL_EXAM_REALTIME_CATCH_UP_DEFAULT_LIMIT:100}
+        catch-up-max-limit: ${COMPETITION_FORMAL_EXAM_REALTIME_CATCH_UP_MAX_LIMIT:500}
+        node-id: ${COMPETITION_FORMAL_EXAM_NODE_ID:}
+        ws-path: ${COMPETITION_FORMAL_EXAM_REALTIME_WS_PATH:/api/ws/competition/formal-exam/player}
+        console-ws-path: ${COMPETITION_FORMAL_EXAM_REALTIME_CONSOLE_WS_PATH:/api/ws/competition/formal-exam/console}
+      auto-submit:
+        enabled: ${COMPETITION_FORMAL_EXAM_AUTO_SUBMIT_ENABLED:true}
+        fixed-delay-millis: ${COMPETITION_FORMAL_EXAM_AUTO_SUBMIT_DELAY_MILLIS:5000}
+        claim-seconds: ${COMPETITION_FORMAL_EXAM_AUTO_SUBMIT_CLAIM_SECONDS:25}
+        chunk-size: ${COMPETITION_FORMAL_EXAM_AUTO_SUBMIT_CHUNK_SIZE:100}
+        max-chunks-per-tick: ${COMPETITION_FORMAL_EXAM_AUTO_SUBMIT_MAX_CHUNKS:5}
+      scoring:
+        enabled: ${COMPETITION_FORMAL_EXAM_SCORING_ENABLED:true}
+        fixed-delay-millis: ${COMPETITION_FORMAL_EXAM_SCORING_DELAY_MILLIS:5000}
+        stuck-timeout-minutes: ${COMPETITION_FORMAL_EXAM_SCORING_STUCK_TIMEOUT_MINUTES:15}
+      scoring-messaging:
+        enabled: ${COMPETITION_FORMAL_EXAM_SCORING_MESSAGING_ENABLED:true}
+        dispatch-delay-millis: ${COMPETITION_FORMAL_EXAM_SCORING_DISPATCH_DELAY_MILLIS:100}
+        recovery-delay-millis: ${COMPETITION_FORMAL_EXAM_SCORING_RECOVERY_DELAY_MILLIS:5000}
+        batch-size: ${COMPETITION_FORMAL_EXAM_SCORING_BATCH_SIZE:100}
+        max-attempts: ${COMPETITION_FORMAL_EXAM_SCORING_MAX_ATTEMPTS:3}
+        lease-seconds: ${COMPETITION_FORMAL_EXAM_SCORING_LEASE_SECONDS:60}
+        consumer-concurrency: ${COMPETITION_FORMAL_EXAM_SCORING_CONCURRENCY:2}
+        consumer-max-concurrency: ${COMPETITION_FORMAL_EXAM_SCORING_MAX_CONCURRENCY:4}
+        prefetch: ${COMPETITION_FORMAL_EXAM_SCORING_PREFETCH:1}
+        exchange: ${COMPETITION_FORMAL_EXAM_SCORING_EXCHANGE:competition.events}
+        routing-key: ${COMPETITION_FORMAL_EXAM_SCORING_ROUTING_KEY:competition.formal-score.requested.v1}
+        queue: ${COMPETITION_FORMAL_EXAM_SCORING_QUEUE:competition.formal-score}
+        dead-letter-exchange: ${COMPETITION_FORMAL_EXAM_SCORING_DLX:competition.dlx}
+        dead-letter-queue: ${COMPETITION_FORMAL_EXAM_SCORING_DLQ:competition.formal-score.dlq}
+        pipeline-routing-key: ${COMPETITION_SCORE_PIPELINE_ROUTING_KEY:competition.score-source.confirmed.v1}
+        pipeline-queue: ${COMPETITION_SCORE_PIPELINE_QUEUE:competition.score-pipeline}
+        pipeline-dead-letter-queue: ${COMPETITION_SCORE_PIPELINE_DLQ:competition.score-pipeline.dlq}
+  training:
+    division:
+      # 主路径门禁：排班表必填；名单默认也要求（可关，仅作人员补全建议）
+      require-roster: ${TRAINING_DIVISION_REQUIRE_ROSTER:true}
+  certification:
+    collection:
+      # PDFBox 嵌入中文字体；为空时探测 Windows simhei.ttf 或 Linux WQY TTC 字体。
+      # OTF/CFF 字体不受 PDFBox PDType0Font 支持；Linux 推荐 fonts-wqy-zenhei。
+      pdf-font-path: ${COLLECTION_PDF_FONT_PATH:}
+  cors:
+    allowed-origins: ${CORS_ALLOWED_ORIGINS:}
+  security:
+    # jwt-secret 已于 2026-09-22 删除：全库无任何消费点（死配置），OIDC IdToken 走启动时生成的
+    # RSA-2048 密钥对（AuthorizationServerConfig）。保留只会误导后人以为它在保护什么。
+    # 测试便利白名单开关：仅本机联调置 true（/training/sign-ups/** 管理端部分匿名放行），
+    # 生产必须为 false（默认）——管理端 sign-ups 端点走 Sa-Token + @PreAuthorize
+    permit-test-apis: ${PERMIT_TEST_APIS:false}
+    access-token-ttl-seconds: ${ACCESS_TOKEN_TTL_SECONDS:7200}
+    refresh-token-ttl-seconds: ${REFRESH_TOKEN_TTL_SECONDS:604800}
+  file:
+    storage-provider: ${FILE_STORAGE_PROVIDER:cos}
+    local-root: ${FILE_LOCAL_ROOT:./storage/files}
+    # 同一 Bucket 按环境隔离对象。DEV 使用 dev，PROD 使用 prod；留空兼容历史对象键。
+    object-key-prefix: ${FILE_OBJECT_KEY_PREFIX:}
+    cos:
+      secret-id: ${COS_SECRET_ID:AKIDTD0e8QWQ8f09TcZKzTlqiQxIUVRBjYCe}
+      secret-key: ${COS_SECRET_KEY:JQM5cw52mJenjSo260kMmGeu55tZDtRp}
+      region: ${COS_REGION:ap-guangzhou}
+      bucket: ${COS_BUCKET:qlgysaas-1327842189}
+      # 请求域名（默认访问域名）。留空会自动拼为 https://{bucket}.cos.{region}.myqcloud.com
+      url-prefix: ${COS_URL_PREFIX:https://qlgysaas-1327842189.cos.ap-guangzhou.myqcloud.com}
+  cdn:
+    # 与 gjjd_phalcon（PHP 源系统）对齐：身份证图片物理路径与 CDN 域名
+    # 部署时请用环境变量 CDN_PATH 覆盖（与 PHP 项目 cdn/ 目录保持同步）
+    # 生产 CDN 域名：https://cdn.app.gjjd168.com
+    # 本地开发用 /api/exam/files/**（后端 ExamTaskXimuController 走 cdn.path + file.local-root 读盘）
+    # 默认指向 gjjd_phalcon/cdn（PHP 老系统的 cdn 目录，已有大量图片素材）
+    path: ${CDN_PATH:D:/phpApp/gjjd_phalcon/cdn}
+    # 后端读盘/本地开发直链（可带 :8080）
+    url: ${CDN_URL:http://localhost:8080/api/exam/files}
+    # 写入库/返回 App 的公网地址（生产务必走 Nginx，不要 :8080）
+    # 本地无 sign-up/** 文件时也会 302 到此地址（App 扫码上传只在 API 机磁盘，不在 cdn.app）
+    public-url: ${CDN_PUBLIC_URL:http://43.138.163.7/api/exam/files}
+    # 本地磁盘无文件时回退到历史 PHP CDN（idCard/upload 等；勿用于 sign-up/**）
+    remote-fallback-url: ${CDN_REMOTE_FALLBACK_URL:https://cdn.app.gjjd168.com}
+    # 素材拉取超时（秒）：连接超时按秒级收敛，避免导出线程在不可达地址上空等
+    fetch-connect-timeout-seconds: ${CDN_FETCH_CONNECT_TIMEOUT:3}
+    fetch-read-timeout-seconds: ${CDN_FETCH_READ_TIMEOUT:30}
+  wechat:
+    mini:
+      # 与 gjjd_phalcon WxminiController 保持一致，生产环境请用环境变量覆盖
+      app-id: ${WECHAT_MINI_APP_ID:wx67133f973ccd5592}
+      app-secret: ${WECHAT_MINI_APP_SECRET:a927524973ea144a9405b9739a2b2c51}
+  baidu:
+    api-key: ${BAIDU_API_KEY:JHKuRKyAaLiqdWRi79Bfriim}
+    secret-key: ${BAIDU_SECRET_KEY:nLJlBKKsan5ArKiJNzw8NgVmU4RT94yb}
+    # 身份证裁剪内收比例（相对宽/高，四周各收一圈，减小 card_image / card_location 多余背景边）
+    # 0=不内收；建议 0.02~0.06，过大可能切到证件内容
+    idcard-crop-inset-ratio: ${BAIDU_IDCARD_CROP_INSET_RATIO:0.04}
+  # 报名页面公开访问地址（用于生成二维码，扫码跳转用）
+  # 本地开发：http://localhost:8080  生产：https://api.gjjd168.com
+  app-base-url: ${APP_BASE_URL:http://localhost:8080}
+  h5:
+    # H5 前端地址（企业调研人员采集二维码跳转）
+    base-url: ${H5_BASE_URL:https://h5.gjjd168.com}
+  # App 端默认租户（AppHomeApplicationService 读取 platform.app.default-tenant-id）
+  # PHP 库 10159 与 SaaS 库原 1 为同一租户；2026-08-24 起统一为 10159（数据库合并方案·决策 7，
+  # 取代鉴权方案 v1.2 Q2 的"SaaS 侧以 1 为准"旧口径），与 TenantContextHolder.DEFAULT_TENANT_ID 一致
+  app:
+    default-tenant-id: ${APP_DEFAULT_TENANT_ID:10159}
+  # 我的页客服电话/协议链接
+  kefu-phone: ${APP_KEFU_PHONE:18977081413}
+  agreement-url: ${APP_AGREEMENT_URL:}
+  privacy-url: ${APP_PRIVACY_URL:}
+  sms:
+    # false=开发模式：验证码写入 platform_sms 并打日志，不调用阿里云
+    enabled: ${SMS_ENABLED:false}
+  weknora:
+    # WeKnora 本地知识库（AI 陪练代理目标）
+    enabled: ${WEKNORA_ENABLED:true}
+    base-url: ${WEKNORA_BASE_URL:http://43.138.163.7:8088/api/v1}
+    api-key: ${WEKNORA_API_KEY:sk-9IRzA-b285vJQqxRMTayd1ia9BuhVeIU27at2Y26EzGTi-r_}
+    # 逗号分隔的知识库 ID，在 WeKnora 控制台获取
+    default-knowledge-base-ids: ${WEKNORA_KB_IDS:bf5db5a5-7cc1-4f3d-a1f7-87e8b2707ead}
+    default-agent-id: ${WEKNORA_AGENT_ID:a6223b7c-96ed-494a-b0ef-2c39dac77064}
+    # 自定义智能体走 agent-chat；内置 builtin-* 可走 knowledge-chat
+    use-agent-chat: ${WEKNORA_USE_AGENT_CHAT:true}
+    connect-timeout-seconds: ${WEKNORA_CONNECT_TIMEOUT:15}
+    # 小培自由问 App 超时约 95s；读超时略短于旧 180，失败更快回退友好文案
+    read-timeout-seconds: ${WEKNORA_READ_TIMEOUT:90}
+    # 可选备用：platform-api 自行调视觉 API 识图（需单独配 COACH_VISION_API_KEY）
+    # 默认 false：拍照图片直接交给 WeKnora 智能体（使用控制台里已配的 MiniMax-M3 VLM）
+    vision-preprocess-enabled: ${COACH_VISION_PREPROCESS:false}
+    vision-api-url: ${COACH_VISION_API_URL:https://api.scnet.cn/api/llm/v1/chat/completions}
+    vision-api-key: ${COACH_VISION_API_KEY:}
+    vision-model: ${COACH_VISION_MODEL:MiniMax-M3}
+    # 小培知识库：控制台「AI助教_智能问答」UUID
+    xiaopei-knowledge-base-ids: ${XIAOPEI_KB_IDS:bf5db5a5-7cc1-4f3d-a1f7-87e8b2707ead}
+    xiaopei-knowledge-base-name: ${XIAOPEI_KB_NAME:AI助教_智能问答}
+    xiaopei-agent-id: ${XIAOPEI_AGENT_ID:a6223b7c-96ed-494a-b0ef-2c39dac77064}
+  rencaishibie:
+    # 本地开发请启动本机 rencaishibie（AUTH_ENABLED=false），勿直连线上 8001：
+    # 线上引擎会用线上 SaaS 校验本地 Sa-Token，必然 HTTP 401。
+    # 同机生产：RENCAI_BASE_URL=http://127.0.0.1:8001
+    enabled: ${RENCAI_ENABLED:true}
+    base-url: ${RENCAI_BASE_URL:http://127.0.0.1:8001}
+    internal-token: ${RENCAI_INTERNAL_TOKEN:}
+    connect-timeout-seconds: ${RENCAI_CONNECT_TIMEOUT:15}
+    read-timeout-seconds: ${RENCAI_READ_TIMEOUT:300}
+  # 单库化（2026-08-27）：platform.sync 三表镜像同步、platform.sync.php 第二数据源、
+  # platform.user-provisioning.php-write-enabled 开户双写均已随 integration/php、integration/sync 包拆除
+# Sa-Token
+sa-token:
+  token-name: Authorization
+  token-prefix: Bearer
+  timeout: 259200
+  active-timeout: -1
+  is-concurrent: true
+  is-share: true
+  is-log: true
+  token-style: uuid          # P0: tik → uuid，支持 Redis 存储
+  is-read-cookie: false
+
+logging:
+  level:
+    com.guoyu.platform.config.CacheConfig: INFO
+    com.guoyu.platform.system.service.MenuApplicationService: INFO

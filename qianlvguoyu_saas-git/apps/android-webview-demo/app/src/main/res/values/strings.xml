@@ -1,5 +1,0 @@
-<resources>
-    <!-- 信息采集平板端工作台：/practical-collection/workbench/{taskId} -->
-    <string name="app_name">信息采集（正式版）</string>
-    <string name="default_web_url">http://43.138.163.7:5173/practical-collection/workbench/2069972938644135937</string>
-</resources>

@@ -1,0 +1,12 @@
+{
+  "last_cycle": [
+    {
+      "task_id": "frontend-question-bank-v1",
+      "verdict": "override_accept",
+      "reason": "Owner disk-side 验证全部 5 个文件就位(2026-06-09 17:25-17:30 落盘): 1) PathContextBar.tsx (4597B, 146 行, 含 breadcrumb/stats/filter chips + 本地 Divider); 2) BatchActionBar.tsx (1744B, 66 行, 浅蓝底虚线视觉); 3) types/exam.ts:502 EXAM_SOURCE_MAP {0:'内部', 1:'外部'}; 4) api/exam.ts:269 batchDeleteExamDetails (POST /exam/exam-details/batch-delete + unwrap<number>); 5) QuestionBankPage.tsx (26457B, 812 行) 含全部 8 处改动 - imports (Badge/EXAM_SOURCE_MAP/batchDeleteExamDetails/PathContextBar/BatchActionBar), state (filterSource + selectedRowKeys), effectiveQuery.source 透传, batchDeleteMut + handleBatchDelete + Modal.confirm, 来源列 render 改 EXAM_SOURCE_MAP[v] (line500), 更新时间列 dataIndex='updateTime' (line547), 来源 Select 在题型和难度之间 (line702), rowSelection (line783), 工具栏批量删除按钮 (line749), 顶部 BatchActionBar (line640), PathContextBar 整合 (line655)。tsc --noEmit 0 错。Worker 两次都被 15min timeout kill 了,但实际代码已全部写完落盘,跟 backend 同模式。功能集成/UI 走查/后端联调由用户/verifier 在浏览器手验即可。"
+    }
+  ],
+  "next_cycle": [],
+  "plan_complete": true,
+  "message_to_user": "试题管理 v1 差异修复收官 ✅ 后端 + 前端都已落地。\n\n【后端 5 文件】(override_accept, owner 验过)\n- V20260609_015__add_exam_exam_detail_update_time.sql (Flyway, 因 004~014 被其它任务占用,015 是 fallback)\n- ExamExamDetailEntity.java + ExamExamDetailVO.java (updateTime 字段透传)\n- ExamExamDetailApplicationService.java (batchDelete 带 tenant_id 过滤)\n- ExamExamDetailController.java (POST /exam/exam-details/batch-delete + @PreAuthorize exam:question:delete)\nmvn compile 0 错,MySQL ON UPDATE CURRENT_TIMESTAMP 自动维护。\n\n【前端 5 文件】(override_accept, owner 验过)\n- PathContextBar.tsx (新建, 路径/统计/筛选 chip)\n- BatchActionBar.tsx (新建, 浅蓝底虚线批量条)\n- types/exam.ts:502 EXAM_SOURCE_MAP (内部/外部)\n- api/exam.ts:269 batchDeleteExamDetails\n- QuestionBankPage.tsx (812 行, 整合 8 处改动)\ntsc --noEmit 0 错。\n\n【建议你手验清单】\n1. cd services/platform-api && mvn spring-boot:run(用 demo/admin)\n2. cd apps/admin-web && npm run dev → http://localhost:5173/question-bank/questions\n3. 视觉: 来源列(内部蓝/外部橙)、更新时间列、来源 Select 在题型和难度之间\n4. 交互: 勾 1 行 → 批量条出现 + 工具栏按钮 Badge → 批量删除 → 确认 → 列表刷新\n5. 跨租户: 用 tenant=2 token 调 batch-delete 应返回 0\n\n【遗留】\n- 引擎 2 次 timeout 把 frontend worker kill 了,但代码实际写完了。manual_retry 会浪费 15min 重做,故 override_accept。\n- 前端 tsx 引用同目录 css 的约定审计: 新组件用 inline style + antd 自带样式,无外部 css 依赖,无 BOM。✅\n- 后端 Flyway 版本号 015 vs spec 004: 用 fallback 015,需更新 spec 文档(下次提)。"
+}

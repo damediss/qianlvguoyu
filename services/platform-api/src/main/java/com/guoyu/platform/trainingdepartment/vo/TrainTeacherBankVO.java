@@ -1,0 +1,52 @@
+package com.guoyu.platform.trainingdepartment.vo;
+
+import java.time.LocalDateTime;
+import java.util.List;
+
+/** 师资库视图对象 */
+public record TrainTeacherBankVO(
+    Long id,
+    String name,
+    String phone,
+    String idCard,
+    String teacherLicense,
+    String engineerLicense,
+    String levelLicense,
+    String eduLicense,
+    String graduatePaper,
+    String company,
+    String address,
+    String idCardNumber,
+    String startDate,
+    String endDate,
+    String birthday,
+    Integer gender,
+    String nation,
+    String education,
+    String major,
+    String skillName,
+    String qualificationLevel,
+    String professionalTitle,
+    String certText,
+    String teacherQualNo,
+    String titleCertNo,
+    String skillCertNo,
+    Long idCardFrontFileId,
+    Long idCardBackFileId,
+    Long graduateFileId,
+    Long educationFileId,
+    Long teacherQualFileId,
+    Long titleCertFileId,
+    Long skillCertFileId,
+    Long legacyId,
+    String source,
+    Integer status,
+    Long tenantId,
+    Long userId,
+    Integer sortNumber,
+    LocalDateTime createTime,
+    LocalDateTime updateTime,
+    /** 无身份证临时档 */
+    boolean provisional,
+    Integer fileReadyCount,
+    List<TrainTeacherBankFileVO> files) {}

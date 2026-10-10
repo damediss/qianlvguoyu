@@ -1,0 +1,45 @@
+<component name="ProjectRunConfigurationManager">
+  <configuration default="false" name="PlatformApplication" type="SpringBootApplicationConfigurationType" factoryName="Spring Boot">
+    <envs>
+      <env name="SERVER_PORT" value="8080" />
+      <env name="REDIS_HOST" value="127.0.0.1" />
+      <env name="REDIS_PORT" value="6379" />
+      <env name="REDIS_DATABASE" value="1" />
+      <env name="FILE_STORAGE_PROVIDER" value="cos" />
+      <env name="FILE_LOCAL_ROOT" value="$PROJECT_DIR$/../../Weknora_agent/.runtime/platform-files" />
+      <env name="FILE_OBJECT_KEY_PREFIX" value="dev" />
+      <env name="SPRING_FLYWAY_ENABLED" value="false" />
+      <env name="REVIEW_SYNC_JOBS_ENABLED" value="false" />
+      <env name="COMPETITION_MESSAGING_ENABLED" value="false" />
+      <env name="COMPETITION_FORMAL_EXAM_SCORING_MESSAGING_ENABLED" value="false" />
+      <env name="SMS_ENABLED" value="false" />
+      <env name="MANAGEMENT_HEALTH_RABBIT_ENABLED" value="false" />
+      <env name="RABBIT_HEALTH_ENABLED" value="false" />
+      <env name="FLOWABLE_ASYNC_EXECUTOR_ACTIVATE" value="false" />
+      <env name="SPRING_TASK_SCHEDULING_ENABLED" value="false" />
+      <env name="WEKNORA_BASE_URL" value="http://43.138.163.7:8088" />
+      <env name="WEKNORA_PUBLIC_BASE_URL" value="http://43.138.163.7:8088" />
+      <env name="XIAOPEI_KB_IDS" value="bf5db5a5-7cc1-4f3d-a1f7-87e8b2707ead" />
+      <env name="WEKNORA_KB_IDS" value="bf5db5a5-7cc1-4f3d-a1f7-87e8b2707ead" />
+      <env name="WEKNORA_AGENT_ID" value="a6223b7c-96ed-494a-b0ef-2c39dac77064" />
+      <env name="XIAOPEI_AGENT_ID" value="a6223b7c-96ed-494a-b0ef-2c39dac77064" />
+      <env name="RENCAI_ENABLED" value="true" />
+      <env name="RENCAI_BASE_URL" value="http://127.0.0.1:8001" />
+      <!-- 补贴材料 Word 在线编辑：Document Server 在 VMware Fedora（192.168.136.128:8088） -->
+      <env name="PLATFORM_ONLYOFFICE_ENABLED" value="true" />
+      <env name="PLATFORM_ONLYOFFICE_DOCUMENT_SERVER_URL" value="http://192.168.136.128:8088" />
+      <!-- DS 容器访问本机 API：VMnet8 宿主机地址；端口须与 SERVER_PORT 一致 -->
+      <env name="PLATFORM_ONLYOFFICE_PUBLIC_BASE_URL" value="http://192.168.136.1:8080/api" />
+      <env name="PLATFORM_ONLYOFFICE_JWT_ENABLED" value="true" />
+      <env name="PLATFORM_ONLYOFFICE_JWT_SECRET" value="guoyu-onlyoffice-dev-secret" />
+    </envs>
+    <module name="platform-api" />
+    <option name="PROGRAM_PARAMETERS" value="--server.port=8080" />
+    <option name="SPRING_BOOT_MAIN_CLASS" value="com.guoyu.platform.PlatformApplication" />
+    <option name="VM_PARAMETERS" value="-Dserver.port=8080" />
+    <option name="WORKING_DIRECTORY" value="file://$PROJECT_DIR$" />
+    <method v="2">
+      <option name="Make" enabled="true" />
+    </method>
+  </configuration>
+</component>

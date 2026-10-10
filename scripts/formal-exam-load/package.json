@@ -1,0 +1,23 @@
+{
+  "name": "formal-exam-load",
+  "private": true,
+  "type": "module",
+  "description": "Isolated formal-exam HTTP+WebSocket capacity runner",
+  "scripts": {
+    "test": "node --test tests",
+    "start": "node ctl.mjs start",
+    "status": "node ctl.mjs status",
+    "stop": "node ctl.mjs stop",
+    "seed": "node run.mjs seed",
+    "live": "node run.mjs live",
+    "reconcile": "node run.mjs reconcile"
+  },
+  "engines": {
+    "node": ">=18.18.0"
+  },
+  "dependencies": {
+    "bcryptjs": "^2.4.3",
+    "mysql2": "^3.14.0",
+    "ws": "^8.18.3"
+  }
+}

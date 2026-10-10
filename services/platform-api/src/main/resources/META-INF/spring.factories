@@ -1,0 +1,3 @@
+org.springframework.boot.env.EnvironmentPostProcessor=\
+com.guoyu.platform.competition.exam.config.FormalExamLoadtestIsolationGuard,\
+com.guoyu.platform.competition.exam.config.FormalExamHotspotEnvironmentPostProcessor

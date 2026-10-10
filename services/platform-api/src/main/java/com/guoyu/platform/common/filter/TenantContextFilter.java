@@ -1,0 +1,138 @@
+package com.guoyu.platform.common.filter;
+
+import com.guoyu.platform.common.tenant.TenantContextHolder;
+import jakarta.servlet.FilterChain;
+import jakarta.servlet.ServletException;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
+import java.io.IOException;
+import java.util.Set;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.stereotype.Component;
+import org.springframework.web.filter.OncePerRequestFilter;
+
+@Component
+@Slf4j
+public class TenantContextFilter extends OncePerRequestFilter {
+
+  private static final String TENANT_HEADER = "X-Tenant-Id";
+  private static final Set<String> WHITE_PATHS = Set.of(
+      "/api/actuator/health",
+      "/api/actuator/info",
+      // OIDC: AS 链未认证时 LoginUrlAuthenticationEntryPoint 302 → /api/login，
+      // 浏览器跳转不带 X-Tenant-Id，此处放行避免被拦截返回 400
+      "/api/login",
+      "/api/ws/competition/formal-exam/player",
+      "/api/ws/competition/formal-exam/console"
+  );
+  private static final Set<String> WHITE_PATH_PREFIXES = Set.of(
+      "/api/appregistration/",
+      "/api/appsms/",
+      "/api/appauth/",
+      "/api/appuser/",
+      "/api/appuserv4/",
+      "/api/appsmart/",
+      "/api/appcoach/",
+      "/api/apphome/",
+      "/api/exam/files/",
+      // OnlyOffice Document Server 拉取/回调（无管理端登录态）
+      "/api/training/office/",
+      // 培训管理·扫码信息收集 - 测试专用
+      "/api/training/sign-ups/",
+      // App 身份证 OCR / 证件照上传（扫码采集页调用，无管理端登录态）
+      "/api/training/app/",
+      "/api/training/public/research-collection/",
+      "/api/collect-test.html"
+  );
+  private static final Set<String> WHITE_METHOD_PATHS = Set.of(
+      "POST:/api/auth/login",
+      "POST:/api/auth/refresh",
+      "GET:/api/auth/tenants",
+      "GET:/api/auth/captcha/generate",
+      "POST:/api/auth/captcha/verify",
+      "GET:/api/competition/player/entry/resolve",
+      "POST:/api/competition/player/auth/login",
+      "POST:/api/competition/exam/auth/login",
+      "POST:/api/competition/formal-exam/player/auth/login"
+  );
+
+  /** AI 同步学 App 链路：强制租户 10159（合并库 gjjddbpro 唯一租户） */
+  private static final String APP_REVIEW_SYNC_PREFIX = "/api/appreviewsync";
+  /** 主观题 AI 判分 App 链路：同样强制租户 10159（与 appreviewsync 同链） */
+  private static final String APP_REVIEW_AI_PREFIX = "/api/appreviewai";
+  /** 跟班 App 链路（含班级同步学入口）同样强制 10159，避免旧 App header=1 查空绑定 */
+  private static final String APP_FOLLOW_PREFIX = "/api/training/follow";
+
+  @Override
+  protected void doFilterInternal(
+      HttpServletRequest request,
+      HttpServletResponse response,
+      FilterChain filterChain
+  ) throws ServletException, IOException {
+    String path = request.getRequestURI();
+    String method = request.getMethod();
+
+    // /appreviewsync/**、/appreviewai/** 与 /training/follow/**：强制租户 10159，忽略 X-Tenant-Id
+    //（旧版 App 仍发 header=1；共库后业务数据均在 10159）
+    if (path.equals(APP_REVIEW_SYNC_PREFIX) || path.startsWith(APP_REVIEW_SYNC_PREFIX + "/")
+        || path.equals(APP_REVIEW_AI_PREFIX) || path.startsWith(APP_REVIEW_AI_PREFIX + "/")
+        || path.equals(APP_FOLLOW_PREFIX) || path.startsWith(APP_FOLLOW_PREFIX + "/")) {
+      try {
+        TenantContextHolder.setTenantId(TenantContextHolder.DEFAULT_TENANT_ID);
+        filterChain.doFilter(request, response);
+      } finally {
+        TenantContextHolder.clear();
+      }
+      return;
+    }
+
+    String tenantIdHeader = request.getHeader(TENANT_HEADER);
+    if ((tenantIdHeader == null || tenantIdHeader.isBlank())
+        && (path.equals("/api/ws/practical-scoring")
+            || path.equals("/api/ws/competition-practical")
+            || path.equals("/api/ws/competition/formal-exam/player")
+            || path.equals("/api/ws/competition/formal-exam/console"))) {
+      tenantIdHeader = request.getParameter("tenantId");
+    }
+
+    boolean isWhite = WHITE_PATHS.contains(path)
+        || WHITE_METHOD_PATHS.contains(method + ":" + path)
+        || WHITE_PATH_PREFIXES.stream().anyMatch(path::startsWith);
+
+    if (isWhite) {
+      boolean authBootstrap = path.startsWith("/api/auth/");
+      // 登录/租户列表等不要用浏览器残留的 X-Tenant-Id（租户归一前可能是 1），
+      // 否则多租户拦截器会按旧 id 过滤 sys_user，表现为 401 Invalid username or password。
+      if (authBootstrap || tenantIdHeader == null || tenantIdHeader.isBlank()) {
+        TenantContextHolder.setTenantId(TenantContextHolder.DEFAULT_TENANT_ID);
+      } else {
+        TenantContextHolder.setTenantId(Long.valueOf(tenantIdHeader.trim()));
+      }
+      try {
+        filterChain.doFilter(request, response);
+      } finally {
+        TenantContextHolder.clear();
+      }
+      return;
+    }
+
+    if (tenantIdHeader == null || tenantIdHeader.isBlank()) {
+      response.setStatus(HttpServletResponse.SC_BAD_REQUEST);
+      response.setContentType("application/json;charset=UTF-8");
+      response.getWriter().write("{\"code\":\"400\",\"message\":\"Missing X-Tenant-Id header\"}");
+      return;
+    }
+
+    try {
+      Long tenantId = Long.valueOf(tenantIdHeader.trim());
+      TenantContextHolder.setTenantId(tenantId);
+      filterChain.doFilter(request, response);
+    } catch (NumberFormatException e) {
+      response.setStatus(HttpServletResponse.SC_BAD_REQUEST);
+      response.setContentType("application/json;charset=UTF-8");
+      response.getWriter().write("{\"code\":\"400\",\"message\":\"Invalid X-Tenant-Id format\"}");
+    } finally {
+      TenantContextHolder.clear();
+    }
+  }
+}

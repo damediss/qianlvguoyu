@@ -1,1 +1,0 @@
-function e(e){if(!e)return"";const n=function(e,n,t){if(!e||!n||!t||e.indexOf(n)<0)return"";const r=new RegExp("[?&]"+t+"=([^&#]+)"),c=String(e).match(r);if(!c)return"";try{return decodeURIComponent(c[1])}catch(o){return c[1]}}(String(e),"pages/research/collect","token");return n?"/pages/research/collect?token="+encodeURIComponent(n):""}export{e as r};

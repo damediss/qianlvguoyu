@@ -1,0 +1,4 @@
+<resources>
+    <string name="app_name">竞赛实操裁判端</string>
+    <string name="default_web_url">https://java.app.gjjd168.com/competition-practical-judge</string>
+</resources>

@@ -1,0 +1,84 @@
+name: formal-exam-load
+
+services:
+  mysql:
+    image: mysql:8.4
+    container_name: fel-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_DATABASE: gjjddb_load
+      MYSQL_USER: ${LOAD_MYSQL_USER:-gjjd_load}
+      MYSQL_PASSWORD: ${LOAD_MYSQL_PASSWORD:-LoadTest_Db_Only}
+      MYSQL_ROOT_PASSWORD: ${LOAD_MYSQL_ROOT_PASSWORD:-LoadTest_Root_Only}
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+      - --max-connections=500
+      - --innodb-buffer-pool-size=1G
+    ports:
+      - "${LOAD_MYSQL_PORT:-13306}:3306"
+    volumes:
+      - fel-mysql-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -uroot -p$$MYSQL_ROOT_PASSWORD || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+
+  redis:
+    image: redis:7-alpine
+    container_name: fel-redis
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "${LOAD_REDIS_PORT:-16379}:6379"
+    volumes:
+      - fel-redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  rabbitmq:
+    image: rabbitmq:3.13-management-alpine
+    container_name: fel-rabbitmq
+    restart: unless-stopped
+    environment:
+      RABBITMQ_DEFAULT_USER: ${LOAD_RABBIT_USER:-load}
+      RABBITMQ_DEFAULT_PASS: ${LOAD_RABBIT_PASSWORD:-LoadTest_Mq_Only}
+    ports:
+      - "${LOAD_RABBIT_PORT:-15671}:5672"
+      - "${LOAD_RABBIT_MGMT_PORT:-15673}:15672"
+    volumes:
+      - fel-rabbit-data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+
+  proxy:
+    image: nginx:1.27-alpine
+    container_name: fel-proxy
+    restart: unless-stopped
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    extra_hosts:
+      # Linux compatibility; Docker Desktop also resolves this name through
+      # embedded DNS, which nginx queries with ipv6=off.
+      - "host.docker.internal:host-gateway"
+    ports:
+      - "${LOAD_PROXY_PORT:-18080}:80"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+
+volumes:
+  fel-mysql-data:
+  fel-redis-data:
+  fel-rabbit-data:

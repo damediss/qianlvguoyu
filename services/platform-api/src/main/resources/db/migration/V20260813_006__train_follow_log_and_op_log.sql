@@ -1,0 +1,57 @@
+-- V20260813_006: 跟班工作日志 + 过程操作日志
+-- 《跟班日志与督导实现方案》L1
+
+CREATE TABLE IF NOT EXISTS train_follow_op_log (
+  id               BIGINT       NOT NULL COMMENT '雪花 ID',
+  tenant_id        BIGINT       NOT NULL,
+  class_id         BIGINT       NOT NULL COMMENT 'train_info_class.id',
+  schedule_id      BIGINT       NULL COMMENT 'train_schedule.id',
+  session_id       BIGINT       NULL COMMENT '预留 follow_session',
+  biz_date         VARCHAR(16)  NULL COMMENT 'YYYY-MM-DD',
+  event_code       VARCHAR(64)  NOT NULL COMMENT '如 evidence.upload',
+  event_category   VARCHAR(32)  NOT NULL COMMENT 'attendance/evidence/task/schedule/role/work_log/supervision/system',
+  title            VARCHAR(200) NOT NULL,
+  summary          VARCHAR(500) NULL,
+  detail_json      TEXT         NULL,
+  actor_user_id    BIGINT       NULL,
+  actor_name       VARCHAR(64)  NULL,
+  actor_role       VARCHAR(32)  NULL,
+  target_type      VARCHAR(64)  NULL,
+  target_id        BIGINT       NULL,
+  severity_level   VARCHAR(16)  NOT NULL DEFAULT 'info' COMMENT 'info/warn/critical',
+  client           VARCHAR(16)  NULL COMMENT 'admin/app/job',
+  request_id       VARCHAR(128) NULL,
+  deleted          TINYINT      NOT NULL DEFAULT 0,
+  created_by       BIGINT       NULL,
+  updated_by       BIGINT       NULL,
+  created_at       DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at       DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  KEY idx_tfop_class_date (class_id, biz_date, created_at),
+  KEY idx_tfop_class_cat (class_id, event_category, deleted),
+  KEY idx_tfop_tenant_time (tenant_id, created_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='跟班过程操作日志（自动）';
+
+CREATE TABLE IF NOT EXISTS train_follow_log (
+  id                   BIGINT       NOT NULL COMMENT '雪花 ID',
+  tenant_id            BIGINT       NOT NULL,
+  class_id             BIGINT       NOT NULL COMMENT 'train_info_class.id',
+  schedule_id          BIGINT       NULL,
+  session_id           BIGINT       NULL,
+  biz_date             VARCHAR(16)  NOT NULL COMMENT 'YYYY-MM-DD',
+  author_user_id       BIGINT       NULL,
+  author_name          VARCHAR(64)  NULL,
+  attendance_summary   VARCHAR(1000) NULL COMMENT '出勤概况',
+  exception_note       VARCHAR(2000) NULL COMMENT '异常学员与处理',
+  content              TEXT         NULL COMMENT '正文',
+  source_op_ids_json   TEXT         NULL COMMENT '引用的过程动态 id 列表 JSON',
+  status               VARCHAR(16)  NOT NULL DEFAULT 'published' COMMENT 'draft/published',
+  deleted              TINYINT      NOT NULL DEFAULT 0,
+  created_by           BIGINT       NULL,
+  updated_by           BIGINT       NULL,
+  created_at           DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at           DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  KEY idx_tfl_class_date (class_id, biz_date, deleted),
+  KEY idx_tfl_tenant (tenant_id, created_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='跟班/班主任工作日志（手写）';

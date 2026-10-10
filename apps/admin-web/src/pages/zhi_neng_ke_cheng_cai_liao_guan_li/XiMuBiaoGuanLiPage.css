@@ -1,0 +1,137 @@
+/* 细目表管理页样式 */
+
+/* 上传解析中提示文字：闪烁动画，提示用户系统正在处理 */
+@keyframes xmb-uploading-blink {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.25;
+  }
+}
+
+.xmb-uploading-hint {
+  animation: xmb-uploading-blink 1.2s ease-in-out infinite;
+  color: #1677ff;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+/* AI 概括进行中：待审/总数数字蓝色脉冲（呼吸缩放） */
+@keyframes xmb-leaf-pulse {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.55;
+    transform: scale(1.06);
+  }
+}
+
+.xmb-leaf-pulse {
+  display: inline-block;
+  color: #1677ff;
+  font-weight: 600;
+  animation: xmb-leaf-pulse 1.2s ease-in-out infinite;
+}
+
+/* AI 概括进行中：leafTotal 增量「+N」绿色浮现后渐隐（约 2.5s 一轮） */
+@keyframes xmb-delta-fade {
+  0% {
+    opacity: 0;
+    transform: translateY(2px);
+  }
+  15% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  70% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+.xmb-leaf-delta {
+  display: inline-block;
+  color: #52c41a;
+  font-size: 12px;
+  font-weight: 600;
+  animation: xmb-delta-fade 2.5s ease-out forwards;
+}
+
+/* AI 概括弹窗：工种×等级矩阵 */
+.xmb-scope-matrix {
+  border-collapse: collapse;
+  width: 100%;
+}
+
+.xmb-scope-matrix th,
+.xmb-scope-matrix td {
+  border: 1px solid #f0f0f0;
+  padding: 4px 8px;
+  text-align: center;
+  font-size: 12px;
+}
+
+.xmb-scope-matrix th {
+  background: #fafafa;
+  font-weight: 600;
+}
+
+.xmb-scope-matrix td:first-child {
+  text-align: left;
+  white-space: nowrap;
+}
+
+.xmb-scope-na {
+  color: #bfbfbf;
+}
+
+/* 生成批次「等待中」徽标：文字/边框/底色持续变色循环，让"后端排队处理中"可被看见 */
+@keyframes xmb-status-color-cycle {
+  0%,
+  100% {
+    color: #1677ff;
+    background: #e6f4ff;
+    border-color: #91caff;
+  }
+  25% {
+    color: #722ed1;
+    background: #f9f0ff;
+    border-color: #d3adf7;
+  }
+  50% {
+    color: #d46b08;
+    background: #fff7e6;
+    border-color: #ffd591;
+  }
+  75% {
+    color: #c41d7f;
+    background: #fff0f6;
+    border-color: #ffadd2;
+  }
+}
+
+.xmb-status-waiting {
+  animation: xmb-status-color-cycle 3s ease-in-out infinite;
+}
+
+/* 生成批次「生成中」徽标：蓝色呼吸光晕 */
+@keyframes xmb-status-breath {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(22, 119, 255, 0);
+  }
+  50% {
+    box-shadow: 0 0 6px 2px rgba(22, 119, 255, 0.35);
+  }
+}
+
+.xmb-status-running {
+  animation: xmb-status-breath 1.6s ease-in-out infinite;
+}

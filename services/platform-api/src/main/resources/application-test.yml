@@ -1,0 +1,29 @@
+spring:
+  datasource:
+    url: jdbc:h2:mem:platform_api_test;MODE=LEGACY;DATABASE_TO_LOWER=TRUE;DB_CLOSE_DELAY=-1
+    username: sa
+    password:
+    driver-class-name: org.h2.Driver
+  flyway:
+    enabled: false
+  data:
+    redis:
+      host: localhost
+      port: 6379
+      timeout: 3s
+      lettuce:
+        pool:
+          max-active: 8
+          max-idle: 8
+          min-idle: 2
+          max-wait: 2000ms
+        shutdown-timeout: 100ms
+
+# 测试上下文（H2）下 Flowable 用 create-drop 自建 schema：MODE=LEGACY 让 H2 2.x 接受其
+# IDENTITY DDL；业务表仍由各 @SpringBootTest 自行 DDL（flyway.enabled=false）。
+# 生产环境不受此影响（FLOWABLE_DATABASE_SCHEMA_UPDATE 默认 true）。
+# 测试池不走 Druid wall 过滤器：wall 对 Flowable 的 schema DDL 误报注入
+# （sql injection violation，坑 #21 同类问题）。
+flowable:
+  database-schema-update: create-drop
+

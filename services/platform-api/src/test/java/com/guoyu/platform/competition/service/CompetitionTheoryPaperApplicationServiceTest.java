@@ -1,0 +1,434 @@
+package com.guoyu.platform.competition.service;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
+
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.guoyu.platform.competition.dto.CompetitionTheoryPaperImportReq;
+import com.guoyu.platform.competition.dto.CompetitionTheoryCompetitionPaperImportReq;
+import com.guoyu.platform.competition.entity.CompetitionEventEntity;
+import com.guoyu.platform.competition.entity.CompetitionEventWorkTypeEntity;
+import com.guoyu.platform.competition.entity.CompetitionMakeExamPaperQuestionEntity;
+import com.guoyu.platform.competition.entity.CompetitionMakeExamPaperSnapshotEntity;
+import com.guoyu.platform.competition.entity.CompetitionStageEntity;
+import com.guoyu.platform.competition.entity.CompetitionTheoryPaperQuestionEntity;
+import com.guoyu.platform.competition.entity.CompetitionTheoryPaperSnapshotEntity;
+import com.guoyu.platform.competition.mapper.CompetitionTheoryPaperQuestionMapper;
+import com.guoyu.platform.competition.mapper.CompetitionTheoryPaperSnapshotMapper;
+import com.guoyu.platform.competition.mapper.CompetitionTheoryRequirementMapper;
+import com.guoyu.platform.competition.service.CompetitionTheoryPaperSourceAdapter.SourcePaper;
+import com.guoyu.platform.competition.service.CompetitionTheoryPaperSourceAdapter.SourceQuestion;
+import com.guoyu.platform.competition.vo.CompetitionTheoryPaperSnapshotVO;
+import com.guoyu.platform.competition.vo.CompetitionTheoryPaperPreviewVO;
+import com.guoyu.platform.security.PlatformUserPrincipal;
+import java.math.BigDecimal;
+import java.util.List;
+import java.util.concurrent.atomic.AtomicLong;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
+import org.mockito.Mockito;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.context.SecurityContextHolder;
+
+class CompetitionTheoryPaperApplicationServiceTest {
+
+  private final CompetitionScoreRuleDomainService scoreRuleDomainService =
+      Mockito.mock(CompetitionScoreRuleDomainService.class);
+  private final CompetitionScoreRuleApplicationService scoreRuleApplicationService =
+      Mockito.mock(CompetitionScoreRuleApplicationService.class);
+  private final CompetitionStageService stageService =
+      Mockito.mock(CompetitionStageService.class);
+  private final CompetitionEventWorkTypeDomainService eventWorkTypeDomainService =
+      Mockito.mock(CompetitionEventWorkTypeDomainService.class);
+  private final CompetitionTheoryRequirementMapper requirementMapper =
+      Mockito.mock(CompetitionTheoryRequirementMapper.class);
+  private final CompetitionTheoryPaperSnapshotMapper snapshotMapper =
+      Mockito.mock(CompetitionTheoryPaperSnapshotMapper.class);
+  private final CompetitionTheoryPaperQuestionMapper questionMapper =
+      Mockito.mock(CompetitionTheoryPaperQuestionMapper.class);
+  private final CompetitionTheoryPaperSourceAdapter sourceAdapter =
+      Mockito.mock(CompetitionTheoryPaperSourceAdapter.class);
+  private final CompetitionTheoryAnswerSnapshotAdapter answerAdapter =
+      new CompetitionTheoryAnswerSnapshotAdapter(new ObjectMapper());
+  private final CompetitionTheoryCompetitionPaperSourceAdapter competitionSourceAdapter =
+      Mockito.mock(CompetitionTheoryCompetitionPaperSourceAdapter.class);
+  private final CompetitionTheoryPaperApplicationService service =
+      new CompetitionTheoryPaperApplicationService(
+          scoreRuleDomainService,
+          scoreRuleApplicationService,
+          stageService,
+          eventWorkTypeDomainService,
+          requirementMapper,
+          snapshotMapper,
+          questionMapper,
+          sourceAdapter,
+          answerAdapter);
+  private final CompetitionTheoryPaperApplicationService competitionSnapshotService =
+      new CompetitionTheoryPaperApplicationService(
+          scoreRuleDomainService,
+          scoreRuleApplicationService,
+          stageService,
+          eventWorkTypeDomainService,
+          requirementMapper,
+          snapshotMapper,
+          questionMapper,
+          sourceAdapter,
+          answerAdapter,
+          competitionSourceAdapter);
+
+  @BeforeEach
+  void setUp() {
+    PlatformUserPrincipal principal = new PlatformUserPrincipal(
+        9L, 1L, "admin", "admin", "business",
+        List.of("PLATFORM_ADMIN"),
+        List.of("competition:theory-paper:view", "competition:theory-paper:manage"),
+        "admin@example.com");
+    SecurityContextHolder.getContext().setAuthentication(
+        new UsernamePasswordAuthenticationToken(principal, "token", principal.getAuthorities()));
+    when(scoreRuleApplicationService.manageableEvent(any(), eq(1001L)))
+        .thenReturn(event());
+    when(stageService.getById(1L, 2001L)).thenReturn(stage());
+    when(eventWorkTypeDomainService.getById(1L, 3001L)).thenReturn(eventWorkType());
+  }
+
+  @AfterEach
+  void tearDown() {
+    SecurityContextHolder.clearContext();
+  }
+
+  @Test
+  void importsIndependentCoursePlansAsImmutableABSnapshots() {
+    when(sourceAdapter.loadCompletedPaper(1L, 501L, 601L, 701L))
+        .thenReturn(sourcePaper(701L, 801L, "A来源"));
+    when(sourceAdapter.loadCompletedPaper(1L, 501L, 601L, 702L))
+        .thenReturn(sourcePaper(702L, 802L, "B来源"));
+    AtomicLong ids = new AtomicLong(9000L);
+    when(snapshotMapper.insert(any(CompetitionTheoryPaperSnapshotEntity.class)))
+        .thenAnswer(invocation -> {
+          CompetitionTheoryPaperSnapshotEntity entity = invocation.getArgument(0);
+          entity.setId(ids.incrementAndGet());
+          return 1;
+        });
+    when(questionMapper.insert(any(CompetitionTheoryPaperQuestionEntity.class))).thenReturn(1);
+
+    List<CompetitionTheoryPaperSnapshotVO> result = service.importPair(
+        1001L, new CompetitionTheoryPaperImportReq(2001L, 3001L, 601L, 701L, 702L));
+
+    assertThat(result).hasSize(2);
+    assertThat(result).extracting(CompetitionTheoryPaperSnapshotVO::paperCode)
+        .containsExactly("A", "B");
+    assertThat(result).allSatisfy(snapshot -> {
+      assertThat(snapshot.status()).isEqualTo("published");
+      assertThat(snapshot.questionCount()).isEqualTo(3);
+      assertThat(snapshot.sourceHash()).hasSize(64);
+    });
+    ArgumentCaptor<CompetitionTheoryPaperSnapshotEntity> snapshotCaptor =
+        ArgumentCaptor.forClass(CompetitionTheoryPaperSnapshotEntity.class);
+    verify(snapshotMapper, Mockito.times(2)).insert(snapshotCaptor.capture());
+    assertThat(snapshotCaptor.getAllValues())
+        .allSatisfy(snapshot -> assertThat(snapshot.getScoreRuleId()).isNull());
+    verify(snapshotMapper).deprecatePublished(
+        1L, 1001L, 2001L, 3001L, null, "A", 9L);
+    verify(snapshotMapper).deprecatePublished(
+        1L, 1001L, 2001L, 3001L, null, "B", 9L);
+    ArgumentCaptor<CompetitionTheoryPaperQuestionEntity> questionCaptor =
+        ArgumentCaptor.forClass(CompetitionTheoryPaperQuestionEntity.class);
+    verify(questionMapper, Mockito.times(6)).insert(questionCaptor.capture());
+    assertThat(questionCaptor.getAllValues())
+        .allSatisfy(question -> {
+          assertThat(question.getOptionsJson()).doesNotContain("isCorrect");
+          assertThat(question.getCorrectAnswersJson()).startsWith("[");
+          assertThat(question.getScoringRuleCode()).isEqualTo("exact_match");
+        });
+  }
+
+  @Test
+  void importsCoursePaperWithoutCompetitionTheoryRequirementValidation() {
+    SourcePaper invalid = new SourcePaper(
+        701L,
+        801L,
+        601L,
+        "错误A卷",
+        90,
+        new BigDecimal("3"),
+        new BigDecimal("2"),
+        List.of(singleQuestion(1L), singleQuestion(2L), singleQuestion(3L)));
+    when(sourceAdapter.loadCompletedPaper(1L, 501L, 601L, 701L)).thenReturn(invalid);
+    when(sourceAdapter.loadCompletedPaper(1L, 501L, 601L, 702L))
+        .thenReturn(sourcePaper(702L, 802L, "B来源"));
+    AtomicLong ids = new AtomicLong(9000L);
+    when(snapshotMapper.insert(any(CompetitionTheoryPaperSnapshotEntity.class)))
+        .thenAnswer(invocation -> {
+          CompetitionTheoryPaperSnapshotEntity entity = invocation.getArgument(0);
+          entity.setId(ids.incrementAndGet());
+          return 1;
+        });
+    when(questionMapper.insert(any(CompetitionTheoryPaperQuestionEntity.class))).thenReturn(1);
+
+    List<CompetitionTheoryPaperSnapshotVO> result = service.importPair(
+        1001L, new CompetitionTheoryPaperImportReq(2001L, 3001L, 601L, 701L, 702L));
+
+    assertThat(result).hasSize(2);
+    verify(requirementMapper, Mockito.never()).selectOne(any());
+  }
+
+  @Test
+  void importsSelectedPublishedCompetitionPlanSnapshotsFromIndependentPlans() {
+    CompetitionMakeExamPaperSnapshotEntity sourceA = competitionSnapshot(5101L, "P");
+    CompetitionMakeExamPaperSnapshotEntity sourceB = competitionSnapshot(5102L, "P");
+    sourceB.setPlanId(5002L);
+    sourceB.setDurationMinutes(120);
+    sourceB.setTotalScore(new BigDecimal("80"));
+    sourceB.setPassScore(new BigDecimal("48"));
+    when(competitionSourceAdapter.loadPublishedPaper(1L, 1001L, 3001L, 3101L, 5101L))
+        .thenReturn(new CompetitionTheoryCompetitionPaperSourceAdapter.SourcePaper(
+            sourceA, List.of(competitionQuestion(6101L), competitionQuestion(6102L))));
+    when(competitionSourceAdapter.loadPublishedPaper(1L, 1001L, 3001L, 3101L, 5102L))
+        .thenReturn(new CompetitionTheoryCompetitionPaperSourceAdapter.SourcePaper(
+            sourceB, List.of(competitionQuestion(6201L))));
+    when(snapshotMapper.insert(any(CompetitionTheoryPaperSnapshotEntity.class)))
+        .thenAnswer(invocation -> {
+          CompetitionTheoryPaperSnapshotEntity entity = invocation.getArgument(0);
+          entity.setId(entity.getPaperCode().equals("P1") ? 7101L : 7102L);
+          return 1;
+        });
+    when(questionMapper.insert(any(CompetitionTheoryPaperQuestionEntity.class))).thenReturn(1);
+
+    List<CompetitionTheoryPaperSnapshotVO> result = competitionSnapshotService.importCompetitionPapers(
+        1001L, new CompetitionTheoryCompetitionPaperImportReq(
+            2001L, 3001L, 3101L, List.of(5101L, 5102L)));
+
+    assertThat(result).extracting(CompetitionTheoryPaperSnapshotVO::paperCode)
+        .containsExactly("P1", "P2");
+    assertThat(result).extracting(CompetitionTheoryPaperSnapshotVO::sourceCompetitionPaperSnapshotId)
+        .containsExactly(5101L, 5102L);
+    assertThat(result).extracting(CompetitionTheoryPaperSnapshotVO::sourcePlanId)
+        .containsExactly(5001L, 5002L);
+    verify(scoreRuleDomainService, Mockito.never()).list(anyLong(), anyLong(), anyLong(), anyLong());
+    verify(snapshotMapper).deprecatePublishedCompetitionSnapshots(
+        1L, 1001L, 2001L, 3001L, 3101L, 9L);
+    verify(sourceAdapter, Mockito.never()).loadCompletedPaper(anyLong(), anyLong(), anyLong(), anyLong());
+    ArgumentCaptor<CompetitionTheoryPaperQuestionEntity> questionCaptor =
+        ArgumentCaptor.forClass(CompetitionTheoryPaperQuestionEntity.class);
+    verify(questionMapper, Mockito.times(3)).insert(questionCaptor.capture());
+    assertThat(questionCaptor.getAllValues()).allSatisfy(question -> {
+      assertThat(question.getOptionsJson()).contains("\"key\":\"A\"");
+      assertThat(question.getCorrectAnswersJson()).isEqualTo("[\"A\"]");
+    });
+  }
+
+  @Test
+  void importsIndependentCompetitionPaperWithJudgeTOrFWithoutStoredOptions() {
+    CompetitionMakeExamPaperSnapshotEntity sourceSnapshot = competitionSnapshot(5103L, "P");
+    sourceSnapshot.setQuestionCount(4);
+    sourceSnapshot.setTotalScore(new BigDecimal("100"));
+    sourceSnapshot.setPassScore(new BigDecimal("60"));
+    CompetitionMakeExamPaperQuestionEntity single = competitionQuestion(6301L);
+    single.setScore(new BigDecimal("25"));
+    CompetitionMakeExamPaperQuestionEntity multi = competitionQuestion(6302L);
+    multi.setQuestionType("multi");
+    multi.setOptionsJson("{\"A\":\"选项A\",\"B\":\"选项B\",\"C\":\"选项C\"}");
+    multi.setReferenceAnswer("AC");
+    multi.setScore(new BigDecimal("25"));
+    CompetitionMakeExamPaperQuestionEntity judge = competitionQuestion(6303L);
+    judge.setQuestionType("judge");
+    judge.setOptionsJson(null);
+    judge.setReferenceAnswer("T");
+    judge.setScore(new BigDecimal("25"));
+    CompetitionMakeExamPaperQuestionEntity fill = competitionQuestion(6304L);
+    fill.setQuestionType("fill");
+    fill.setOptionsJson(null);
+    fill.setReferenceAnswer(null);
+    fill.setFillAnswer("填空答案");
+    fill.setScore(new BigDecimal("25"));
+    when(competitionSourceAdapter.loadPublishedPaper(1L, 1001L, 3001L, 3101L, 5103L))
+        .thenReturn(new CompetitionTheoryCompetitionPaperSourceAdapter.SourcePaper(
+            sourceSnapshot, List.of(single, multi, judge, fill)));
+    when(snapshotMapper.insert(any(CompetitionTheoryPaperSnapshotEntity.class)))
+        .thenAnswer(invocation -> {
+          CompetitionTheoryPaperSnapshotEntity entity = invocation.getArgument(0);
+          entity.setId(7103L);
+          return 1;
+        });
+    when(questionMapper.insert(any(CompetitionTheoryPaperQuestionEntity.class))).thenReturn(1);
+
+    competitionSnapshotService.importCompetitionPapers(
+        1001L, new CompetitionTheoryCompetitionPaperImportReq(
+            2001L, 3001L, 3101L, List.of(5103L)));
+
+    ArgumentCaptor<CompetitionTheoryPaperQuestionEntity> questionCaptor =
+        ArgumentCaptor.forClass(CompetitionTheoryPaperQuestionEntity.class);
+    verify(questionMapper, Mockito.times(4)).insert(questionCaptor.capture());
+    assertThat(questionCaptor.getAllValues())
+        .extracting(CompetitionTheoryPaperQuestionEntity::getSortOrder)
+        .containsExactly(1, 2, 3, 4);
+    CompetitionTheoryPaperQuestionEntity importedJudge = questionCaptor.getAllValues().get(2);
+    assertThat(importedJudge.getOptionsJson())
+        .isEqualTo("[{\"key\":\"T\",\"content\":\"正确\"},{\"key\":\"F\",\"content\":\"错误\"}]");
+    assertThat(importedJudge.getCorrectAnswersJson()).isEqualTo("[\"T\"]");
+  }
+
+  @Test
+  void previewOnlyExposesQuestionTypeAndScore() throws Exception {
+    CompetitionTheoryPaperSnapshotEntity snapshot = new CompetitionTheoryPaperSnapshotEntity();
+    snapshot.setId(4001L);
+    snapshot.setTenantId(1L);
+    snapshot.setEventId(1001L);
+    snapshot.setPaperCode("A");
+    snapshot.setVersionNo(1);
+    snapshot.setSourceTitle("初级理论试卷");
+    snapshot.setDurationMinutes(90);
+    snapshot.setQuestionCount(1);
+    snapshot.setTotalScore(new BigDecimal("100"));
+    snapshot.setDeleted(0);
+    when(snapshotMapper.selectOne(any())).thenReturn(snapshot);
+
+    CompetitionTheoryPaperQuestionEntity question = new CompetitionTheoryPaperQuestionEntity();
+    question.setSortOrder(1);
+    question.setQuestionType("single");
+    question.setContent("不能出现在预览中的题干");
+    question.setOptionsJson("[{\"content\":\"A\"}]");
+    question.setCorrectAnswersJson("[\"A\"]");
+    question.setResolveContent("不能出现在预览中的解析");
+    question.setScore(new BigDecimal("1"));
+    when(questionMapper.selectByPaper(4001L)).thenReturn(List.of(question));
+
+    CompetitionTheoryPaperPreviewVO preview = service.previewSnapshot(1001L, 4001L);
+
+    assertThat(preview.questions()).hasSize(1);
+    assertThat(preview.questions().get(0).content()).isEqualTo("不能出现在预览中的题干");
+    assertThat(preview.questions().get(0).questionType()).isEqualTo("single");
+    assertThat(preview.questions().get(0).score()).isEqualByComparingTo("1");
+    String serialized = new ObjectMapper().writeValueAsString(preview);
+    assertThat(serialized).contains("不能出现在预览中的题干");
+    assertThat(serialized).doesNotContain("optionsJson");
+    assertThat(serialized).doesNotContain("correctAnswersJson");
+    assertThat(serialized).doesNotContain("resolveContent");
+  }
+
+  private SourcePaper sourcePaper(Long paperId, Long planId, String title) {
+    return new SourcePaper(
+        paperId,
+        planId,
+        601L,
+        title,
+        90,
+        new BigDecimal("3"),
+        new BigDecimal("2"),
+        List.of(
+            singleQuestion(paperId * 10 + 1),
+            multiQuestion(paperId * 10 + 2),
+            judgeQuestion(paperId * 10 + 3)));
+  }
+
+  private SourceQuestion singleQuestion(Long id) {
+    return question(id, "single", """
+        [
+          {"content":"甲","isCorrect":true},
+          {"content":"乙","isCorrect":false}
+        ]
+        """);
+  }
+
+  private SourceQuestion multiQuestion(Long id) {
+    return question(id, "multiple", """
+        [
+          {"content":"甲","isCorrect":true},
+          {"content":"乙","isCorrect":true},
+          {"content":"丙","isCorrect":false}
+        ]
+        """);
+  }
+
+  private SourceQuestion judgeQuestion(Long id) {
+    return question(id, "judge", """
+        [
+          {"content":"正确","isCorrect":true},
+          {"content":"错误","isCorrect":false}
+        ]
+        """);
+  }
+
+  private SourceQuestion question(Long id, String type, String answers) {
+    return new SourceQuestion(
+        id,
+        id,
+        type,
+        "题干" + id,
+        answers,
+        BigDecimal.ONE,
+        "解析",
+        2,
+        100L,
+        "来源组织",
+        200L,
+        null);
+  }
+
+  private CompetitionStageEntity stage() {
+    CompetitionStageEntity entity = new CompetitionStageEntity();
+    entity.setId(2001L);
+    entity.setTenantId(1L);
+    entity.setEventId(1001L);
+    entity.setDeleted(0);
+    return entity;
+  }
+
+  private CompetitionEventWorkTypeEntity eventWorkType() {
+    CompetitionEventWorkTypeEntity entity = new CompetitionEventWorkTypeEntity();
+    entity.setId(3001L);
+    entity.setTenantId(1L);
+    entity.setEventId(1001L);
+    entity.setWorkTypeId(501L);
+    entity.setDeleted(0);
+    return entity;
+  }
+
+  private CompetitionEventEntity event() {
+    CompetitionEventEntity entity = new CompetitionEventEntity();
+    entity.setId(1001L);
+    entity.setTenantId(1L);
+    entity.setStatus("published");
+    return entity;
+  }
+
+  private CompetitionMakeExamPaperSnapshotEntity competitionSnapshot(Long id, String code) {
+    CompetitionMakeExamPaperSnapshotEntity snapshot = new CompetitionMakeExamPaperSnapshotEntity();
+    snapshot.setId(id);
+    snapshot.setPlanId(5001L);
+    snapshot.setEventId(1001L);
+    snapshot.setEventWorkTypeId(3001L);
+    snapshot.setEventWorkTypeLevelId(3101L);
+    snapshot.setContentType("theory");
+    snapshot.setPaperCode(code);
+    snapshot.setVersionNo(1);
+    snapshot.setTitle("竞赛理论" + code);
+    snapshot.setDurationMinutes(90);
+    snapshot.setQuestionCount(2);
+    snapshot.setTotalScore(new BigDecimal("2"));
+    snapshot.setPassScore(new BigDecimal("1"));
+    snapshot.setStatus("published");
+    snapshot.setSourceHash("0123456789012345678901234567890123456789012345678901234567890123");
+    snapshot.setDeleted(0);
+    return snapshot;
+  }
+
+  private CompetitionMakeExamPaperQuestionEntity competitionQuestion(Long id) {
+    CompetitionMakeExamPaperQuestionEntity question = new CompetitionMakeExamPaperQuestionEntity();
+    question.setId(id);
+    question.setSourceQuestionId(id + 1000);
+    question.setSortOrder(id % 10 == 1 ? 1 : 2);
+    question.setQuestionType("single");
+    question.setStem("竞赛题干" + id);
+    question.setOptionsJson("{\"A\":\"选项A\",\"B\":\"选项B\"}");
+    question.setReferenceAnswer("A");
+    question.setScore(BigDecimal.ONE);
+    return question;
+  }
+}

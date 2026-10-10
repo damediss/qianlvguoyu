@@ -1,0 +1,42 @@
+CREATE TABLE IF NOT EXISTS certification_practical_complete_sign_session (
+  id BIGINT NOT NULL,
+  tenant_id BIGINT NOT NULL,
+  task_id BIGINT NOT NULL COMMENT '认定任务id',
+  status VARCHAR(32) NOT NULL DEFAULT 'pending' COMMENT 'pending/signed/consumed',
+  requested_at DATETIME NOT NULL COMMENT '管理端发起签字时间',
+  requested_by BIGINT NULL COMMENT '发起人用户id',
+  required_count INT NOT NULL DEFAULT 3 COMMENT '需签字考评员人数',
+  signed_count INT NOT NULL DEFAULT 0 COMMENT '已签字人数',
+  completed_at DATETIME NULL COMMENT '全部签字完成时间',
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  created_by BIGINT NULL,
+  updated_by BIGINT NULL,
+  deleted INT NOT NULL DEFAULT 0,
+  PRIMARY KEY (id),
+  UNIQUE KEY uk_cert_practical_complete_sign_session (tenant_id, task_id, deleted),
+  KEY idx_cert_practical_complete_sign_session_status (tenant_id, task_id, status, deleted)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='实操完成任务考评员签字会话';
+
+CREATE TABLE IF NOT EXISTS certification_practical_complete_signature (
+  id BIGINT NOT NULL,
+  tenant_id BIGINT NOT NULL,
+  session_id BIGINT NOT NULL COMMENT '签字会话id',
+  task_id BIGINT NOT NULL COMMENT '认定任务id',
+  group_id BIGINT NOT NULL COMMENT '考评组id',
+  assessor_id BIGINT NOT NULL COMMENT '考评员id',
+  assessor_name VARCHAR(64) NULL COMMENT '考评员姓名快照',
+  status VARCHAR(32) NOT NULL DEFAULT 'pending' COMMENT 'pending/signed',
+  signature_file_id BIGINT NULL COMMENT '签字图片文件id',
+  signature_hash VARCHAR(64) NULL COMMENT '签字图片SHA-256',
+  signed_at DATETIME NULL COMMENT '签字时间',
+  device_info VARCHAR(2000) NULL COMMENT '签字设备信息',
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  created_by BIGINT NULL,
+  updated_by BIGINT NULL,
+  deleted INT NOT NULL DEFAULT 0,
+  PRIMARY KEY (id),
+  UNIQUE KEY uk_cert_practical_complete_signature (tenant_id, session_id, assessor_id, deleted),
+  KEY idx_cert_practical_complete_signature_task (tenant_id, task_id, assessor_id, status, deleted)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='实操完成任务考评员电子签名';

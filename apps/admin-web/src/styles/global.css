@@ -1,0 +1,756 @@
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-width: 1180px;
+  background: #f8fafc;
+  color: #1e293b;
+}
+
+/* 外壳锁死视口高度：页面不与菜单比高度，滚动分别落在侧栏/内容区内部 */
+.app-shell {
+  height: 100vh;
+  overflow: hidden;
+}
+
+/* ---- Sider / Sidebar ---- */
+.app-sider {
+  background: #ffffff !important;
+  border-right: 1px solid #e2e8f0;
+}
+
+/* 菜单再长也不撑高页面：侧栏内部滚动（品牌区吸顶） */
+.app-sider .ant-layout-sider-children {
+  height: 100vh;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+.brand-block {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 68px;
+  padding: 0 18px;
+  background: #ffffff;
+  border-bottom: 1px solid #f1f5f9;
+}
+
+.brand-mark,
+.login-mark {
+  display: grid;
+  width: 34px;
+  height: 34px;
+  place-items: center;
+  border-radius: 8px;
+  background: radial-gradient(60% 60% at 30% 30%, #93c5fd 0%, #3b82f6 50%, #1d4ed8 100%);
+  box-shadow: 0 8px 16px rgba(59, 130, 246, 0.25);
+  color: #fff;
+  font-weight: 700;
+}
+
+.brand-name {
+  display: block;
+  color: #1e293b;
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 18px;
+}
+
+.brand-sub {
+  display: block;
+  color: #64748b;
+  font-size: 11px;
+  line-height: 16px;
+}
+
+/* ---- Menu ---- */
+.app-menu {
+  padding: 10px 8px;
+  background: transparent;
+  border: 0 !important;
+}
+
+/* 目录行整行可点击展开/收起，不必瞄准右侧箭头 */
+.app-sider .app-menu.ant-menu .ant-menu-submenu-title {
+  cursor: pointer;
+  height: 38px;
+  margin: 3px 0;
+  border-radius: 8px;
+  color: #64748b !important;
+}
+
+.app-sider .app-menu.ant-menu .ant-menu-submenu-title:hover {
+  background: rgba(59, 130, 246, 0.08) !important;
+  color: #1e293b !important;
+}
+
+.app-sider .app-menu.ant-menu .ant-menu-item {
+  height: 38px;
+  margin: 3px 0;
+  color: #64748b !important;
+  border-radius: 8px;
+  transition: background-color 0.16s ease, color 0.16s ease;
+}
+
+.app-sider .app-menu.ant-menu .ant-menu-item .ant-menu-title-content,
+.app-sider .app-menu.ant-menu .ant-menu-item .anticon {
+  color: inherit !important;
+}
+
+/* Truncate long menu labels with ellipsis so the hover tooltip has something to reveal. */
+.app-sider .app-menu.ant-menu .app-menu-label {
+  display: inline-block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: bottom;
+}
+
+.app-sider .app-menu.ant-menu .ant-menu-item:not(.ant-menu-item-selected):hover,
+.app-sider .app-menu.ant-menu .ant-menu-item:not(.ant-menu-item-selected).ant-menu-item-active {
+  background: rgba(59, 130, 246, 0.08) !important;
+  color: #1e293b !important;
+}
+
+.app-sider .app-menu.ant-menu .ant-menu-item-selected {
+  background: rgba(59, 130, 246, 0.12) !important;
+  color: #1e293b !important;
+}
+
+.app-sider .app-menu.ant-menu .ant-menu-item-selected:hover {
+  background: rgba(59, 130, 246, 0.18) !important;
+}
+
+/* ---- Header ---- */
+/* 右侧主列：视口高度，header 固定、内容区独立滚动 */
+.app-main {
+  height: 100vh;
+  overflow: hidden;
+}
+
+.app-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex: 0 0 58px;
+  height: 58px;
+  padding: 0 24px;
+  background: rgba(255, 255, 255, 0.94);
+  border-bottom: 1px solid #e2e8f0;
+  backdrop-filter: blur(10px);
+}
+
+/* 灰度 off 旧分支：头部仅保留用户下拉，右对齐（v1.4 Q2-A 默认口径） */
+.app-header-plain {
+  justify-content: flex-end;
+}
+
+/* ---- Chrome 同款单行头部（v1.4，Q1A~Q4A）---- */
+.app-header-tabs {
+  flex: 0 0 44px;
+  height: 44px;
+  padding: 0 8px 0 0;
+  align-items: stretch;
+  background: #dee1e6; /* Chrome 标签栏灰 */
+  border-bottom: none;
+  backdrop-filter: none;
+}
+
+.app-tabbar-strip {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  align-items: flex-end;
+  overflow: hidden;
+  padding: 6px 4px 0 8px;
+}
+
+.app-header-user {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  padding: 0 12px 0 8px;
+  border-left: 1px solid rgba(0, 0, 0, 0.08);
+}
+
+/* 标签条内 Tabs：去卡片化，仿 Chrome 圆角标签 */
+.app-tabbar-strip .ant-tabs {
+  width: 100%;
+}
+
+.app-tabbar-strip .ant-tabs .ant-tabs-nav {
+  margin: 0;
+  background: transparent;
+}
+
+.app-tabbar-strip .ant-tabs .ant-tabs-nav::before {
+  border-bottom: none;
+}
+
+.app-tabbar-strip .ant-tabs .ant-tabs-tab {
+  border: none !important;
+  border-radius: 8px 8px 0 0 !important;
+  margin: 0 2px !important;
+  padding: 6px 12px !important;
+  background: transparent; /* 未激活：与栏同色（Q3-A） */
+  color: #4b5563;
+  transition: background 0.15s ease;
+}
+
+/* 未激活 hover 提亮（Q3-A） */
+.app-tabbar-strip .ant-tabs .ant-tabs-tab:not(.ant-tabs-tab-active):hover {
+  background: rgba(255, 255, 255, 0.6);
+}
+
+/* 激活标签：白色卡片浮起，与底部分隔断开（Q3-A） */
+.app-tabbar-strip .ant-tabs .ant-tabs-tab-active {
+  background: #f8f9fa;
+  box-shadow: 0 -1px 3px rgba(0, 0, 0, 0.08);
+  color: #1e293b;
+}
+
+.app-tabbar-strip .ant-tabs .ant-tabs-tab-active .ant-tabs-tab-btn {
+  color: #1e293b;
+}
+
+/* 关闭按钮：未激活 hover 才显示，激活常显（Q4-A） */
+.app-tabbar-strip .ant-tabs .ant-tabs-tab-remove {
+  opacity: 0;
+  width: 16px;
+  margin-left: 6px;
+  color: #64748b;
+  transition: opacity 0.12s ease, color 0.12s ease;
+}
+
+.app-tabbar-strip .ant-tabs .ant-tabs-tab:hover .ant-tabs-tab-remove,
+.app-tabbar-strip .ant-tabs .ant-tabs-tab-active .ant-tabs-tab-remove {
+  opacity: 1;
+}
+
+.app-tabbar-strip .ant-tabs .ant-tabs-tab-remove:hover {
+  color: #ef4444;
+}
+
+/* 溢出滚动箭头：低调 */
+.app-tabbar-strip .ant-tabs .ant-tabs-nav-more,
+.app-tabbar-strip .ant-tabs .ant-tabs-tab .anticon {
+  color: #64748b;
+}
+
+/* ---- 拖拽视觉反馈（transform 套在 .ant-tabs-tab 卡片外壳上，见 DraggableTabLabel）---- */
+/* 拖起：卡片浮起 */
+.app-tabbar-strip .ant-tabs-tab.app-tab-dragging {
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.22);
+  opacity: 0.92;
+  z-index: 5;
+  cursor: grabbing;
+}
+
+/* 拖拽全程：整个标签条 grabbing 光标 */
+.app-tabbar-strip.app-tabbar-dragging,
+.app-tabbar-strip.app-tabbar-dragging * {
+  cursor: grabbing !important;
+}
+
+/* 标签内文本与刷新按钮（DraggableTabLabel） */
+.app-tabbar-strip .app-tab-label-text {
+  max-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.app-tabbar-strip .app-tab-refresh {
+  color: #94a3b8;
+  font-size: 12px;
+}
+
+.app-tabbar-strip .app-tab-refresh:hover {
+  color: #2563eb;
+}
+
+.user-meta {
+  display: flex;
+  flex-direction: column;
+  color: #1e293b;
+  font-size: 13px;
+  line-height: 16px;
+}
+
+.user-meta small {
+  color: #64748b;
+  font-size: 12px;
+}
+
+/* ---- Content ---- */
+.app-content {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 24px;
+}
+
+.app-breadcrumb {
+  margin-bottom: 12px;
+  color: #64748b;
+  font-size: 13px;
+}
+
+.app-page-body {
+  min-width: 0;
+}
+
+.knowledge-page {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.page-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+}
+
+.knowledge-heading {
+  min-height: 118px;
+  padding: 22px 24px;
+  overflow: hidden;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  background:
+    radial-gradient(circle at 86% 18%, rgba(59, 130, 246, 0.08), transparent 32%),
+    linear-gradient(135deg, #ffffff 0%, #f8fbff 64%, #eff6ff 100%);
+  box-shadow: 0 12px 30px rgba(16, 24, 40, 0.05);
+}
+
+.page-title-line {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.page-title-icon {
+  display: grid;
+  width: 40px;
+  height: 40px;
+  place-items: center;
+  border-radius: 10px;
+  background: #3b82f6;
+  color: #fff;
+  box-shadow: 0 10px 18px rgba(59, 130, 246, 0.2);
+}
+
+.page-heading h1.ant-typography {
+  margin: 0;
+  font-size: 26px;
+  line-height: 34px;
+  letter-spacing: 0;
+}
+
+/* ---- Overview cards ---- */
+.knowledge-overview {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.overview-card.ant-pro-card {
+  border-color: #e2e8f0;
+  border-radius: 10px;
+  box-shadow: 0 10px 24px rgba(16, 24, 40, 0.04);
+}
+
+.overview-card .ant-statistic-title {
+  color: #64748b;
+  font-size: 13px;
+}
+
+.overview-card .ant-statistic-content {
+  color: #1e293b;
+  font-size: 25px;
+  font-weight: 700;
+}
+
+.overview-card .ant-statistic-content-prefix {
+  margin-inline-end: 8px;
+  color: #3b82f6;
+  font-size: 20px;
+}
+
+/* ---- Knowledge grid ---- */
+.knowledge-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 356px;
+  gap: 16px;
+  align-items: start;
+}
+
+.knowledge-main {
+  min-width: 0;
+}
+
+.pro-work-section.ant-pro-card {
+  min-height: 430px;
+  border-color: #e2e8f0;
+  border-radius: 10px;
+  box-shadow: 0 12px 30px rgba(16, 24, 40, 0.05);
+}
+
+.pro-work-section .ant-pro-card-header {
+  padding-block: 16px;
+  border-bottom: 1px solid #f1f5f9;
+}
+
+.pro-work-section .ant-pro-card-title {
+  color: #1e293b;
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.pro-work-section .ant-pro-card-body {
+  padding: 0 18px 18px;
+}
+
+.section-search {
+  width: 340px;
+}
+
+.work-tabs {
+  margin-bottom: 4px;
+}
+
+.work-tabs .ant-tabs-nav {
+  margin-bottom: 14px;
+}
+
+.section-title-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 18px 0;
+}
+
+.section-title-row h3.ant-typography,
+.knowledge-inspector h3.ant-typography,
+.knowledge-inspector h4.ant-typography,
+.result-list h4.ant-typography,
+.answer-panel h4.ant-typography {
+  margin: 0;
+  letter-spacing: 0;
+}
+
+/* ---- Table ---- */
+.ant-table-wrapper .ant-table {
+  color: #1e293b;
+  border-radius: 8px;
+}
+
+.ant-table-wrapper .ant-table-thead > tr > th {
+  color: #475569;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.ant-table-wrapper .ant-table-tbody > tr > td {
+  border-bottom-color: #f1f5f9;
+}
+
+.selected-row td {
+  background: #eff6ff !important;
+}
+
+.name-cell {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.name-cell > span:last-child {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.name-cell-icon {
+  display: grid;
+  width: 36px;
+  height: 36px;
+  flex: none;
+  place-items: center;
+  border-radius: 9px;
+  background: #eff6ff;
+  color: #3b82f6;
+}
+
+.name-cell-icon.file {
+  background: #f0fdf4;
+  color: #10b981;
+}
+
+/* ---- Inspector sidebar ---- */
+/* 内容区改为独立滚动后，sticky 相对内容区顶部（不再是窗口+header 偏移） */
+.knowledge-inspector {
+  position: sticky;
+  top: 12px;
+  padding: 18px;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  background: #fff;
+  box-shadow: 0 12px 30px rgba(16, 24, 40, 0.05);
+}
+
+.inspector-title {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  margin-bottom: 16px;
+}
+
+.inspector-title > .anticon {
+  display: grid;
+  width: 42px;
+  height: 42px;
+  place-items: center;
+  border-radius: 10px;
+  background: #eff6ff;
+  color: #3b82f6;
+  font-size: 18px;
+}
+
+.inspector-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.metric-strip {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  margin-bottom: 18px;
+}
+
+.metric-strip div {
+  padding: 11px 10px;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  background: #f8fafc;
+}
+
+.metric-strip strong,
+.metric-strip span {
+  display: block;
+}
+
+.metric-strip strong {
+  color: #3b82f6;
+  font-size: 22px;
+  line-height: 27px;
+}
+
+.metric-strip span {
+  color: #64748b;
+  font-size: 12px;
+}
+
+.permission-section {
+  padding: 16px 0;
+  border-top: 1px solid #f1f5f9;
+  border-bottom: 1px solid #f1f5f9;
+}
+
+.permission-section h4.ant-typography {
+  margin-bottom: 12px;
+}
+
+.index-timeline {
+  margin-top: 18px;
+}
+
+/* ---- Search workspace ---- */
+.search-workspace {
+  min-height: 380px;
+  padding-top: 18px;
+}
+
+.search-command {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 110px 150px;
+  gap: 12px;
+  align-items: end;
+  padding: 14px;
+  margin-bottom: 16px;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  background: #f8fafc;
+}
+
+.search-input-item {
+  margin-bottom: 0;
+}
+
+.search-command .ant-form-item {
+  margin-bottom: 0;
+}
+
+.search-result-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 380px;
+  gap: 14px;
+}
+
+.result-list,
+.answer-panel {
+  min-height: 390px;
+  padding: 16px;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  background: #fff;
+}
+
+.citation-row {
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr);
+  gap: 10px;
+  padding: 13px 0;
+  border-bottom: 1px solid #f1f5f9;
+}
+
+.citation-row p {
+  margin: 6px 0 0;
+  color: #475569;
+  font-size: 13px;
+  line-height: 21px;
+}
+
+.citation-score {
+  display: grid;
+  width: 34px;
+  height: 30px;
+  place-items: center;
+  border-radius: 8px;
+  background: #eff6ff;
+  color: #3b82f6;
+  font-weight: 700;
+}
+
+.answer-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+  color: #3b82f6;
+}
+
+.answer-panel .ant-alert {
+  margin-bottom: 12px;
+}
+
+.answer-panel .ant-typography {
+  color: #334155;
+  font-size: 14px;
+  line-height: 24px;
+  white-space: pre-wrap;
+}
+
+.upload-zone {
+  margin-bottom: 16px;
+}
+
+/* ---- Login ---- */
+.login-screen,
+.boot-screen {
+  display: grid;
+  min-height: 100vh;
+  place-items: center;
+  background: #f8fafc;
+}
+
+.boot-screen {
+  color: #64748b;
+}
+
+.login-panel {
+  width: 410px;
+  padding: 26px;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  background: #fff;
+  box-shadow: 0 12px 30px rgba(16, 24, 40, 0.05);
+}
+
+.login-panel-phone {
+  width: min(410px, calc(100vw - 32px));
+}
+
+.login-title-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 22px;
+}
+
+.login-title-row h2.ant-typography {
+  margin: 0 0 2px;
+  font-size: 22px;
+}
+
+/* ---- Responsive ---- */
+@media (max-width: 1180px) {
+  body {
+    min-width: 0;
+  }
+
+  .knowledge-overview {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .knowledge-grid,
+  .search-result-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .knowledge-inspector {
+    position: static;
+  }
+}
+
+@media (max-width: 900px) {
+  .app-sider {
+    display: none;
+  }
+
+  .app-header {
+    padding: 0 12px;
+  }
+
+  .app-content {
+    padding: 14px;
+  }
+
+  .page-heading,
+  .section-title-row {
+    flex-direction: column;
+  }
+
+  .knowledge-overview,
+  .search-command {
+    grid-template-columns: 1fr;
+  }
+
+  .section-search {
+    width: 100%;
+  }
+}

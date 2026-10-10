@@ -1,0 +1,14 @@
+# 测试环境覆盖配置（与主 application.yml 按键合并，测试 classpath 优先）
+# 关闭 AI 同步学定时任务（每日物化/周日清理），避免测试上下文启动后跑周期任务
+platform:
+  review-sync:
+    jobs-enabled: false
+  competition:
+    # 测试上下文没有竞赛模块业务表（flyway.enabled=false，各 @SpringBootTest 自行建表）；
+    # 三个定时扫描器在测试进程内持续扫描会报 "Table not found" 污染日志。
+    theory-exam:
+      scan-delay-millis: 3600000
+    messaging:
+      dispatch-delay-millis: 3600000
+    stage-unlock:
+      scan-delay-millis: 3600000

@@ -1,9 +1,0 @@
-# 复制到家里电脑的 %USERPROFILE%\.ssh\config
-# 将 <VPN内网IP> 和 <Windows用户名> 替换为实际值
-
-Host company-dev
-    HostName <VPN内网IP>
-    User <Windows用户名>
-    IdentityFile ~/.ssh/id_ed25519
-    ServerAliveInterval 60
-    ServerAliveCountMax 3

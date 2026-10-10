@@ -1,0 +1,466 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>成绩管理 · 综合成绩突出方案</title>
+  <style>
+    :root {
+      --blue: #1677ff;
+      --blue-dark: #1258bb;
+      --blue-soft: #eff6ff;
+      --blue-soft-2: #e5f0ff;
+      --ink: #172033;
+      --muted: #7c8799;
+      --line: #e8edf3;
+      --page: #f5f7fb;
+      --green: #13a87a;
+      --green-soft: #e9fbf4;
+      --amber: #d88a14;
+      --shadow: 0 8px 24px rgba(23, 32, 51, 0.06);
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      color: var(--ink);
+      background: var(--page);
+      font-family: Inter, "PingFang SC", "Microsoft YaHei", Arial, sans-serif;
+      font-size: 14px;
+    }
+
+    button, input, select { font: inherit; }
+    button { cursor: pointer; }
+
+    .app-shell {
+      min-height: 100vh;
+      display: flex;
+    }
+
+    .sidebar {
+      width: 238px;
+      flex: 0 0 238px;
+      background: #fff;
+      border-right: 1px solid var(--line);
+      display: flex;
+      flex-direction: column;
+    }
+
+    .brand {
+      height: 82px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 0 24px;
+      border-bottom: 1px solid #f0f2f6;
+    }
+
+    .brand-mark {
+      width: 36px;
+      height: 36px;
+      border-radius: 10px;
+      display: grid;
+      place-items: center;
+      color: #fff;
+      font-weight: 800;
+      background: linear-gradient(145deg, #2f8bff, #1759c8);
+      box-shadow: 0 5px 12px rgba(22, 119, 255, .22);
+    }
+
+    .brand-name { font-size: 15px; font-weight: 750; letter-spacing: .2px; }
+    .brand-sub { color: var(--muted); font-size: 11px; margin-top: 4px; }
+
+    .nav { padding: 18px 12px; }
+    .nav-group { margin-bottom: 8px; }
+    .nav-item {
+      width: 100%;
+      height: 44px;
+      border: 0;
+      border-radius: 9px;
+      background: transparent;
+      color: #536073;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 0 14px;
+      text-align: left;
+    }
+    .nav-item:hover { background: #f5f8fd; color: var(--blue-dark); }
+    .nav-item.active {
+      color: var(--blue-dark);
+      background: var(--blue-soft);
+      font-weight: 700;
+    }
+    .nav-icon { width: 20px; text-align: center; font-size: 16px; opacity: .9; }
+    .nav-chevron { margin-left: auto; color: #a1aabc; font-size: 12px; }
+    .nav-child { padding-left: 46px; height: 36px; font-size: 13px; }
+    .nav-child.active { color: var(--blue); font-weight: 650; background: transparent; }
+
+    .workspace { min-width: 0; flex: 1; }
+
+    .topbar {
+      height: 66px;
+      background: rgba(255,255,255,.96);
+      border-bottom: 1px solid var(--line);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 30px;
+      position: sticky;
+      top: 0;
+      z-index: 20;
+    }
+
+    .search {
+      width: 360px;
+      height: 38px;
+      border: 1px solid #eef1f5;
+      background: #f7f9fc;
+      border-radius: 9px;
+      color: #a2acbb;
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      padding: 0 13px;
+    }
+    .search input { border: 0; outline: 0; background: transparent; width: 100%; color: var(--ink); }
+    .search input::placeholder { color: #aeb7c5; }
+    .user-box { display: flex; align-items: center; gap: 10px; }
+    .avatar-small {
+      width: 34px; height: 34px; border-radius: 50%;
+      display: grid; place-items: center; color: #fff; background: #a8b6c9;
+      font-size: 13px; font-weight: 700;
+    }
+    .user-name { font-weight: 700; font-size: 13px; }
+    .tenant { color: var(--muted); font-size: 11px; margin-top: 3px; }
+
+    .main {
+      max-width: 1640px;
+      margin: 0 auto;
+      padding: 30px 32px 56px;
+    }
+
+    .breadcrumb { color: #8b96a7; font-size: 13px; margin-bottom: 11px; }
+    .page-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; }
+    h1 { margin: 0; font-size: 24px; letter-spacing: -.4px; }
+    .subtitle { margin-top: 8px; color: var(--muted); }
+    .head-actions { display: flex; gap: 10px; }
+    .btn {
+      height: 36px; border: 1px solid #dce3ed; border-radius: 8px;
+      padding: 0 14px; background: #fff; color: #556276; font-weight: 600;
+    }
+    .btn:hover { border-color: #9fc4fb; color: var(--blue); }
+    .btn.primary { border-color: var(--blue); color: #fff; background: var(--blue); }
+    .btn.primary:hover { background: #0e68e9; }
+
+    .filter-card {
+      margin-top: 24px; padding: 18px;
+      background: #fff; border: 1px solid var(--line); border-radius: 14px; box-shadow: var(--shadow);
+    }
+    .filter-grid { display: grid; grid-template-columns: repeat(3, minmax(160px, 1fr)) 210px; gap: 12px; }
+    .field { min-width: 0; }
+    .field label { display: block; font-size: 12px; color: #8a95a6; margin-bottom: 8px; }
+    .select, .input {
+      height: 40px; width: 100%; border: 1px solid #e2e8f0; border-radius: 8px;
+      background: #fff; color: #3c475a; padding: 0 12px; outline: 0;
+    }
+    .select:focus, .input:focus { border-color: #8dbbfc; box-shadow: 0 0 0 3px rgba(22,119,255,.08); }
+    .weight-tip {
+      height: 40px; border-radius: 8px; display: flex; align-items: center; gap: 8px;
+      padding: 0 12px; color: var(--blue-dark); background: var(--blue-soft); border: 1px solid #c6dcff;
+      font-weight: 650; white-space: nowrap;
+    }
+    .filter-row { display: grid; grid-template-columns: 1fr 150px 150px auto; gap: 12px; margin-top: 13px; }
+    .input-wrap { position: relative; }
+    .input-wrap span { position: absolute; left: 12px; top: 10px; color: #9aa6b7; }
+    .input-wrap input { padding-left: 34px; }
+    .filter-button { height: 40px; }
+
+    .ready-line {
+      margin-top: 16px; min-height: 42px; border: 1px solid #b9ecd8; border-radius: 10px;
+      color: #1b755b; background: var(--green-soft); display: flex; align-items: center; gap: 9px; padding: 0 14px;
+    }
+    .ready-dot { width: 18px; height: 18px; display: grid; place-items: center; border-radius: 50%; color: #fff; background: #1cba86; font-size: 12px; }
+    .ready-extra { color: #669987; font-size: 12px; margin-left: 3px; }
+
+    .summary-row { display: grid; grid-template-columns: 1.2fr 1fr 1fr 1fr; gap: 14px; margin-top: 20px; }
+    .summary-card {
+      min-height: 86px; padding: 16px 18px; border: 1px solid var(--line); border-radius: 12px; background: #fff; box-shadow: 0 4px 14px rgba(23,32,51,.035);
+    }
+    .summary-card.featured { background: linear-gradient(135deg, #f3f8ff, #eaf3ff); border-color: #c3dcff; }
+    .summary-label { color: #7e899a; font-size: 12px; }
+    .summary-value { margin-top: 8px; font-size: 22px; font-weight: 800; color: var(--ink); }
+    .summary-card.featured .summary-value { color: var(--blue-dark); }
+    .summary-note { color: #8490a0; font-size: 11px; margin-left: 5px; font-weight: 500; }
+
+    .tabs {
+      display: flex; gap: 28px; margin-top: 24px; border-bottom: 1px solid var(--line);
+    }
+    .tab { position: relative; padding: 0 2px 13px; color: #7a8698; font-weight: 650; cursor: pointer; }
+    .tab.active { color: var(--blue-dark); }
+    .tab.active::after { content: ""; position: absolute; height: 3px; left: 0; right: 0; bottom: -1px; border-radius: 3px 3px 0 0; background: var(--blue); }
+
+    .table-card { margin-top: 14px; background: #fff; border: 1px solid var(--line); border-radius: 14px; box-shadow: var(--shadow); overflow: hidden; }
+    .table-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; padding: 22px 22px 16px; }
+    .table-title { font-size: 16px; font-weight: 750; }
+    .table-meta { color: #8994a4; font-size: 12px; margin-top: 7px; }
+    .formula-tag { display: inline-flex; align-items: center; gap: 7px; color: var(--blue-dark); background: var(--blue-soft); border: 1px solid #c8dcfd; border-radius: 7px; padding: 7px 10px; font-size: 12px; white-space: nowrap; }
+    .formula-icon { width: 17px; height: 17px; border-radius: 4px; display: grid; place-items: center; background: #d7e8ff; font-size: 11px; font-weight: 800; }
+
+    .table-scroll { overflow-x: auto; }
+    table { width: 100%; min-width: 1060px; border-collapse: separate; border-spacing: 0; }
+    thead th {
+      height: 48px; padding: 0 14px; background: #f8fafc; border-top: 1px solid #f0f3f7; border-bottom: 1px solid var(--line);
+      color: #667286; font-size: 12px; font-weight: 750; text-align: left; white-space: nowrap;
+    }
+    tbody td { height: 82px; padding: 0 14px; border-bottom: 1px solid #f1f3f6; color: #3d485a; white-space: nowrap; }
+    tbody tr:last-child td { border-bottom: 0; }
+    tbody tr:hover td { background: #fbfdff; }
+    .check { width: 44px; text-align: center; }
+    input[type="checkbox"] { width: 16px; height: 16px; accent-color: var(--blue); }
+    .rank { width: 60px; }
+    .rank-badge { width: 26px; height: 26px; display: grid; place-items: center; border-radius: 50%; font-weight: 800; color: #4e5e76; background: #eef2f8; }
+    .rank-badge.first { color: #a16a08; background: #fff1c9; }
+    .rank-badge.second { color: #58708e; background: #edf2fa; }
+    .rank-badge.third { color: #a45f34; background: #fce8db; }
+    .candidate { display: flex; align-items: center; gap: 10px; min-width: 190px; }
+    .candidate-avatar { width: 36px; height: 36px; border-radius: 50%; display: grid; place-items: center; color: #0b6ccb; background: #e2f1ff; font-size: 16px; font-weight: 800; }
+    .candidate-name { font-weight: 750; color: #263247; }
+    .candidate-id { color: #9aa4b2; font-size: 11px; margin-top: 4px; }
+    .team { color: #667286; }
+    .team::before { content: "♧"; color: #7f8ea4; margin-right: 6px; }
+
+    /* The visual focal point: score column */
+    th.score-col {
+      color: var(--blue-dark); background: #edf5ff; border-top-color: #dbeaff; border-bottom-color: #cde1ff;
+      position: relative;
+    }
+    th.score-col::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 3px; background: var(--blue); }
+    td.score-col {
+      min-width: 138px; background: #f1f7ff; border-left: 3px solid var(--blue); border-bottom-color: #deebfb;
+    }
+    tbody tr:hover td.score-col { background: #eaf3ff; }
+    .score-number { color: #0e4eaa; font-size: 22px; line-height: 1; font-weight: 850; letter-spacing: -.5px; }
+    .score-unit { font-size: 12px; margin-left: 3px; font-weight: 700; color: #4f74a6; }
+    .score-sub { color: #6f88aa; font-size: 11px; margin-top: 7px; }
+    .score-sub::before { content: "✓"; display: inline-grid; place-items: center; width: 14px; height: 14px; margin-right: 4px; border-radius: 50%; color: #fff; background: #28ad7f; font-size: 9px; font-weight: 800; }
+    .subject-score { font-weight: 750; color: #344156; }
+    .confirmed { display: inline-flex; align-items: center; gap: 5px; margin-left: 8px; padding: 3px 7px; border-radius: 5px; color: #15936c; background: #e9faf3; border: 1px solid #bfead8; font-size: 11px; }
+    .confirmed::before { content: "✓"; font-weight: 800; }
+    .status { display: inline-flex; align-items: center; gap: 6px; padding: 5px 9px; border-radius: 6px; color: #15936c; background: #e9faf3; border: 1px solid #bfead8; font-size: 12px; }
+    .status::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: #20b383; }
+    .detail { border: 0; background: transparent; color: var(--blue); font-weight: 650; padding: 8px 0; }
+    .detail:hover { color: var(--blue-dark); text-decoration: underline; }
+
+    .table-footer { display: flex; align-items: center; justify-content: space-between; padding: 14px 22px 18px; color: #7f8a9a; font-size: 12px; }
+    .pagination { display: flex; align-items: center; gap: 8px; }
+    .page-button { width: 30px; height: 30px; border-radius: 7px; border: 1px solid #e1e6ee; background: #fff; color: #7d899a; }
+    .page-button.current { color: var(--blue); border-color: #8ebafb; background: #f2f7ff; font-weight: 750; }
+    .page-size { height: 30px; border: 1px solid #e1e6ee; border-radius: 7px; padding: 0 8px; color: #6e7b8e; background: #fff; }
+
+    @media (max-width: 1120px) {
+      .sidebar { width: 210px; flex-basis: 210px; }
+      .main { padding-left: 22px; padding-right: 22px; }
+      .summary-row { grid-template-columns: repeat(2, 1fr); }
+      .filter-grid { grid-template-columns: repeat(2, 1fr); }
+      .filter-row { grid-template-columns: 1fr 1fr; }
+    }
+
+    @media (max-width: 760px) {
+      .sidebar { display: none; }
+      .topbar { padding: 0 16px; }
+      .search { width: min(52vw, 320px); }
+      .main { padding: 22px 14px 40px; }
+      .page-heading { display: block; }
+      .head-actions { margin-top: 14px; }
+      .filter-grid, .filter-row, .summary-row { grid-template-columns: 1fr; }
+      .tabs { gap: 18px; overflow-x: auto; }
+      .table-heading { display: block; }
+      .formula-tag { margin-top: 12px; }
+      .table-footer { display: block; }
+      .pagination { margin-top: 12px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar">
+      <div class="brand">
+        <div class="brand-mark">国</div>
+        <div>
+          <div class="brand-name">千铝国昱云平台</div>
+          <div class="brand-sub">培训学习考试闭环</div>
+        </div>
+      </div>
+      <nav class="nav" aria-label="主导航">
+        <div class="nav-group"><button class="nav-item"><span class="nav-icon">◌</span>管理概览</button></div>
+        <div class="nav-group"><button class="nav-item"><span class="nav-icon">⚙</span>系统管理<span class="nav-chevron">⌄</span></button></div>
+        <div class="nav-group"><button class="nav-item"><span class="nav-icon">▣</span>课程管理<span class="nav-chevron">⌄</span></button></div>
+        <div class="nav-group"><button class="nav-item"><span class="nav-icon">▤</span>培训管理<span class="nav-chevron">⌄</span></button></div>
+        <div class="nav-group"><button class="nav-item"><span class="nav-icon">♢</span>认定管理<span class="nav-chevron">⌄</span></button></div>
+        <div class="nav-group">
+          <button class="nav-item active"><span class="nav-icon">♜</span>竞赛管理<span class="nav-chevron">⌃</span></button>
+          <button class="nav-item nav-child active">成绩与排名</button>
+          <button class="nav-item nav-child">赛事管理</button>
+        </div>
+        <div class="nav-group"><button class="nav-item"><span class="nav-icon">♢</span>查证管理<span class="nav-chevron">⌄</span></button></div>
+        <div class="nav-group"><button class="nav-item"><span class="nav-icon">⌘</span>流程审批<span class="nav-chevron">⌄</span></button></div>
+        <div class="nav-group"><button class="nav-item"><span class="nav-icon">▧</span>AI 样板<span class="nav-chevron">⌄</span></button></div>
+        <div class="nav-group"><button class="nav-item"><span class="nav-icon">▤</span>知识库<span class="nav-chevron">⌄</span></button></div>
+        <div class="nav-group"><button class="nav-item"><span class="nav-icon">♙</span>人才认定分析<span class="nav-chevron">⌄</span></button></div>
+      </nav>
+    </aside>
+
+    <section class="workspace">
+      <header class="topbar">
+        <label class="search"><span>⌕</span><input type="search" placeholder="搜索课程、资料、任务" /></label>
+        <div class="user-box">
+          <div class="avatar-small">管</div>
+          <div><div class="user-name">平台管理员</div><div class="tenant">demo tenant</div></div>
+        </div>
+      </header>
+
+      <main class="main">
+        <div class="breadcrumb">竞赛管理&nbsp; / &nbsp;成绩与排名</div>
+        <div class="page-heading">
+          <div>
+            <h1>成绩管理</h1>
+            <div class="subtitle">资格赛 · 挤压修模工 · 中级工 · 科目、成绩状态与排名统一视图</div>
+          </div>
+          <div class="head-actions">
+            <button class="btn">↻ 刷新数据</button>
+            <button class="btn">⇩ 导出成绩</button>
+            <button class="btn primary">▣ 汇总 / 发布</button>
+          </div>
+        </div>
+
+        <section class="filter-card">
+          <div class="filter-grid">
+            <div class="field"><label>赛事</label><select class="select"><option>资格赛</option></select></div>
+            <div class="field"><label>工种</label><select class="select"><option>挤压修模工</option></select></div>
+            <div class="field"><label>等级</label><select class="select"><option>中级工</option></select></div>
+            <div class="field"><label>计分规则</label><div class="weight-tip">▦ 赛段内容权重计分</div></div>
+          </div>
+          <div class="filter-row">
+            <label class="input-wrap"><span>⌕</span><input class="input" type="search" placeholder="搜索选手姓名、编号或成员 ID" /></label>
+            <select class="select"><option>代表队</option></select>
+            <select class="select"><option>成绩状态</option></select>
+            <button class="btn filter-button">⌕ 清除筛选</button>
+          </div>
+        </section>
+
+        <div class="ready-line"><span class="ready-dot">✓</span><strong>成绩域已就绪</strong><span class="ready-extra">综合成绩按赛段编排中的内容权重计算 · 结果列已置于视觉主位</span></div>
+
+        <section class="summary-row" aria-label="成绩摘要">
+          <div class="summary-card featured"><div class="summary-label">最高综合成绩</div><div class="summary-value">70.40 <span class="summary-note">分 · 尤法公</span></div></div>
+          <div class="summary-card"><div class="summary-label">平均综合成绩</div><div class="summary-value">65.90 <span class="summary-note">分</span></div></div>
+          <div class="summary-card"><div class="summary-label">参赛人数</div><div class="summary-value">3 <span class="summary-note">人</span></div></div>
+          <div class="summary-card"><div class="summary-label">成绩状态</div><div class="summary-value">3 <span class="summary-note">已确认</span></div></div>
+        </section>
+
+        <div class="tabs" role="tablist">
+          <div class="tab active" role="tab">♜ 综合成绩</div>
+          <div class="tab" role="tab">⚙ 科目工作台</div>
+          <div class="tab" role="tab">▣ 汇总发布</div>
+          <div class="tab" role="tab">▤ 数据追踪</div>
+        </div>
+
+        <section class="table-card">
+          <div class="table-heading">
+            <div><div class="table-title">综合成绩表</div><div class="table-meta">共 3 名选手 · 当前范围动态生成 2 个科目列</div></div>
+            <div class="formula-tag"><span class="formula-icon">Σ</span>综合成绩 = 理论 × 40% + 实操 × 60%</div>
+          </div>
+          <div class="table-scroll">
+            <table>
+              <thead>
+                <tr>
+                  <th class="check"><input id="selectAll" type="checkbox" aria-label="全选" /></th>
+                  <th class="rank">排名</th>
+                  <th>选手</th>
+                  <th class="score-col" aria-sort="descending"><button id="sortScore" class="detail" style="color:inherit">综合成绩&nbsp; ↕</button></th>
+                  <th>成绩状态</th>
+                  <th>理论</th>
+                  <th>实操</th>
+                  <th>代表队</th>
+                  <th>工种</th>
+                  <th>等级</th>
+                  <th>操作</th>
+                </tr>
+              </thead>
+              <tbody id="scoreRows">
+                <tr data-score="70.40">
+                  <td class="check"><input type="checkbox" class="row-check" aria-label="选择尤法公" /></td>
+                  <td class="rank"><span class="rank-badge first">1</span></td>
+                  <td><div class="candidate"><div class="candidate-avatar">尤</div><div><div class="candidate-name">尤法公</div><div class="candidate-id">2101949655856209922</div></div></div></td>
+                  <td class="score-col"><div class="score-number">70.40<span class="score-unit">分</span></div><div class="score-sub">已计算</div></td>
+                  <td><span class="status">已确认</span></td>
+                  <td><span class="subject-score">34.00</span><span class="confirmed">已确认</span></td>
+                  <td><span class="subject-score">94.67</span><span class="confirmed">已确认</span></td>
+                  <td class="team">测试</td><td>挤压修模工</td><td>中级工</td><td><button class="detail">◉ 详情</button></td>
+                </tr>
+                <tr data-score="67.60">
+                  <td class="check"><input type="checkbox" class="row-check" aria-label="选择秦文浩" /></td>
+                  <td class="rank"><span class="rank-badge second">2</span></td>
+                  <td><div class="candidate"><div class="candidate-avatar">秦</div><div><div class="candidate-name">秦文浩</div><div class="candidate-id">2101949451169980417</div></div></div></td>
+                  <td class="score-col"><div class="score-number">67.60<span class="score-unit">分</span></div><div class="score-sub">已计算</div></td>
+                  <td><span class="status">已确认</span></td>
+                  <td><span class="subject-score">22.00</span><span class="confirmed">已确认</span></td>
+                  <td><span class="subject-score">98.00</span><span class="confirmed">已确认</span></td>
+                  <td class="team">测试</td><td>挤压修模工</td><td>中级工</td><td><button class="detail">◉ 详情</button></td>
+                </tr>
+                <tr data-score="59.70">
+                  <td class="check"><input type="checkbox" class="row-check" aria-label="选择何林雅" /></td>
+                  <td class="rank"><span class="rank-badge third">3</span></td>
+                  <td><div class="candidate"><div class="candidate-avatar">何</div><div><div class="candidate-name">何林雅</div><div class="candidate-id">2101949793567793153</div></div></div></td>
+                  <td class="score-col"><div class="score-number">59.70<span class="score-unit">分</span></div><div class="score-sub">已计算</div></td>
+                  <td><span class="status">已确认</span></td>
+                  <td><span class="subject-score">22.00</span><span class="confirmed">已确认</span></td>
+                  <td><span class="subject-score">84.83</span><span class="confirmed">已确认</span></td>
+                  <td class="team">测试</td><td>挤压修模工</td><td>中级工</td><td><button class="detail">◉ 详情</button></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="table-footer">
+            <span id="selectedCount">共 3 人</span>
+            <div class="pagination"><button class="page-button" disabled>‹</button><button class="page-button current">1</button><button class="page-button" disabled>›</button><select class="page-size"><option>10 条/页</option></select></div>
+          </div>
+        </section>
+      </main>
+    </section>
+  </div>
+
+  <script>
+    const rows = document.querySelector('#scoreRows');
+    const sortButton = document.querySelector('#sortScore');
+    let descending = true;
+
+    sortButton.addEventListener('click', () => {
+      const items = [...rows.querySelectorAll('tr')];
+      descending = !descending;
+      items.sort((a, b) => Number(b.dataset.score) - Number(a.dataset.score));
+      if (!descending) items.reverse();
+      items.forEach((row, index) => {
+        row.querySelector('.rank-badge').textContent = index + 1;
+        rows.appendChild(row);
+      });
+      sortButton.textContent = `综合成绩  ${descending ? '↓' : '↑'}`;
+    });
+
+    const selectAll = document.querySelector('#selectAll');
+    const updateSelected = () => {
+      const checks = [...document.querySelectorAll('.row-check')];
+      const selected = checks.filter(item => item.checked).length;
+      document.querySelector('#selectedCount').textContent = selected ? `已选择 ${selected} 人 · 共 3 人` : '共 3 人';
+      selectAll.checked = selected === checks.length;
+      selectAll.indeterminate = selected > 0 && selected < checks.length;
+    };
+    selectAll.addEventListener('change', () => {
+      document.querySelectorAll('.row-check').forEach(item => item.checked = selectAll.checked);
+      updateSelected();
+    });
+    document.querySelectorAll('.row-check').forEach(item => item.addEventListener('change', updateSelected));
+  </script>
+</body>
+</html>

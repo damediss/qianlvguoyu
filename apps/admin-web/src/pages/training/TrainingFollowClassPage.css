@@ -1,0 +1,130 @@
+.training-follow-class-page .page-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.training-follow-class-page .follow-workbench-header {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.training-follow-class-page .follow-class-card-grid {
+  min-height: 120px;
+}
+
+.training-follow-class-page .follow-class-card {
+  display: flex;
+  align-items: flex-start;
+  width: 100%;
+  min-height: 72px;
+  height: 100%;
+  padding: 16px;
+  border: 1px solid #e8eef5;
+  border-radius: 10px;
+  background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
+  cursor: pointer;
+  text-align: left;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease;
+}
+
+.training-follow-class-page .follow-class-card:hover {
+  border-color: #91caff;
+  box-shadow: 0 6px 18px rgba(22, 119, 255, 0.12);
+  transform: translateY(-1px);
+}
+
+.training-follow-class-page .follow-class-card:focus-visible {
+  outline: 2px solid #1677ff;
+  outline-offset: 2px;
+}
+
+.training-follow-class-page .follow-class-card-body {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+  flex: 1;
+}
+
+.training-follow-class-page .follow-class-card-title {
+  display: block;
+  font-size: 15px;
+  font-weight: 600;
+  color: #1f2937;
+  line-height: 1.4;
+  white-space: normal;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+}
+
+.training-follow-class-page .follow-class-card-company {
+  display: block;
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.training-follow-class-page .follow-class-card-worktype {
+  display: block;
+  font-size: 12px;
+  line-height: 1.4;
+  color: #475569;
+}
+
+.training-follow-class-page .follow-class-card-meta {
+  display: block;
+  font-size: 12px;
+  line-height: 1.4;
+  color: #64748b;
+}
+
+.training-follow-class-page .follow-class-card-pagination {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 16px;
+}
+
+/* 概览：近日出勤率 / 学员预警 — 默认隐藏滚动条，悬停再显示 */
+.training-follow-class-page .follow-overview-scroll-card .ant-card-body {
+  max-height: 280px;
+  overflow: auto;
+  padding-top: 8px;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.training-follow-class-page .follow-overview-scroll-card .ant-card-body::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+}
+
+.training-follow-class-page .follow-overview-scroll-card .ant-card-body:hover,
+.training-follow-class-page .follow-overview-scroll-card .ant-card-body:focus-within {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(0, 0, 0, 0.35) transparent;
+}
+
+.training-follow-class-page .follow-overview-scroll-card .ant-card-body:hover::-webkit-scrollbar,
+.training-follow-class-page .follow-overview-scroll-card .ant-card-body:focus-within::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+.training-follow-class-page .follow-overview-scroll-card .ant-card-body:hover::-webkit-scrollbar-thumb,
+.training-follow-class-page .follow-overview-scroll-card .ant-card-body:focus-within::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.28);
+  border-radius: 6px;
+}
+
+.training-follow-class-page .follow-overview-scroll-card .ant-card-body:hover::-webkit-scrollbar-track,
+.training-follow-class-page .follow-overview-scroll-card .ant-card-body:focus-within::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.training-follow-class-page .follow-schedule-row-today > td {
+  background: #e6f4ff !important;
+}

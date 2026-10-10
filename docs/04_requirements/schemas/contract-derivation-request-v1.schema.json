@@ -1,0 +1,217 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:guoyu:schema:contract-derivation-request:v1",
+  "title": "Guoyu Contract Derivation Request v1",
+  "description": "Derive a contract draft from an immutable snapshot of a RAG-selected historical DOCX while preserving its document structure and layout.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "contractType", "source", "fields", "options"],
+  "properties": {
+    "schema": {
+      "const": "guoyu.contract-derivation-request/v1"
+    },
+    "contractType": {
+      "const": "software-technology-service-framework"
+    },
+    "source": {
+      "$ref": "#/$defs/sourceDocument"
+    },
+    "fields": {
+      "$ref": "#/$defs/contractFields"
+    },
+    "sectionEdits": {
+      "type": "array",
+      "maxItems": 50,
+      "items": {
+        "$ref": "#/$defs/sectionEdit"
+      },
+      "default": []
+    },
+    "options": {
+      "$ref": "#/$defs/renderOptions"
+    }
+  },
+  "$defs": {
+    "sourceDocument": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "provider",
+        "knowledgeBaseId",
+        "knowledgeId",
+        "sourceSnapshotId",
+        "originalFilename",
+        "sourceFileHash",
+        "manifestId",
+        "manifestVersion",
+        "userConfirmed"
+      ],
+      "properties": {
+        "provider": {
+          "const": "weknora-knowledge"
+        },
+        "knowledgeBaseId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "knowledgeId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "sourceSnapshotId": {
+          "type": "string",
+          "pattern": "^[1-9][0-9]{0,31}$"
+        },
+        "originalFilename": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 255,
+          "pattern": "\\.[dD][oO][cC][xX]$"
+        },
+        "sourceFileHash": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "manifestId": {
+          "type": "string",
+          "pattern": "^[1-9][0-9]{0,31}$"
+        },
+        "manifestVersion": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "selectionReason": {
+          "type": "string",
+          "maxLength": 1000
+        },
+        "userConfirmed": {
+          "const": true
+        }
+      }
+    },
+    "fieldValue": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["value", "source", "confirmed"],
+      "properties": {
+        "value": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 5000
+        },
+        "source": {
+          "enum": ["user", "source_document", "rag", "wiki", "system", "agent_inference"]
+        },
+        "sourceDocumentId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "confirmed": {
+          "type": "boolean"
+        }
+      }
+    },
+    "contractFields": {
+      "type": "object",
+      "minProperties": 4,
+      "required": ["contractNumber", "partyA", "partyB", "amount"],
+      "properties": {
+        "contractNumber": {
+          "$ref": "#/$defs/fieldValue"
+        },
+        "contractTitle": {
+          "$ref": "#/$defs/fieldValue"
+        },
+        "partyA": {
+          "$ref": "#/$defs/fieldValue"
+        },
+        "partyB": {
+          "$ref": "#/$defs/fieldValue"
+        },
+        "amount": {
+          "$ref": "#/$defs/fieldValue"
+        },
+        "effectiveDate": {
+          "$ref": "#/$defs/fieldValue"
+        },
+        "expiryDate": {
+          "$ref": "#/$defs/fieldValue"
+        },
+        "projectName": {
+          "$ref": "#/$defs/fieldValue"
+        },
+        "serviceScope": {
+          "$ref": "#/$defs/fieldValue"
+        },
+        "paymentTerms": {
+          "$ref": "#/$defs/fieldValue"
+        },
+        "disputeResolution": {
+          "$ref": "#/$defs/fieldValue"
+        }
+      },
+      "additionalProperties": {
+        "$ref": "#/$defs/fieldValue"
+      }
+    },
+    "sectionEdit": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["anchorId", "operation", "content", "source", "confirmed", "preserveStyle"],
+      "properties": {
+        "anchorId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "description": "An anchor returned by contract.resolveSourceDocument; arbitrary OOXML selectors are not accepted."
+        },
+        "operation": {
+          "enum": ["replace_variable", "replace_section_body", "append_after_section", "remove_optional_section"]
+        },
+        "content": {
+          "type": "string",
+          "maxLength": 20000
+        },
+        "source": {
+          "enum": ["user", "source_document", "rag", "wiki", "system", "agent_inference"]
+        },
+        "sourceDocumentId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "confirmed": {
+          "type": "boolean"
+        },
+        "preserveStyle": {
+          "const": true
+        }
+      }
+    },
+    "renderOptions": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["preserveLayout", "draftWatermark", "outputFormats"],
+      "properties": {
+        "preserveLayout": {
+          "const": true
+        },
+        "draftWatermark": {
+          "type": "boolean"
+        },
+        "outputFormats": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 2,
+          "uniqueItems": true,
+          "items": {
+            "enum": ["docx", "pdf"]
+          }
+        }
+      }
+    }
+  }
+}

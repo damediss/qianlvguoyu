@@ -1,0 +1,31 @@
+# 本地 OnlyOffice Document Server（申报补贴材料在线编辑）
+# 用法：在本目录执行 docker compose -f docker-compose.onlyoffice.yml up -d
+#
+# 后端环境变量示例（PowerShell）：
+#   $env:ONLYOFFICE_ENABLED='true'
+#   $env:ONLYOFFICE_DS_URL='http://localhost:8088'
+#   $env:ONLYOFFICE_PUBLIC_BASE_URL='http://host.docker.internal:8080/api'
+#   $env:ONLYOFFICE_JWT_ENABLED='true'
+#   $env:ONLYOFFICE_JWT_SECRET='guoyu-onlyoffice-dev-secret'
+#
+# 注意：Document Server 容器内通过 host.docker.internal 访问本机 platform-api:8080。
+# 若 JWT_SECRET 与后端不一致，编辑器会报下载/鉴权失败。
+
+services:
+  onlyoffice-documentserver:
+    image: onlyoffice/documentserver:latest
+    container_name: guoyu-onlyoffice
+    ports:
+      - "8088:80"
+    environment:
+      - JWT_ENABLED=true
+      - JWT_SECRET=guoyu-onlyoffice-dev-secret
+      - JWT_HEADER=Authorization
+    volumes:
+      - onlyoffice_data:/var/www/onlyoffice/Data
+      - onlyoffice_logs:/var/log/onlyoffice
+    restart: unless-stopped
+
+volumes:
+  onlyoffice_data:
+  onlyoffice_logs:

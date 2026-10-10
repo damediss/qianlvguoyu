@@ -1,1 +1,0 @@
-SELECT id, tenant_id, username, status, deleted FROM sys_user WHERE id IN (1000, 999000);

@@ -1,0 +1,177 @@
+.competition-paper-assignment-page {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 20px;
+  background: #f5f7fa;
+}
+
+.competition-paper-assignment-page__header,
+.competition-paper-assignment-page__footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.competition-paper-assignment-page__header h4 {
+  margin: 0 0 4px;
+}
+
+.competition-paper-assignment-page__scope {
+  background: #fff;
+}
+
+.competition-paper-assignment-page__stats {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.competition-paper-assignment-page__stats .ant-card-body {
+  padding: 14px 16px;
+}
+
+.competition-paper-assignment-page__strategy {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.competition-paper-assignment-page__radio-strategy {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  white-space: nowrap;
+}
+
+.competition-paper-assignment-page__radio-dot {
+  width: 10px;
+  height: 10px;
+  border: 3px solid #1677ff;
+  border-radius: 50%;
+  box-shadow: 0 0 0 2px #d6e8ff;
+}
+
+.competition-paper-assignment-page__paper-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+}
+
+.competition-paper-assignment-page__paper-card {
+  min-width: 0;
+  background: #fbfcff;
+  border-color: #e7edf7;
+}
+
+.competition-paper-assignment-page__paper-card-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.competition-paper-assignment-page__paper-card-count {
+  margin-top: 12px;
+  color: #1f2937;
+  font-size: 28px;
+  font-weight: 600;
+  line-height: 1;
+}
+
+.competition-paper-assignment-page__paper-card-count small {
+  color: #6b7280;
+  font-size: 13px;
+  font-weight: 400;
+}
+
+.competition-paper-assignment-page__workspace {
+  background: #fff;
+}
+
+.competition-paper-assignment-page__toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+.competition-paper-assignment-page__visual {
+  min-height: 420px;
+}
+
+.competition-paper-assignment-page__visual-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+.competition-paper-assignment-page__visual-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 110px minmax(0, 1fr);
+  align-items: center;
+  gap: 14px;
+}
+
+.competition-paper-assignment-page__visual-card {
+  min-width: 0;
+}
+
+.competition-paper-assignment-page__visual-list {
+  max-height: 440px;
+  overflow-y: auto;
+}
+
+.competition-paper-assignment-page__visual-item {
+  display: flex;
+  gap: 10px;
+  cursor: pointer;
+}
+
+.competition-paper-assignment-page__visual-item-main {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+}
+
+.competition-paper-assignment-page__visual-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.competition-paper-assignment-page__footer {
+  padding: 4px 0 0;
+}
+
+@media (max-width: 1100px) {
+  .competition-paper-assignment-page__stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .competition-paper-assignment-page__visual-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .competition-paper-assignment-page__visual-actions {
+    flex-direction: row;
+    justify-content: center;
+  }
+}
+
+@media (max-width: 640px) {
+  .competition-paper-assignment-page {
+    padding: 12px;
+  }
+
+  .competition-paper-assignment-page__header,
+  .competition-paper-assignment-page__footer,
+  .competition-paper-assignment-page__strategy {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+}

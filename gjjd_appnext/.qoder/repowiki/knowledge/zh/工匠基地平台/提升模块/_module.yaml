@@ -1,8 +1,0 @@
-schema_version: 1
-module_path: platform/promote
-title: 提升模块
-scope: []
-source_files: []
-depends_on:
-    - path: platform/api
-related_to: []
