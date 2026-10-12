@@ -48,7 +48,7 @@ apiClient 响应拦截器必须覆盖三种错误码：
 ## 执行规则
 
 1. 页面级数据请求使用 TanStack Query
-2. 用户信息、菜单、主题、折叠状态使用 Zustand
+2. 用户信息、菜单、主题等跨组件共享的状态使用 Zustand；单组件自用的 UI 状态（如侧栏折叠）用组件内 useState + localStorage 持久化，不强制进 store
 3. 表格优先 ProTable，表单优先 ProForm，图表统一 ECharts
 4. 菜单从后端动态加载，不在前端写死
 5. HTML 原型仅作参考，不在原型文件上堆正式功能

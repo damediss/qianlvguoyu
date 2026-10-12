@@ -41,6 +41,45 @@ body {
   border-bottom: 1px solid #f1f5f9;
 }
 
+.brand-texts {
+  flex: 1;
+  min-width: 0;
+}
+
+/* 折叠态：品牌区改纵向居中（字标在上、折叠按钮在下），文字整列隐藏不渲染 */
+.brand-block-collapsed {
+  flex-direction: column;
+  justify-content: center;
+  gap: 8px;
+  height: auto;
+  padding: 12px 0;
+}
+
+/* 侧栏折叠切换按钮：默认浅灰图标；hover 反色为深色圆角块 + 白图标（参考图 2 悬停效果） */
+.sider-toggle-btn {
+  display: grid;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  place-items: center;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: #94a3b8;
+  cursor: pointer;
+  transition: background-color 0.16s ease, color 0.16s ease;
+}
+
+.sider-toggle-btn:hover {
+  background: #1e293b;
+  color: #ffffff;
+}
+
+.sider-toggle-btn:focus-visible {
+  outline: 2px solid #3b82f6;
+  outline-offset: 1px;
+}
+
 .brand-mark,
 .login-mark {
   display: grid;

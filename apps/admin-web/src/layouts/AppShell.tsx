@@ -21,10 +21,13 @@ import { useNavStore } from '../stores/navStore';
 import { FIXED_TAB_TITLE, SOFT_PROMPT_LIMIT, useTabStore } from '../stores/tabStore';
 import type { TabItem } from '../stores/tabStore';
 import type { MenuVO } from '../types/api';
+import { SidebarToggleIcon } from '../components/SidebarToggleIcon';
 import { iconFromName } from '../utils/icons';
 import { TabActiveProvider, TabPaneActiveProvider } from './TabKeepAlive';
 
 const { Header, Sider, Content } = Layout;
+
+const SIDEBAR_COLLAPSED_KEY = 'guoyu_admin_sidebar_collapsed';
 
 type AppMenuItem = {
   key: string;
@@ -322,6 +325,19 @@ export function AppShell({
   const selectedKey = useNavStore((s) => s.selectedKey);
   const setSelectedKey = useNavStore((s) => s.setSelectedKey);
   const [openKeys, setOpenKeys] = useState<string[]>([]);
+  // 侧栏折叠：单组件自用状态（AGENTS.md 规则 2 修订），localStorage 持久化，刷新后恢复
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(
+    () => localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === '1',
+  );
+  const toggleSidebar = useCallback(() => {
+    setSidebarCollapsed((prev) => {
+      const next = !prev;
+      localStorage.setItem(SIDEBAR_COLLAPSED_KEY, next ? '1' : '0');
+      return next;
+    });
+    // 等 Sider 0.2s 过渡结束后广播 resize，驱动 ECharts 等监听 window resize 的组件重排
+    window.setTimeout(() => window.dispatchEvent(new Event('resize')), 250);
+  }, []);
   const tabsEnabled = isTabsFeatureEnabled();
   const tabs = useTabStore((s) => s.tabs);
   const activeKey = useTabStore((s) => s.activeKey);
@@ -692,13 +708,25 @@ export function AppShell({
 
   return (
     <Layout className="app-shell">
-      <Sider width={270} className="app-sider">
-        <div className="brand-block">
+      <Sider width={270} collapsedWidth={72} collapsed={sidebarCollapsed} trigger={null} className="app-sider">
+        <div className={`brand-block${sidebarCollapsed ? ' brand-block-collapsed' : ''}`}>
           <div className="brand-mark">国</div>
-          <div>
-            <Typography.Text className="brand-name">千铝国昱云平台</Typography.Text>
-            <Typography.Text className="brand-sub">培训学习考试闭环</Typography.Text>
-          </div>
+          {!sidebarCollapsed && (
+            <div className="brand-texts">
+              <Typography.Text className="brand-name">千铝国昱云平台</Typography.Text>
+              <Typography.Text className="brand-sub">培训学习考试闭环</Typography.Text>
+            </div>
+          )}
+          <Tooltip title={sidebarCollapsed ? '展开侧边栏' : '收起侧边栏'} placement="right">
+            <button
+              type="button"
+              className="sider-toggle-btn"
+              aria-label={sidebarCollapsed ? '展开侧边栏' : '收起侧边栏'}
+              onClick={toggleSidebar}
+            >
+              <SidebarToggleIcon collapsed={sidebarCollapsed} />
+            </button>
+          </Tooltip>
         </div>
         <Menu
           className="app-menu"
