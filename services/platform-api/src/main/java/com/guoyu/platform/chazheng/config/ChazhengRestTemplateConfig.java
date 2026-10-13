@@ -20,7 +20,8 @@ import javax.net.ssl.SSLContext;
 /**
  * 查证模块 RestTemplate 配置。
  *
- * <p>跳过 SSL 证书验证，对齐 PHP 代码中 {@code CURLOPT_SSL_VERIFYPEER=false} 的行为。
+ * <p>跳过 SSL 证书验证（信任库 + 主机名双重跳过），对齐 PHP 代码中
+ * {@code CURLOPT_SSL_VERIFYPEER=false} 的行为。
  *
  * <p>⚠️ <b>生产环境风险</b>：跳过 SSL 验证使连接可能受到中间人攻击。
  * 本配置与 PHP 行为对齐，仅建议在开发/测试环境使用。
@@ -46,8 +47,12 @@ public class ChazhengRestTemplateConfig {
         .loadTrustMaterial(null, trustAll)
         .build();
 
+    // 主机名校验独立于信任库，必须显式跳过：
+    // 对方服务器当前证书 SAN 为 *.org.cn（域名已过期迁址），与访问域名 gxrcosta.com 不匹配，
+    // 不跳过则 trust-all 也照样 SSLHandshakeException（2026-10-13 生产事故根因）
     var sslSocketFactory = SSLConnectionSocketFactoryBuilder.create()
         .setSslContext(sslContext)
+        .setHostnameVerifier(org.apache.hc.client5.http.ssl.NoopHostnameVerifier.INSTANCE)
         .build();
 
     RequestConfig requestConfig = RequestConfig.custom()
