@@ -9,11 +9,29 @@ package com.guoyu.platform.chazheng.exception;
  */
 public class CertQueryInterfaceDownException extends RuntimeException {
 
+  /** 本次请求的目标接口地址（sys_dict: chazheng_url），用于向前端透出故障站点。 */
+  private final String apiUrl;
+  private final int attempts;
+
   public CertQueryInterfaceDownException(String message) {
-    super(message);
+    this(message, null, null, 0);
   }
 
   public CertQueryInterfaceDownException(String message, Throwable cause) {
+    this(message, cause, null, 0);
+  }
+
+  public CertQueryInterfaceDownException(String message, Throwable cause, String apiUrl, int attempts) {
     super(message, cause);
+    this.apiUrl = apiUrl;
+    this.attempts = attempts;
+  }
+
+  public String getApiUrl() {
+    return apiUrl;
+  }
+
+  public int getAttempts() {
+    return attempts;
   }
 }

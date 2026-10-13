@@ -85,7 +85,8 @@ public class ChazhengCertQueryService {
       // 全部尝试都倒在网络层/对方 5xx → 接口级故障，抛专用异常让批次熔断（逐用户重试无意义）
       if (result.attempts > 0 && result.interfaceFailures == result.attempts) {
         throw new CertQueryInterfaceDownException(
-            "查证接口不可达（网络故障或对方服务不可用），共尝试 " + result.attempts + " 次");
+            "查证接口不可达（网络故障或对方服务不可用），共尝试 " + result.attempts + " 次",
+            null, apiUrl, result.attempts);
       }
       throw new BusinessException(ErrorCode.INTERNAL_ERROR,
           "广西技能人才评价工作网接口报错");

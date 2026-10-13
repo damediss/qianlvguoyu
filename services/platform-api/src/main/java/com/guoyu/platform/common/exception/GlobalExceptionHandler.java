@@ -7,6 +7,7 @@ import com.guoyu.platform.ai.infrastructure.FaqLlmClientException;
 import com.guoyu.platform.ai.infrastructure.FaqLlmException;
 import com.guoyu.platform.ai.infrastructure.FaqLlmRateLimitException;
 import com.guoyu.platform.ai.infrastructure.FaqLlmTimeoutException;
+import com.guoyu.platform.chazheng.exception.CertQueryInterfaceDownException;
 import jakarta.validation.ConstraintViolationException;
 import java.io.EOFException;
 import java.net.SocketException;
@@ -151,6 +152,44 @@ public class GlobalExceptionHandler {
     log.warn("查证任务队列已满: {}", ex.getMessage());
     return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
         .body(ApiResponse.fail("503", "查证服务繁忙，请稍后重试"));
+  }
+
+  /**
+   * 证书查证第三方接口不可达（DNS/网络/对方 5xx）：透出故障站点和尝试次数，
+   * 让前端能向用户说明是查证网站侧故障，而非平台内部错误。
+   * 批处理路径在 ChazhengApplicationService 内被捕获走熔断，不会到达这里。
+   */
+  @ExceptionHandler(CertQueryInterfaceDownException.class)
+  public ResponseEntity<ApiResponse<Void>> handleCertQueryInterfaceDown(
+      CertQueryInterfaceDownException ex) {
+    log.warn("[certQuery] 查证接口不可达: {}", ex.getMessage());
+    String site = extractSite(ex.getApiUrl());
+    String message = (site != null ? site + " " : "") + "网站接口不可达（网络故障或对方服务不可用）";
+    if (ex.getAttempts() > 0) {
+      message += "，共尝试 " + ex.getAttempts() + " 次";
+    }
+    return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+        .body(ApiResponse.fail(ErrorCode.SERVICE_UNAVAILABLE, message));
+  }
+
+  /** 从完整接口地址提取站点根地址（scheme://host/），解析失败退回 null。 */
+  private String extractSite(String apiUrl) {
+    if (apiUrl == null || apiUrl.isBlank()) {
+      return null;
+    }
+    try {
+      java.net.URI uri = java.net.URI.create(apiUrl.trim());
+      if (uri.getScheme() != null && uri.getHost() != null) {
+        StringBuilder site = new StringBuilder(uri.getScheme()).append("://").append(uri.getHost());
+        if (uri.getPort() >= 0) {
+          site.append(':').append(uri.getPort());
+        }
+        return site.append('/').toString();
+      }
+    } catch (IllegalArgumentException ignored) {
+      // 配置值不是合法 URI 时按原样透出
+    }
+    return apiUrl.trim();
   }
 
   /**
