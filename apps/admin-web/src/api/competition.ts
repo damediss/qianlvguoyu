@@ -674,6 +674,27 @@ export function getCompetitionFormalCandidateAnswerSheet(
   );
 }
 
+export async function downloadCompetitionFormalCandidateAnswerSheet(
+  candidateExamId: CompetitionId,
+): Promise<Blob> {
+  const response = await apiClient.get(
+    `/competition/formal-exam-candidates/${candidateExamId}/answer-sheet/export`,
+    { responseType: 'blob' },
+  );
+  return response.data as Blob;
+}
+
+export async function downloadCompetitionFormalCandidateAnswerSheets(
+  candidateExamIds: CompetitionId[],
+): Promise<Blob> {
+  const response = await apiClient.post(
+    '/competition/formal-exam-candidates/answer-sheets/export',
+    { candidateExamIds: candidateExamIds.map((id) => String(id)) },
+    { responseType: 'blob', timeout: 120000 },
+  );
+  return response.data as Blob;
+}
+
 export function getCompetitionStageWorkspace(stageId: CompetitionId) {
   return unwrap<CompetitionStageWorkspace>(apiClient.get(`/competition/stages/${stageId}/workspace`));
 }

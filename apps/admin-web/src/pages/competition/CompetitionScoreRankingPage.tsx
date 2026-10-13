@@ -69,6 +69,8 @@ import {
   downloadCompetitionSubjectScoreTemplate,
   getCompetitionSubjectScoreImport,
   getCompetitionEvent,
+  downloadCompetitionFormalCandidateAnswerSheet,
+  downloadCompetitionFormalCandidateAnswerSheets,
   getCompetitionFormalCandidateAnswerSheet,
   getCompetitionFormalCandidateResult,
   getCompetitionScoringReadiness,
@@ -313,6 +315,25 @@ function downloadBlob(blob: Blob, fileName: string) {
   URL.revokeObjectURL(url);
 }
 
+function sanitizeAnswerSheetFileStem(value?: string | null) {
+  const cleaned = (value || '')
+    .replace(/[\\/:*?"<>|\u0000-\u001F\u007F]/g, '')
+    .trim()
+    .replace(/[. ]+$/g, '');
+  const stem = cleaned.slice(0, 80).replace(/[. ]+$/g, '');
+  if (/^(con|prn|aux|nul|com[1-9]|lpt[1-9])$/i.test(stem)) return `${stem}_`;
+  return stem;
+}
+
+function answerSheetDocxName(
+  candidateName?: string | null,
+  candidateNo?: string | null,
+) {
+  const name = sanitizeAnswerSheetFileStem(candidateName);
+  const no = sanitizeAnswerSheetFileStem(candidateNo);
+  return `${name || no || '答题卡'}.docx`;
+}
+
 function csvCell(value: unknown) {
   const text = value === undefined || value === null ? '' : String(value);
   return `"${text.replace(/"/g, '""')}"`;
@@ -465,6 +486,24 @@ function overallStatus(
   if (cells.some((cell) => cell.status === 'pending_generation'))
     return 'pending_generation';
   return 'not_started';
+}
+
+function latestFormalScoringTask(
+  tasks: CompetitionFormalScoringTask[],
+  memberId: string,
+) {
+  let selected: CompetitionFormalScoringTask | undefined;
+  tasks.forEach((task) => {
+    if (!task.candidateExamId || idValue(task.contestantMemberId) !== memberId) return;
+    const newerRevision = !selected || task.resultRevisionNo > selected.resultRevisionNo;
+    const sameRevisionCompleted =
+      selected
+      && task.resultRevisionNo === selected.resultRevisionNo
+      && task.taskStatus === 'completed'
+      && selected.taskStatus !== 'completed';
+    if (newerRevision || sameRevisionCompleted) selected = task;
+  });
+  return selected;
 }
 
 function buildOverviewRows(
@@ -641,6 +680,8 @@ export function CompetitionScoreRankingPage({
     useState<CompetitionScoreSourceType>();
   const [selectedMemberId, setSelectedMemberId] = useState<string>();
   const [answerSheetOpen, setAnswerSheetOpen] = useState(false);
+  const [exportingAnswerSheetId, setExportingAnswerSheetId] = useState<string>();
+  const [exportingAnswerSheets, setExportingAnswerSheets] = useState(false);
   const [selectedAnswerQuestionId, setSelectedAnswerQuestionId] =
     useState<string>();
   const [selectedSnapshotId, setSelectedSnapshotId] = useState<string>();
@@ -1105,9 +1146,7 @@ export function CompetitionScoreRankingPage({
   }, [keyword, orgFilter, overviewRows, statusFilter]);
   const selectedRow = overviewRows.find((row) => row.key === selectedMemberId);
   const selectedTask = selectedRow
-    ? scoringTasks.find(
-        (task) => idValue(task.contestantMemberId) === selectedRow.key,
-      )
+    ? latestFormalScoringTask(scoringTasks, selectedRow.key)
     : undefined;
   const formalResultQuery = useQuery<CompetitionFormalCandidateResult | null>({
     queryKey: [
@@ -2131,6 +2170,70 @@ export function CompetitionScoreRankingPage({
     },
   ];
 
+  const exportOneAnswerSheet = async (
+    candidateExamId: CompetitionId,
+    candidateName?: string | null,
+    candidateNo?: string | null,
+  ) => {
+    const key = idValue(candidateExamId);
+    setExportingAnswerSheetId(key);
+    try {
+      const blob = await downloadCompetitionFormalCandidateAnswerSheet(
+        candidateExamId,
+      );
+      downloadBlob(blob, answerSheetDocxName(candidateName, candidateNo));
+    } catch {
+      // 错误提示由 apiClient 拦截器统一弹出
+    } finally {
+      setExportingAnswerSheetId((current) => (current === key ? undefined : current));
+    }
+  };
+
+  const exportTheoryAnswerSheets = async (rows: ScoreOverviewRow[]) => {
+    const ready: Array<{ id: CompetitionId; name: string; no: string }> = [];
+    const seen = new Set<string>();
+    rows.forEach((row) => {
+      const task = latestFormalScoringTask(scoringTasks, row.key);
+      const examId = task?.candidateExamId;
+      if (!examId || task?.taskStatus !== 'completed') return;
+      const key = idValue(examId);
+      if (seen.has(key)) return;
+      seen.add(key);
+      ready.push({ id: examId, name: row.candidateName, no: row.candidateNo });
+    });
+    if (ready.length === 0) {
+      message.warning('当前没有已完成判分的理论答题卡');
+      return;
+    }
+    if (ready.length > 200) {
+      message.warning('一次最多导出 200 份答题卡，请缩小筛选范围');
+      return;
+    }
+    setExportingAnswerSheets(true);
+    try {
+      if (ready.length === 1) {
+        const only = ready[0];
+        const blob = await downloadCompetitionFormalCandidateAnswerSheet(only.id);
+        downloadBlob(blob, answerSheetDocxName(only.name, only.no));
+      } else {
+        const blob = await downloadCompetitionFormalCandidateAnswerSheets(
+          ready.map((item) => item.id),
+        );
+        downloadBlob(blob, '理论考试答题卡.zip');
+      }
+      const skipped = rows.length - ready.length;
+      message.success(
+        skipped > 0
+          ? `已导出 ${ready.length} 份答题卡，${skipped} 人尚未完成判分`
+          : `已导出 ${ready.length} 份答题卡`,
+      );
+    } catch {
+      // 错误提示由 apiClient 拦截器统一弹出
+    } finally {
+      setExportingAnswerSheets(false);
+    }
+  };
+
   const workbenchColumns: TableColumnsType<ScoreOverviewRow> = (() => {
     const activeType = workbenchSubject || subjects[0]?.type;
     return [
@@ -2197,12 +2300,39 @@ export function CompetitionScoreRankingPage({
       },
       {
         title: '操作',
-        width: 90,
-        render: (_value, row) => (
-          <Button type="link" onClick={() => setSelectedMemberId(row.key)}>
-            详情
-          </Button>
-        ),
+        width: activeType === 'theory' ? 180 : 90,
+        render: (_value, row) => {
+          const task = latestFormalScoringTask(scoringTasks, row.key);
+          const examId = task?.candidateExamId;
+          return (
+            <Space size={0}>
+              <Button type="link" onClick={() => setSelectedMemberId(row.key)}>
+                详情
+              </Button>
+              {activeType === 'theory' && (
+                <Button
+                  type="link"
+                  icon={<DownloadOutlined />}
+                  disabled={!examId || task?.taskStatus !== 'completed'}
+                  loading={
+                    Boolean(examId) &&
+                    exportingAnswerSheetId === idValue(examId)
+                  }
+                  onClick={() => {
+                    if (!examId) return;
+                    void exportOneAnswerSheet(
+                      examId,
+                      row.candidateName,
+                      row.candidateNo,
+                    );
+                  }}
+                >
+                  导出答题卡
+                </Button>
+              )}
+            </Space>
+          );
+        },
       },
     ];
   })();
@@ -2302,7 +2432,16 @@ export function CompetitionScoreRankingPage({
               type="success"
               showIcon
               message="理论成绩自动回写"
-              description="理论成绩来自正式考试自动评分，异常任务可在数据追踪中重试。"
+              description="理论成绩来自正式考试自动评分。已完成判分的选手可导出答题卡，每人一份 Word 文档，文件名使用选手姓名。"
+              action={
+                <Button
+                  icon={<DownloadOutlined />}
+                  loading={exportingAnswerSheets}
+                  onClick={() => void exportTheoryAnswerSheets(subjectRows)}
+                >
+                  导出答题卡
+                </Button>
+              }
             />
           )}
           <Table<ScoreOverviewRow>
@@ -3359,21 +3498,44 @@ export function CompetitionScoreRankingPage({
                     <div className="competition-score-detail__subject-actions">
                       {statusTag(cell?.status || 'not_started', true)}
                       {subject.type === 'theory' && selectedTask && (
-                        <Button
-                          size="small"
-                          icon={<EyeOutlined />}
-                          loading={formalResultQuery.isFetching}
-                          disabled={
-                            formalResultQuery.isLoading ||
-                            !formalResultQuery.data?.questionScores?.length
-                          }
-                          onClick={() => {
-                            setSelectedAnswerQuestionId(undefined);
-                            setAnswerSheetOpen(true);
-                          }}
-                        >
-                          查看答题卡
-                        </Button>
+                        <>
+                          <Button
+                            size="small"
+                            icon={<EyeOutlined />}
+                            loading={formalResultQuery.isFetching}
+                            disabled={
+                              formalResultQuery.isLoading ||
+                              !formalResultQuery.data?.questionScores?.length
+                            }
+                            onClick={() => {
+                              setSelectedAnswerQuestionId(undefined);
+                              setAnswerSheetOpen(true);
+                            }}
+                          >
+                            查看答题卡
+                          </Button>
+                          <Button
+                            size="small"
+                            icon={<DownloadOutlined />}
+                            disabled={
+                              formalResultQuery.isLoading ||
+                              !formalResultQuery.data?.questionScores?.length
+                            }
+                            loading={
+                              exportingAnswerSheetId ===
+                              idValue(selectedTask.candidateExamId)
+                            }
+                            onClick={() =>
+                              void exportOneAnswerSheet(
+                                selectedTask.candidateExamId,
+                                selectedRow.candidateName,
+                                selectedRow.candidateNo,
+                              )
+                            }
+                          >
+                            导出答题卡
+                          </Button>
+                        </>
                       )}
                     </div>
                   </Card>
@@ -3399,7 +3561,27 @@ export function CompetitionScoreRankingPage({
         }
         open={answerSheetOpen}
         width="calc(100vw - 48px)"
-        footer={null}
+        footer={
+          answerSheetQuery.data ? (
+            <Button
+              type="primary"
+              icon={<DownloadOutlined />}
+              loading={
+                exportingAnswerSheetId ===
+                idValue(answerSheetQuery.data.candidateExamId)
+              }
+              onClick={() =>
+                void exportOneAnswerSheet(
+                  answerSheetQuery.data!.candidateExamId,
+                  answerSheetQuery.data!.candidateName,
+                  answerSheetQuery.data!.candidateNo,
+                )
+              }
+            >
+              导出 Word
+            </Button>
+          ) : null
+        }
         destroyOnClose
         onCancel={() => setAnswerSheetOpen(false)}
       >
