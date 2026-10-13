@@ -442,13 +442,16 @@ public class FaqLlmClient {
       // HTTP 4xx / 5xx（由 defaultStatusHandler 抛出）
       throw classifyHttpException(ex.getStatusCode().value(), ex.getMessage(), tenantId, url);
     } catch (RestClientException ex) {
-      // 网络超时 / 连接异常
+      // 网络超时 / 连接异常 / 响应体解析失败（提供商返回 2xx 但空 body 或畸形 JSON，
+      // 2026-10-13 DeepSeek 网关事故即此形态；必须带 rootCause+堆栈，否则只剩一句
+      // "Error while extracting response..." 看不到是空响应还是截断）
       Throwable cause = ex.getCause();
       if (cause instanceof SocketTimeoutException) {
         log.error("LLM 网络超时：tenantId={}, url={}, error={}", tenantId, url, ex.getMessage());
         throw new FaqLlmTimeoutException("LLM 网络超时：" + ex.getMessage());
       }
-      log.error("LLM 请求异常：tenantId={}, url={}, error={}", tenantId, url, ex.getMessage());
+      log.error("LLM 请求异常：tenantId={}, url={}, error={}, rootCause={}",
+          tenantId, url, ex.getMessage(), rootCauseSummary(ex), ex);
       throw new FaqLlmTimeoutException("LLM 请求异常：" + ex.getMessage());
     } finally {
       if (gate != null) {
@@ -458,6 +461,14 @@ public class FaqLlmClient {
   }
 
   // ──────────────────────── private helpers ────────────────────────
+
+  /** 最深层根因的一句话摘要（如 Jackson "No content to map due to end-of-input"），定位畸形响应体用 */
+  private static String rootCauseSummary(RestClientException ex) {
+    Throwable root = ex.getMostSpecificCause();
+    return root != null && root != ex
+        ? root.getClass().getSimpleName() + ": " + root.getMessage()
+        : null;
+  }
 
   /**
    * 根据 HTTP 状态码分类异常。
