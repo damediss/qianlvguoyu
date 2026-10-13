@@ -21,6 +21,9 @@ import org.apache.poi.xwpf.usermodel.XWPFTable;
 import org.apache.poi.xwpf.usermodel.XWPFTableCell;
 import org.apache.xmlbeans.XmlCursor;
 import org.apache.xmlbeans.XmlObject;
+import org.apache.xmlbeans.impl.values.XmlValueDisconnectedException;
+import org.openxmlformats.schemas.wordprocessingml.x2006.main.CTBody;
+import org.openxmlformats.schemas.wordprocessingml.x2006.main.CTP;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 
@@ -306,30 +309,26 @@ public class CompetitionFormalCandidateAnswerSheetDocxWriter {
       throw new BusinessException(ErrorCode.INTERNAL_ERROR, "答题卡模板缺少题型区域：" + headingText);
     }
     setParagraphText(heading, sectionHeading(headingText, questions, instruction));
-
-    List<XWPFParagraph> paragraphs = document.getParagraphs();
-    int headingIndex = paragraphs.indexOf(heading);
-    int nextHeadingIndex = findNextHeading(paragraphs, headingIndex + 1);
-    int sectionEnd = nextHeadingIndex < 0 ? paragraphs.size() : nextHeadingIndex;
-    List<XWPFParagraph> slots = new ArrayList<>();
-    for (int index = headingIndex + 1; index < sectionEnd; index++) {
-      XWPFParagraph paragraph = paragraphs.get(index);
-      if (!StringUtils.hasText(paragraph.getText())) {
-        slots.add(paragraph);
+    CTBody body = document.getDocument().getBody();
+    int headingPos = body.getPList().indexOf(heading.getCTP());
+    if (headingPos < 0) {
+      throw new BusinessException(ErrorCode.INTERNAL_ERROR, "答题卡模板结构异常：" + headingText);
+    }
+    // 清空标题后连续的空白占位段。一律走实时 body（getPList/removeP）——
+    // XWPFDocument 的 getParagraphs()/getBodyElements() 缓存自打开时刻，插入/删除后
+    // 缓存索引与真实 XML 失步，按缓存下标删会误删其他段落（2026-10-13 生产事故链）
+    while (headingPos + 1 < body.getPList().size()) {
+      XWPFParagraph next = new XWPFParagraph(body.getPList().get(headingPos + 1), document);
+      String text = safeText(next);
+      if (text != null && !text.isBlank()) {
+        break;
       }
+      body.removeP(headingPos + 1);
     }
-
-    int used = Math.min(slots.size(), questions.size());
-    for (int index = 0; index < used; index++) {
-      writeQuestion(slots.get(index), questions.get(index));
-    }
-    XWPFParagraph anchor = used > 0 ? slots.get(used - 1) : heading;
-    for (int index = used; index < questions.size(); index++) {
-      anchor = insertParagraphAfter(document, anchor);
-      writeQuestion(anchor, questions.get(index));
-    }
-    for (int index = slots.size() - 1; index >= used; index--) {
-      removeParagraph(document, slots.get(index));
+    // 按题量从标题后依次重建题目段（insertNewP 按位插入，顺序天然正确）
+    for (int index = 0; index < questions.size(); index++) {
+      CTP created = body.insertNewP(headingPos + 1 + index);
+      writeQuestion(new XWPFParagraph(created, document), questions.get(index));
     }
   }
 
@@ -355,7 +354,7 @@ public class CompetitionFormalCandidateAnswerSheetDocxWriter {
 
   private static XWPFParagraph findHeading(XWPFDocument document, String heading) {
     for (XWPFParagraph paragraph : document.getParagraphs()) {
-      String text = paragraph.getText();
+      String text = safeText(paragraph);
       if (text != null && text.contains(heading)) {
         return paragraph;
       }
@@ -363,30 +362,16 @@ public class CompetitionFormalCandidateAnswerSheetDocxWriter {
     return null;
   }
 
-  private static int findNextHeading(List<XWPFParagraph> paragraphs, int start) {
-    for (int index = start; index < paragraphs.size(); index++) {
-      String text = paragraphs.get(index).getText();
-      if (text != null && (text.contains("二、多选题") || text.contains("三、判断题"))) {
-        return index;
-      }
-    }
-    return -1;
-  }
-
-  private static XWPFParagraph insertParagraphAfter(XWPFDocument document, XWPFParagraph anchor) {
-    XmlCursor cursor = anchor.getCTP().newCursor();
+  /**
+   * 读段落文本，容忍孤儿节点：本类的重建逻辑会移除模板占位段，而 XWPFDocument 的
+   * getParagraphs() 缓存不会剔除被删段落，后续遍历读到已删段落会抛
+   * XmlValueDisconnectedException，视为空文本跳过即可。
+   */
+  private static String safeText(XWPFParagraph paragraph) {
     try {
-      cursor.toEndToken();
-      return document.insertNewParagraph(cursor);
-    } finally {
-      cursor.dispose();
-    }
-  }
-
-  private static void removeParagraph(XWPFDocument document, XWPFParagraph paragraph) {
-    int index = document.getBodyElements().indexOf(paragraph);
-    if (index >= 0) {
-      document.removeBodyElement(index);
+      return paragraph.getText();
+    } catch (XmlValueDisconnectedException ex) {
+      return null;
     }
   }
 

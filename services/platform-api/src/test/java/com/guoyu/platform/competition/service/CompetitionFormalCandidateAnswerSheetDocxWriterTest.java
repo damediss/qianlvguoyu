@@ -8,6 +8,7 @@ import com.guoyu.platform.competition.service.CompetitionFormalCandidateAnswerSh
 import com.guoyu.platform.competition.service.CompetitionFormalCandidateAnswerSheetDocxWriter.AnswerSheetDocument.Question;
 import java.io.ByteArrayInputStream;
 import java.math.BigDecimal;
+import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
@@ -90,6 +91,55 @@ class CompetitionFormalCandidateAnswerSheetDocxWriterTest {
     assertThat(text).contains("2.950℃");
     assertThat(text).contains("85");
     assertThat(text).doesNotContain("金属轧制工实操笔答");
+  }
+
+  /**
+   * 回归：单题大题题量超过模板占位段时走重建路径（2026-10-13 生产事故——
+   * 旧实现溢出插入触发 POI insertNewParagraph 的 XmlAnyTypeImpl→CTP 强转 500）。
+   * 断言 40 题全部落卡且顺序正确、后续题型分区完好。
+   */
+  @Test
+  void writesAllQuestionsWhenSectionExceedsTemplateSlots() throws Exception {
+    List<Question> questions = new ArrayList<>();
+    for (int index = 1; index <= 40; index++) {
+      questions.add(new Question(
+          index,
+          "single",
+          "<p>第" + index + "题题干</p>",
+          true,
+          true,
+          new BigDecimal("2.00"),
+          new BigDecimal("2"),
+          objectMapper.readTree("{\"selectedOptionIds\":[\"1" + String.format("%02d", index) + ":A\"]}"),
+          List.of(
+              new Option("1" + String.format("%02d", index) + ":A", "A", "选项A"),
+              new Option("1" + String.format("%02d", index) + ":B", "B", "选项B"))));
+    }
+    AnswerSheetDocument document = new AnswerSheetDocument(
+        "溢出考生",
+        "QL099",
+        new BigDecimal("80"),
+        new BigDecimal("100"),
+        questions,
+        "赛事",
+        "工种",
+        "单位",
+        "450101199001011234");
+
+    byte[] bytes = writer.write(document);
+
+    String text = documentText(bytes);
+    assertThat(text).contains("一、单选题");
+    assertThat(text).contains("共40题");
+    for (int index = 1; index <= 40; index++) {
+      assertThat(text).contains(index + ". 第" + index + "题题干");
+    }
+    assertThat(text.indexOf("1. 第1题题干"))
+        .isLessThan(text.indexOf("20. 第20题题干"))
+        .isLessThan(text.indexOf("40. 第40题题干"));
+    assertThat(text).contains("二、多选题");
+    assertThat(text).contains("三、判断题");
+    assertThat(text).contains("考生答案汇总");
   }
 
   private static String documentText(byte[] bytes) throws Exception {
