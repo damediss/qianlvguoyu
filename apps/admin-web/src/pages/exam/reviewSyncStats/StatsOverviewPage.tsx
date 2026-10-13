@@ -232,7 +232,7 @@ export function StatsOverviewPage({
         </span>
       ),
     },
-    { title: '累计练题', dataIndex: 'answers', width: 90, sorter: (a, b) => a.answers - b.answers },
+    { title: '3个阶段累计练题', dataIndex: 'answers', width: 90, sorter: (a, b) => a.answers - b.answers },
     {
       title: '正确率', dataIndex: 'accuracy', width: 90,
       render: (v: number) => (
