@@ -323,12 +323,33 @@ export function importExamDetails(formData: FormData) {
   return unwrap<number>(apiClient.post('/exam/exam-details/import', formData));
 }
 
-/** 导出试题:返回 blob 流;传入 ids 时仅导出勾选的试题(勾选可跨页),否则导出整个科目 */
-export function exportExamDetails(courseId: number, ids?: number[]) {
+/** 按题型配额抽题导出参数:single/multi/judge 为各题型配额,source 为题库来源(默认 0=内部) */
+export interface ExamDetailSampleQuotas {
+  single?: number;
+  multi?: number;
+  judge?: number;
+  source?: number;
+}
+
+/**
+ * 导出试题:返回 blob 流。
+ * 传 sample 时进入配额抽题模式(从指定来源按题型随机抽题,仅抽审核通过的题,不产生试卷数据);
+ * 否则传 ids 仅导出勾选的试题(勾选可跨页),未勾选导出整个科目。
+ * 抽题模式的实际抽到数量在响应头 X-Export-Sampled(形如 single=345;multi=230;judge=228)。
+ */
+export function exportExamDetails(courseId: number, ids?: number[], sample?: ExamDetailSampleQuotas) {
   return apiClient.get('/exam/exam-details/export', {
     params: {
       courseId,
-      ...(ids && ids.length > 0 ? { ids } : {}),
+      ...(sample
+        ? {
+            sampleSingle: sample.single ?? 0,
+            sampleMulti: sample.multi ?? 0,
+            sampleJudge: sample.judge ?? 0,
+            sampleSource: sample.source ?? 0,
+          }
+        : {}),
+      ...(!sample && ids && ids.length > 0 ? { ids } : {}),
     },
     responseType: 'blob',
   });

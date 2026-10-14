@@ -114,4 +114,55 @@ class ExamExamDetailExportFilterTest {
         assertThrows(BusinessException.class, () -> service.exportByCourse(205, List.of(1)));
     assertTrue(ex.getMessage().contains("无知识点"));
   }
+
+  /** 配额抽题导出：按题型逐次查询，捕获每次的 SQL 片段（空结果触发业务异常，不进入 POI）。 */
+  private List<String> captureSampleSegments(java.util.Map<String, Integer> quotas, int source) {
+    java.util.List<String> segments = new java.util.ArrayList<>();
+    when(knowledgeService.getNodeIdsByCourse(anyInt())).thenReturn(List.of(11, 12));
+    doAnswer(invocation -> {
+      LambdaQueryWrapper<ExamExamDetailEntity> wrapper = invocation.getArgument(0);
+      segments.add(wrapper.getSqlSegment());
+      return List.of();
+    }).when(mapper).selectList(any());
+    assertThrows(BusinessException.class,
+        () -> service.exportSampledByQuotas(205, quotas, source));
+    return segments;
+  }
+
+  @Test
+  @DisplayName("配额抽题：三个题型各查一次，SQL 含 type/source/final_check_status 过滤与 RAND LIMIT")
+  void exportSampledQueriesEachTypeWithFilters() {
+    java.util.Map<String, Integer> quotas = new java.util.LinkedHashMap<>();
+    quotas.put("single", 345);
+    quotas.put("multi", 230);
+    quotas.put("judge", 230);
+    java.util.List<String> segments = captureSampleSegments(quotas, 0);
+    org.junit.jupiter.api.Assertions.assertEquals(3, segments.size());
+    org.junit.jupiter.api.Assertions.assertTrue(segments.get(0).contains("type =")
+        && segments.get(0).contains("source =") && segments.get(0).contains("final_check_status =")
+        && segments.get(0).contains("ORDER BY RAND() LIMIT 345"));
+    org.junit.jupiter.api.Assertions.assertTrue(segments.get(1).contains("ORDER BY RAND() LIMIT 230"));
+    org.junit.jupiter.api.Assertions.assertTrue(segments.get(2).contains("ORDER BY RAND() LIMIT 230"));
+  }
+
+  @Test
+  @DisplayName("配额抽题：配额为 null/0 的题型不查询；全部抽不到时业务异常")
+  void exportSampledSkipsZeroQuotaAndThrowsWhenEmpty() {
+    java.util.Map<String, Integer> quotas = new java.util.LinkedHashMap<>();
+    quotas.put("single", null);
+    quotas.put("multi", 230);
+    quotas.put("judge", 0);
+    java.util.List<String> segments = captureSampleSegments(quotas, 1);
+    org.junit.jupiter.api.Assertions.assertEquals(1, segments.size());
+    org.junit.jupiter.api.Assertions.assertTrue(segments.get(0).contains("ORDER BY RAND() LIMIT 230"));
+
+    when(knowledgeService.getNodeIdsByCourse(anyInt())).thenReturn(List.of(11, 12));
+    java.util.Map<String, Integer> emptyQuotas = new java.util.LinkedHashMap<>();
+    emptyQuotas.put("single", 10);
+    emptyQuotas.put("multi", null);
+    emptyQuotas.put("judge", null);
+    BusinessException ex = assertThrows(BusinessException.class,
+        () -> service.exportSampledByQuotas(205, emptyQuotas, 0));
+    assertTrue(ex.getMessage().contains("未抽到任何试题"));
+  }
 }

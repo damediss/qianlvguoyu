@@ -3,6 +3,8 @@ package com.guoyu.platform.exam.controller;
 import com.guoyu.platform.common.api.ApiResponse;
 import com.guoyu.platform.common.api.PageResponse;
 import com.guoyu.platform.common.audit.AuditLog;
+import com.guoyu.platform.common.exception.BusinessException;
+import com.guoyu.platform.common.exception.ErrorCode;
 import com.guoyu.platform.exam.dto.ExamExamDetailCreateReq;
 import com.guoyu.platform.exam.dto.ExamExamDetailQueryReq;
 import com.guoyu.platform.exam.dto.ExamExamDetailUpdateReq;
@@ -14,7 +16,9 @@ import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.core.io.InputStreamResource;
 import org.springframework.http.HttpHeaders;
@@ -109,18 +113,49 @@ public class ExamExamDetailController {
   @AuditLog(module = "exam", action = "question:export", targetType = "exam_exam_detail")
   public ResponseEntity<InputStreamResource> exportByCourse(
       @RequestParam Integer courseId,
-      @RequestParam(required = false) List<Integer> ids) throws IOException {
-    log.info("GET /exam/exam-details/export courseId={}, selected={}", courseId,
-        ids == null ? 0 : ids.size());
-    ExportResultDTO result = service.exportByCourse(courseId, ids);
+      @RequestParam(required = false) List<Integer> ids,
+      @RequestParam(required = false) Integer sampleSingle,
+      @RequestParam(required = false) Integer sampleMulti,
+      @RequestParam(required = false) Integer sampleJudge,
+      @RequestParam(required = false, defaultValue = "0") Integer sampleSource) throws IOException {
+    boolean sampledRequested = sampleSingle != null || sampleMulti != null || sampleJudge != null;
+    ExportResultDTO result;
+    String sampledCounts = null;
+    if (sampledRequested) {
+      if (ids != null && !ids.isEmpty()) {
+        throw new BusinessException(ErrorCode.BAD_REQUEST, "勾选导出与配额抽题导出不能同时使用");
+      }
+      if ((sampleSingle != null && sampleSingle < 0) || (sampleMulti != null && sampleMulti < 0)
+          || (sampleJudge != null && sampleJudge < 0)) {
+        throw new BusinessException(ErrorCode.BAD_REQUEST, "抽题数量不能为负数");
+      }
+      Map<String, Integer> quotas = new LinkedHashMap<>();
+      quotas.put("single", sampleSingle);
+      quotas.put("multi", sampleMulti);
+      quotas.put("judge", sampleJudge);
+      log.info("GET /exam/exam-details/export courseId={}, sample quotas={}, source={}",
+          courseId, quotas, sampleSource);
+      ExamExamDetailApplicationService.SampledExport sampled =
+          service.exportSampledByQuotas(courseId, quotas, sampleSource);
+      result = sampled.result();
+      sampledCounts = sampled.sampledCounts();
+    } else {
+      log.info("GET /exam/exam-details/export courseId={}, selected={}", courseId,
+          ids == null ? 0 : ids.size());
+      result = service.exportByCourse(courseId, ids);
+    }
     InputStreamResource resource = new InputStreamResource(new ByteArrayInputStream(result.data()));
     // 使用 RFC 5987 filename*，避免 Spring ContentDisposition 生成 =?UTF-8?Q?...?=
     // 导致前端无法正确解析中文文件名
     String encodedName = URLEncoder.encode(result.filename(), StandardCharsets.UTF_8).replace("+", "%20");
-    return ResponseEntity.ok()
+    ResponseEntity.BodyBuilder builder = ResponseEntity.ok()
         .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename*=UTF-8''" + encodedName)
         .contentType(MediaType.parseMediaType(
-            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"))
-        .body(resource);
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"));
+    if (sampledCounts != null) {
+      // 实际抽到数量回传前端，用于提示"某题型仅抽到 X/配额"
+      builder.header("X-Export-Sampled", sampledCounts);
+    }
+    return builder.body(resource);
   }
 }

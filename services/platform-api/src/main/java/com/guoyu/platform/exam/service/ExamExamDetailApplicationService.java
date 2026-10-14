@@ -580,7 +580,60 @@ public class ExamExamDetailApplicationService {
       throw new BusinessException(ErrorCode.BAD_REQUEST, "该科目下无试题数据");
     }
 
-    ExamCourseEntity course = courseMapper.selectById(courseId);
+    return buildPropositionExport(courseMapper.selectById(courseId), records, "");
+  }
+
+  /**
+   * 按题型配额随机抽题导出（竞赛题库等场景）：仅从指定来源抽审核通过的题，
+   * 不产生试卷/考试数据，导出格式与全量导出一致。
+   * quotas 键为题型（single/multi/judge），值为配额；实际抽到数量经 sampledCounts 回传。
+   */
+  @Transactional(readOnly = true)
+  public SampledExport exportSampledByQuotas(Integer courseId, Map<String, Integer> quotas, int source) {
+    Integer tenantId = SecurityContext.currentUser().getTenantId().intValue();
+
+    List<Integer> knowledgeIds = knowledgeService.getNodeIdsByCourse(courseId);
+    if (knowledgeIds == null || knowledgeIds.isEmpty()) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST, "该科目下无知识点，无法导出");
+    }
+
+    List<ExamExamDetailEntity> records = new ArrayList<>();
+    StringBuilder sampledCounts = new StringBuilder();
+    for (String type : List.of("single", "multi", "judge")) {
+      Integer quota = quotas.get(type);
+      if (quota == null || quota <= 0) {
+        continue;
+      }
+      LambdaQueryWrapper<ExamExamDetailEntity> wrapper = new LambdaQueryWrapper<ExamExamDetailEntity>()
+          .eq(ExamExamDetailEntity::getTenantId, tenantId)
+          .in(ExamExamDetailEntity::getKnowledgeId, knowledgeIds)
+          .eq(ExamExamDetailEntity::getType, type)
+          .eq(ExamExamDetailEntity::getSource, source)
+          .eq(ExamExamDetailEntity::getFinalCheckStatus, 1)
+          .last("ORDER BY RAND() LIMIT " + quota);
+      List<ExamExamDetailEntity> part = mapper.selectList(wrapper);
+      records.addAll(part);
+      if (sampledCounts.length() > 0) {
+        sampledCounts.append(';');
+      }
+      sampledCounts.append(type).append('=').append(part.size());
+    }
+
+    if (records.isEmpty()) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST, "按所选来源与题型未抽到任何试题，请调整配额或来源");
+    }
+
+    return new SampledExport(
+        buildPropositionExport(courseMapper.selectById(courseId), records, "_抽题"),
+        sampledCounts.toString());
+  }
+
+  /** 抽题导出结果：文件 + 实际抽到数量（形如 single=345;multi=230;judge=228，回传 X-Export-Sampled 响应头） */
+  public record SampledExport(ExportResultDTO result, String sampledCounts) {
+  }
+
+  private ExportResultDTO buildPropositionExport(ExamCourseEntity course,
+      List<ExamExamDetailEntity> records, String filenameSuffix) {
     Set<Integer> kIds = records.stream()
         .map(ExamExamDetailEntity::getKnowledgeId)
         .filter(kid -> kid != null && kid > 0)
@@ -608,7 +661,7 @@ public class ExamExamDetailApplicationService {
       }
 
       workbook.write(out);
-      return new ExportResultDTO(out.toByteArray(), buildPropositionFilename(course));
+      return new ExportResultDTO(out.toByteArray(), buildPropositionFilename(course, filenameSuffix));
     } catch (BusinessException e) {
       throw e;
     } catch (IOException e) {
@@ -908,11 +961,11 @@ public class ExamExamDetailApplicationService {
     return new ArrayList<>(indices);
   }
 
-  private String buildPropositionFilename(ExamCourseEntity course) {
+  private String buildPropositionFilename(ExamCourseEntity course, String suffix) {
     String courseTitle = course != null && StringUtils.hasText(course.getTitle())
         ? course.getTitle() : "题库";
     String ts = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMddHHmmss"));
-    return courseTitle + "_命题导出_" + ts + ".xlsx";
+    return courseTitle + "_命题导出" + suffix + "_" + ts + ".xlsx";
   }
 
   private void setCellString(Row row, int col, String value) {

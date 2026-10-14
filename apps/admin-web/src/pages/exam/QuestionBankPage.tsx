@@ -16,6 +16,7 @@ import {
   Input,
   InputNumber,
   Modal,
+  Radio,
   Select,
   Space,
   Table,
@@ -331,6 +332,12 @@ export function QuestionBankPage() {
 
   // ── import modal state ──
   const [importModalOpen, setImportModalOpen] = useState(false);
+  const [exportModalOpen, setExportModalOpen] = useState(false);
+  const [exportMode, setExportMode] = useState<'scope' | 'sample'>('scope');
+  const [sampleSingle, setSampleSingle] = useState<number | null>(null);
+  const [sampleMulti, setSampleMulti] = useState<number | null>(null);
+  const [sampleJudge, setSampleJudge] = useState<number | null>(null);
+  const [sampleSource, setSampleSource] = useState(0);
   const [importSource, setImportSource] = useState<number>(0); // 0=内部, 1=外部, 3=赛前复习
   const [importFileList, setImportFileList] = useState<any[]>([]);
   const [importLoading, setImportLoading] = useState(false);
@@ -518,33 +525,72 @@ export function QuestionBankPage() {
     }
   };
 
-  // ── Export handler ──
-  const handleExport = async () => {
+  // ── Export handlers ──
+  const openExportModal = () => {
+    if (!selectedCourseId) {
+      message.warning('请先选择科目');
+      return;
+    }
+    setExportMode('scope');
+    setExportModalOpen(true);
+  };
+
+  const downloadExportBlob = (resp: { data: BlobPart; headers?: unknown }) => {
+    const blob = new Blob([resp.data], {
+      type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    });
+    const filename = parseContentDispositionFilename(resp) || '命题导出.xlsx';
+    const url = window.URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    window.URL.revokeObjectURL(url);
+  };
+
+  const handleExportConfirm = async () => {
     if (!selectedCourseId) {
       message.warning('请先选择科目');
       return;
     }
     setExportLoading(true);
     try {
-      const selectedIds = selectedRowKeys.map(Number);
-      const resp = await exportExamDetails(
-        selectedCourseId,
-        selectedIds.length > 0 ? selectedIds : undefined,
-      );
-      const blob = new Blob([resp.data], {
-        type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-      });
-      const filename = parseContentDispositionFilename(resp) || '命题导出.xlsx';
-      const url = window.URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = filename;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      window.URL.revokeObjectURL(url);
-      const exportedCount = selectedRowKeys.length;
-      message.success(exportedCount > 0 ? `已导出选中的 ${exportedCount} 道试题` : '导出成功');
+      if (exportMode === 'sample') {
+        const quotas = { single: sampleSingle ?? 0, multi: sampleMulti ?? 0, judge: sampleJudge ?? 0 };
+        if (quotas.single <= 0 && quotas.multi <= 0 && quotas.judge <= 0) {
+          message.warning('请至少填写一个题型的抽题数量');
+          return;
+        }
+        const resp = await exportExamDetails(selectedCourseId, undefined, { ...quotas, source: sampleSource });
+        downloadExportBlob(resp);
+        const sampledHeader =
+          ((resp.headers as Record<string, string> | undefined)?.['x-export-sampled'] as string) || '';
+        const labelMap: Record<string, string> = { single: '单选', multi: '多选', judge: '判断' };
+        const entries = sampledHeader.split(';').filter(Boolean).map((kv) => kv.split('='));
+        const parts = entries.map(([k, v]) => `${labelMap[k] ?? k} ${v}`);
+        const shortfall = entries.some(
+          ([k, v]) => Number(v) < (quotas[k as keyof typeof quotas] ?? 0),
+        );
+        const text = `抽题导出完成：${parts.join('、')}`;
+        if (shortfall) {
+          message.warning(`${text}。部分题型可用题不足配额，已导出该题型全部可用题`);
+        } else {
+          message.success(text);
+        }
+        setExportModalOpen(false);
+      } else {
+        const selectedIds = selectedRowKeys.map(Number);
+        const resp = await exportExamDetails(
+          selectedCourseId,
+          selectedIds.length > 0 ? selectedIds : undefined,
+        );
+        downloadExportBlob(resp);
+        const exportedCount = selectedRowKeys.length;
+        message.success(exportedCount > 0 ? `已导出选中的 ${exportedCount} 道试题` : '导出成功');
+        setExportModalOpen(false);
+      }
     } catch (e: any) {
       message.error(e?.message || '导出失败');
     } finally {
@@ -990,8 +1036,7 @@ export function QuestionBankPage() {
           {hasPerm('exam:question:view') && (
             <Button
               icon={<DownloadOutlined />}
-              loading={exportLoading}
-              onClick={handleExport}
+              onClick={openExportModal}
             >
               导出试题{selectedRowKeys.length > 0 ? `（已选 ${selectedRowKeys.length} 题）` : ''}
             </Button>
@@ -1032,6 +1077,83 @@ export function QuestionBankPage() {
           setEditingDetail(null);
         }}
       />
+
+      {/* ── Export Modal ── */}
+      <Modal
+        title="导出试题"
+        open={exportModalOpen}
+        onOk={handleExportConfirm}
+        onCancel={() => setExportModalOpen(false)}
+        confirmLoading={exportLoading}
+        okText="开始导出"
+        destroyOnHidden
+      >
+        <Radio.Group
+          value={exportMode}
+          onChange={(e) => setExportMode(e.target.value)}
+          style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 16 }}
+        >
+          <Radio value="scope">
+            按当前范围导出{selectedRowKeys.length > 0 ? `（已勾选 ${selectedRowKeys.length} 题）` : '（未勾选则导出全部）'}
+          </Radio>
+          <Radio value="sample">按题型配额随机抽题导出</Radio>
+        </Radio.Group>
+        {exportMode === 'sample' && (
+          <>
+            <Space size={12} wrap>
+              <span>
+                单选题{' '}
+                <InputNumber
+                  min={0}
+                  max={5000}
+                  value={sampleSingle}
+                  onChange={(v) => setSampleSingle(v)}
+                  style={{ width: 110 }}
+                  placeholder="数量"
+                />
+              </span>
+              <span>
+                多选题{' '}
+                <InputNumber
+                  min={0}
+                  max={5000}
+                  value={sampleMulti}
+                  onChange={(v) => setSampleMulti(v)}
+                  style={{ width: 110 }}
+                  placeholder="数量"
+                />
+              </span>
+              <span>
+                判断题{' '}
+                <InputNumber
+                  min={0}
+                  max={5000}
+                  value={sampleJudge}
+                  onChange={(v) => setSampleJudge(v)}
+                  style={{ width: 110 }}
+                  placeholder="数量"
+                />
+              </span>
+              <span>
+                来源{' '}
+                <Select
+                  value={sampleSource}
+                  onChange={(v) => setSampleSource(v)}
+                  style={{ width: 130 }}
+                  options={[
+                    { value: 0, label: '内部' },
+                    { value: 1, label: '外部' },
+                    { value: 3, label: '赛前复习' },
+                  ]}
+                />
+              </span>
+            </Space>
+            <div style={{ marginTop: 12, color: '#999', fontSize: 12 }}>
+              仅从所选来源随机抽取审核通过的试题，不产生试卷数据；某题型可用题不足配额时导出该题型全部可用题并提示。
+            </div>
+          </>
+        )}
+      </Modal>
 
       {/* ── Import Modal ── */}
       <Modal
