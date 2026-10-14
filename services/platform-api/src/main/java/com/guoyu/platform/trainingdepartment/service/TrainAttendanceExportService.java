@@ -321,6 +321,10 @@ public class TrainAttendanceExportService {
       writeDateHeaders(sheet, model, dateHeaderStyle);
       ensureDataRows(sheet, model.rows().size(), protoStyles, dateCount);
       fillRows(sheet, model, protoStyles, dateCount);
+      // 模板打印区只到第5行（原型行），数据多于1行时必须扩到末行，否则打印被截断
+      // 参数序：sheetIndex, startColumn, endColumn, startRow, endRow
+      wb.setPrintArea(0, 0, FIXED_COL_COUNT + dateCount - 1,
+          0, ROW_PROTO + model.rows().size() - 1);
 
       wb.write(bos);
       return bos.toByteArray();
@@ -390,10 +394,16 @@ public class TrainAttendanceExportService {
     }
   }
 
-  /** 日期列样式统一取原型「出勤」列（原 4 列）样式；其余按新布局列号取 */
+  /**
+   * 样式映射：日期列统一取原型「出勤」列（原 4 列）样式；
+   * 汇总/签名列（右移后）回映射到原模板列号取样式（完成率/签名 otherwise 会落空）。
+   */
   private static CellStyle styleFor(int col, Map<Integer, CellStyle> protoStyles, int dateCount) {
     if (col >= DATE_COL_START && col < DATE_COL_START + dateCount) {
       return protoStyles.get(DATE_COL_START);
+    }
+    if (col >= DATE_COL_START + dateCount) {
+      return protoStyles.get(col - dateCount);
     }
     return protoStyles.get(col);
   }

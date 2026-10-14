@@ -28,6 +28,9 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import org.apache.poi.ss.usermodel.BorderStyle;
+import org.apache.poi.ss.usermodel.Cell;
+import org.apache.poi.ss.usermodel.HorizontalAlignment;
 import org.apache.poi.ss.usermodel.Row;
 import org.apache.poi.ss.usermodel.Sheet;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
@@ -366,6 +369,41 @@ class TrainAttendanceExportServiceTest {
       assertEquals("学员50", lastRow.getCell(1).getStringCellValue());
       assertEquals("出勤", lastRow.getCell(4 + 59).getStringCellValue()); // 第60天
       assertEquals("60", lastRow.getCell(4 + 60).getStringCellValue()); // 出勤计数
+    }
+  }
+
+  @Test
+  void buildWorkbook_allDataCells_borderedAndCentered() throws Exception {
+    // 回归：openpyxl 模板须带 applyBorder（POI 5.5 否则读边框为 NONE），
+    // 且右移后的汇总/签名列样式映射不能落空（styleFor 回映射）。
+    List<TrainPeopleListEntity> students = new ArrayList<>();
+    List<TrainAttendanceEntity> atts = new ArrayList<>();
+    for (long i = 1; i <= 20; i++) {
+      students.add(student(i, "学员" + i));
+      atts.add(attendance(i, "2026-10-08", 1));
+      atts.add(attendance(i, "2026-10-09", 0));
+    }
+    SheetModel model = TrainAttendanceExportService.assemble(
+        "i1", "i2",
+        TrainAttendanceExportService.dateColumns(TrainAttendanceExportService.sortedDistinctDates(atts)),
+        students, atts, Map.of());
+
+    byte[] bytes = serviceWith(List.of()).buildWorkbookBytes(model);
+
+    try (XSSFWorkbook wb = new XSSFWorkbook(new ByteArrayInputStream(bytes))) {
+      Sheet sheet = wb.getSheetAt(0);
+      int totalCols = 4 + model.dateColumns().size() + 7;
+      for (int r = 4; r < 4 + students.size(); r++) {
+        Row row = sheet.getRow(r);
+        for (int c = 0; c < totalCols; c++) {
+          Cell cell = row.getCell(c);
+          assertTrue(cell != null, "row " + r + " col " + c + " 单元格缺失");
+          assertEquals(BorderStyle.THIN, cell.getCellStyle().getBorderLeft(),
+              "row " + r + " col " + c + " 缺左边框");
+          assertEquals(HorizontalAlignment.CENTER, cell.getCellStyle().getAlignment(),
+              "row " + r + " col " + c + " 未居中");
+        }
+      }
     }
   }
 
