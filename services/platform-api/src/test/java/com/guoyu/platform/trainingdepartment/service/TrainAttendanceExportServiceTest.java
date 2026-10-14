@@ -315,6 +315,8 @@ class TrainAttendanceExportServiceTest {
       assertEquals("", data.getCell(12).getStringCellValue());
       // 标题合并区应覆盖到日期+汇总+签名全宽（K+N 列）
       assertEquals(13, sheet.getMergedRegion(0).getLastColumn() + 1);
+      // 日期列宽需容纳跨年列头 yyyy-MM-dd（10 字符）一行显示
+      assertTrue(sheet.getColumnWidth(4) >= 10 * 256);
     }
   }
 

@@ -72,7 +72,8 @@ public class TrainAttendanceExportService {
   private static final int FIXED_COL_COUNT = 11;
   /** 日期列插在 身份证号(3) 之后、出勤(4) 之前 */
   private static final int DATE_COL_START = 4;
-  private static final int DATE_COL_WIDTH_UNIT = 6 * 256;
+  /** 日期列宽：需容纳跨年列头 yyyy-MM-dd（10 字符）一行显示，过窄会换行截断 */
+  private static final int DATE_COL_WIDTH_UNIT = 11 * 256;
 
   /** 状态文案，与跟班考勤页 ATTENDANCE_STATUS 一致 */
   private static final String[] STATUS_LABELS = {"缺勤", "出勤", "迟到", "早退"};
