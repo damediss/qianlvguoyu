@@ -1659,6 +1659,8 @@ export interface TrainInfoClassCreateReq {
   trainInfoId?: number | string;
   title?: string;
   nums?: number;
+  /** 达标课时（必填，最多一位小数） */
+  passHours?: number;
   companyId?: number;
   workTypeId?: number;
   workTypeLevel?: number;
@@ -2175,6 +2177,8 @@ export interface TrainInfoClassListItem {
   id: number | string;
   title: string;
   nums?: number;
+  /** 达标课时（Decimal 序列化为 number） */
+  pass_hours?: number | null;
   /** 已回填真实证书人数 */
   certified_nums?: number;
   addtime?: number;

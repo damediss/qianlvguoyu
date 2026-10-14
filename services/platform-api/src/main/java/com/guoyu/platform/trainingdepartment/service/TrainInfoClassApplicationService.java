@@ -192,6 +192,7 @@ public class TrainInfoClassApplicationService {
       // 列表人数以花名册实时统计为准，避免开班准备导入后 nums 冗余字段滞后
       int totalNums = studentNumsMap.getOrDefault(e.getId(), 0);
       item.put("nums", totalNums);
+      item.put("pass_hours", e.getPassHours());
       item.put("certified_nums", certifiedNumsMap.getOrDefault(e.getId(), 0));
       item.put("addtime", e.getAddtime());
       item.put("addtime_cn", formatAddtime(e.getAddtime()));
@@ -252,6 +253,9 @@ public class TrainInfoClassApplicationService {
       operatorScopeService.assertClassAccessible(entity);
       entity.setTitle(req.getTitle());
       entity.setNums(req.getNums());
+      if (req.getPassHours() != null) {
+        entity.setPassHours(req.getPassHours());
+      }
       entity.setDateStart(req.getDateStart());
       entity.setDateEnd(req.getDateEnd());
       entity.setKcbiaoFile(req.getKcbiaoFile());
@@ -277,6 +281,7 @@ public class TrainInfoClassApplicationService {
       TrainInfoClassEntity entity = new TrainInfoClassEntity();
       entity.setTitle(req.getTitle());
       entity.setTrainInfoId(req.getTrainInfoId());
+      entity.setPassHours(req.getPassHours());
       entity.setDateStart(req.getDateStart());
       entity.setDateEnd(req.getDateEnd());
       entity.setKcbiaoFile(req.getKcbiaoFile());
@@ -338,6 +343,7 @@ public class TrainInfoClassApplicationService {
     entity.setTrainInfoId(req.getTrainInfoId());
     entity.setTitle(req.getTitle());
     entity.setNums(req.getNums());
+    entity.setPassHours(req.getPassHours());
     entity.setCompanyId(req.getCompanyId());
     entity.setWorkTypeId(req.getWorkTypeId());
     entity.setDateStart(req.getDateStart());
@@ -357,6 +363,9 @@ public class TrainInfoClassApplicationService {
     TrainInfoClassEntity entity = getExisting(id);
     entity.setTitle(req.getTitle());
     entity.setNums(req.getNums());
+    if (req.getPassHours() != null) {
+      entity.setPassHours(req.getPassHours());
+    }
     entity.setDateStart(req.getDateStart());
     entity.setDateEnd(req.getDateEnd());
     entity.setFileTemps(req.getFileTemps());
@@ -746,6 +755,7 @@ public class TrainInfoClassApplicationService {
         entity.getTrainInfoId(),
         entity.getTitle(),
         entity.getNums(),
+        entity.getPassHours(),
         entity.getCompanyId(),
         entity.getWorkTypeId(),
         entity.getDateStart(),

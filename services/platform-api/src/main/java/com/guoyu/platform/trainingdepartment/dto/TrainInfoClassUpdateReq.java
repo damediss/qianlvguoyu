@@ -1,7 +1,10 @@
 package com.guoyu.platform.trainingdepartment.dto;
 
+import jakarta.validation.constraints.DecimalMin;
+import jakarta.validation.constraints.Digits;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
+import java.math.BigDecimal;
 
 /** 培训班级更新请求 */
 public class TrainInfoClassUpdateReq {
@@ -13,6 +16,11 @@ public class TrainInfoClassUpdateReq {
 
   /** 人数 */
   private Integer nums;
+
+  /** 达标课时：不传表示不修改；传则校验（最多一位小数）并更新 */
+  @DecimalMin(value = "0", message = "达标课时不能为负数")
+  @Digits(integer = 4, fraction = 1, message = "达标课时最多输入一位小数")
+  private BigDecimal passHours;
 
   /** 开始日期 */
   @Size(max = 10)
@@ -52,6 +60,14 @@ public class TrainInfoClassUpdateReq {
 
   public void setNums(Integer nums) {
     this.nums = nums;
+  }
+
+  public BigDecimal getPassHours() {
+    return passHours;
+  }
+
+  public void setPassHours(BigDecimal passHours) {
+    this.passHours = passHours;
   }
 
   public String getDateStart() {

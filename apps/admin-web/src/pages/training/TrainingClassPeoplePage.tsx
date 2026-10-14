@@ -988,6 +988,7 @@ export function TrainingClassPeoplePage() {
     workTypeId?: number;
     workTypeLevel?: number;
     nums?: number;
+    passHours?: number;
     dateStart?: Dayjs;
     dateEnd?: Dayjs;
     kcbiaoFile?: string;
@@ -1250,6 +1251,7 @@ export function TrainingClassPeoplePage() {
       workTypeId: toPositiveInt(row.work_type_id),
       workTypeLevel: toPositiveInt(row.work_type_level),
       nums: row.nums,
+      passHours: row.pass_hours ?? undefined,
       dateStart: row.date_start ? dayjs(row.date_start) : undefined,
       dateEnd: row.date_end ? dayjs(row.date_end) : undefined,
       kcbiaoFile: row.kcbiao_file,
@@ -1374,6 +1376,7 @@ export function TrainingClassPeoplePage() {
         workTypeId: toPositiveInt(v.workTypeId),
         workTypeLevel: toPositiveInt(v.workTypeLevel),
         nums: Number(v.nums),
+        passHours: v.passHours != null ? Number(v.passHours) : undefined,
         dateStart: dayjs.isDayjs(v.dateStart) ? v.dateStart.format('YYYY-MM-DD') : String(v.dateStart),
         dateEnd: dayjs.isDayjs(v.dateEnd) ? v.dateEnd.format('YYYY-MM-DD') : String(v.dateEnd),
         kcbiaoFile: v.kcbiaoFile,
@@ -1749,6 +1752,19 @@ export function TrainingClassPeoplePage() {
           </Form.Item>
           <Form.Item name="nums" label="班级人数" rules={[{ required: true, message: '请填写班级人数' }]}>
             <Input type="number" placeholder="请输入班级人数" min={1} />
+          </Form.Item>
+          <Form.Item
+            name="passHours"
+            label="达标课时"
+            rules={[{ required: true, message: '请填写达标课时' }]}
+          >
+            <InputNumber
+              min={0}
+              precision={1}
+              step={1}
+              style={{ width: '100%' }}
+              placeholder="请输入达标课时（最多一位小数）"
+            />
           </Form.Item>
           <Form.Item name="companyContactName" label="单位联系人">
             <Input placeholder="请输入单位联系人（用于工作年限证明）" maxLength={64} />

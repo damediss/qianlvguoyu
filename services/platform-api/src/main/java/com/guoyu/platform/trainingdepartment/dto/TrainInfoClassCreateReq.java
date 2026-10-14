@@ -1,9 +1,13 @@
 package com.guoyu.platform.trainingdepartment.dto;
 
+import jakarta.validation.constraints.DecimalMin;
+import jakarta.validation.constraints.Digits;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 import com.fasterxml.jackson.annotation.JsonAlias;
 import com.fasterxml.jackson.annotation.JsonProperty;
+import java.math.BigDecimal;
 
 /** 培训班级创建/保存请求（id=0或null新增, id>0编辑） */
 public class TrainInfoClassCreateReq {
@@ -21,6 +25,12 @@ public class TrainInfoClassCreateReq {
 
   /** 人数 */
   private Integer nums;
+
+  /** 达标课时：必填，班级统一值，最多一位小数 */
+  @NotNull(message = "达标课时不能为空")
+  @DecimalMin(value = "0", message = "达标课时不能为负数")
+  @Digits(integer = 4, fraction = 1, message = "达标课时最多输入一位小数")
+  private BigDecimal passHours;
 
   private Long companyId;
 
@@ -88,6 +98,14 @@ public class TrainInfoClassCreateReq {
 
   public void setNums(Integer nums) {
     this.nums = nums;
+  }
+
+  public BigDecimal getPassHours() {
+    return passHours;
+  }
+
+  public void setPassHours(BigDecimal passHours) {
+    this.passHours = passHours;
   }
 
   public Long getCompanyId() {

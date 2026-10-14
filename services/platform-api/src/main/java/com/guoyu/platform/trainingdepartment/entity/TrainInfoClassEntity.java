@@ -22,6 +22,8 @@ public class TrainInfoClassEntity {
   private String title;
   /** 人数 */
   private Integer nums;
+  /** 达标课时（班级统一值，考勤列表展示，仅展示不参与完成率计算） */
+  private java.math.BigDecimal passHours;
   /** 企业ID */
   private Long companyId;
   /** 工种ID */
@@ -70,6 +72,8 @@ public class TrainInfoClassEntity {
   public void setTitle(String title) { this.title = title; }
   public Integer getNums() { return nums; }
   public void setNums(Integer nums) { this.nums = nums; }
+  public java.math.BigDecimal getPassHours() { return passHours; }
+  public void setPassHours(java.math.BigDecimal passHours) { this.passHours = passHours; }
   public Long getCompanyId() { return companyId; }
   public void setCompanyId(Long companyId) { this.companyId = companyId; }
   public Long getWorkTypeId() { return workTypeId; }

@@ -1,5 +1,7 @@
 package com.guoyu.platform.trainingdepartment.vo;
 
+import java.math.BigDecimal;
+
 /** 培训班级视图对象 */
 public record TrainInfoClassVO(
     Long id,
@@ -9,6 +11,8 @@ public record TrainInfoClassVO(
     String title,
     /** 人数 */
     Integer nums,
+    /** 达标课时 */
+    BigDecimal passHours,
     /** 企业ID */
     Long companyId,
     /** 工种ID */

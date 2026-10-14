@@ -1482,6 +1482,11 @@ export function FollowClassWorkbench({ classItem, onBack }: Props) {
       render: (_, row) => attendanceMap.get(String(row.id))?.checkInTime || '—',
     },
     {
+      title: '达标课时',
+      width: 100,
+      render: () => formatClassHours(classItem.pass_hours),
+    },
+    {
       title: '已上课时',
       width: 100,
       render: (_, row) => {
@@ -2140,7 +2145,7 @@ export function FollowClassWorkbench({ classItem, onBack }: Props) {
                     onChange: setStudentPage,
                     showTotal: (t) => `共 ${t} 人`,
                   }}
-                  scroll={{ x: 920 }}
+                  scroll={{ x: 1020 }}
                   locale={{ emptyText: '暂无学员，请先在开班准备维护名单' }}
                 />
               </div>
