@@ -52,6 +52,7 @@ import type {
 } from '../../types/training';
 import { useNavStore } from '../../stores/navStore';
 import { TrainingProcessSteps } from './TrainingProcessSteps';
+import { buildDemandWorkTypeOptions, flattenDemandWorkTypeOptions } from '../../utils/workTypeOptions';
 import './TrainingClassDivisionPage.css';
 
 const { Text } = Typography;
@@ -745,14 +746,13 @@ export function TrainingClassDivisionPage() {
 
   /** 与开班准备一致：分组 Select，value = exam_work_type.id */
   const classWorkTypeGroupedOptions = useMemo(() => {
-    return (workTypePublicQuery.data as DemandPublicData | undefined)?.worktype_list?.map((g) => ({
-      label: g.title,
-      options: (g.options ?? []).map((o) => ({ value: o.id, label: o.title })),
-    })) ?? [];
+    return buildDemandWorkTypeOptions(
+      (workTypePublicQuery.data as DemandPublicData | undefined)?.worktype_list,
+    );
   }, [workTypePublicQuery.data]);
 
   const classWorkTypeFlatOptions = useMemo(() => {
-    return classWorkTypeGroupedOptions.flatMap((g) => g.options ?? []);
+    return flattenDemandWorkTypeOptions(classWorkTypeGroupedOptions);
   }, [classWorkTypeGroupedOptions]);
 
   const applyPoolFilters = () => {

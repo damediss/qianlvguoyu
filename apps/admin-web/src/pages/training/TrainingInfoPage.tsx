@@ -3,6 +3,7 @@ import { Button, Card, Form, Input, InputNumber, Modal, Popconfirm, Select, Spac
 import { EditOutlined, DeleteOutlined } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { buildDemandWorkTypeOptions } from '../../utils/workTypeOptions';
 import * as trainApi from '../../api/training';
 import type { TrainInfoListItem, TrainInfoListEditReq, TrainInfoListQuery } from '../../types/training';
 
@@ -86,9 +87,7 @@ export function TrainingInfoPage() {
 
   const companyOptions = (publicData?.company_list ?? []).map(c => ({ value: c.id, label: c.title }));
 
-  const workTypeOptions = (publicData?.worktype_list ?? []).flatMap(g => [
-    { label: g.title, options: (g.options ?? []).map(o => ({ value: o.id, label: o.title })) },
-  ]);
+  const workTypeOptions = buildDemandWorkTypeOptions(publicData?.worktype_list);
 
   const columns: ColumnsType<TrainInfoListItem> = [
     {

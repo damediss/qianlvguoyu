@@ -52,6 +52,7 @@ import './TrainingClassPeoplePage.css';
 import { TrainingProcessSteps } from './TrainingProcessSteps';
 import { ClassSignUpPeoplePanel } from './ClassSignUpPeoplePanel';
 import { ClassRolesModal } from './ClassRolesPanel';
+import { buildDemandWorkTypeOptions } from '../../utils/workTypeOptions';
 
 const { Dragger } = Upload;
 
@@ -1164,10 +1165,9 @@ export function TrainingClassPeoplePage() {
   });
 
   const workTypeGroupedOptions = useMemo(() => {
-    return (publicData as DemandPublicData | undefined)?.worktype_list?.map((g) => ({
-      label: g.title,
-      options: (g.options ?? []).map((o) => ({ value: o.id, label: o.title })),
-    })) ?? [];
+    return buildDemandWorkTypeOptions(
+      (publicData as DemandPublicData | undefined)?.worktype_list,
+    );
   }, [publicData]);
 
   const companyOptions = useMemo(() => {

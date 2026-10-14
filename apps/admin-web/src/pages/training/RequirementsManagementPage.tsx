@@ -19,6 +19,7 @@ import {
 } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { buildDemandWorkTypeOptions } from '../../utils/workTypeOptions';
 import * as trainApi from '../../api/training';
 import type {
   DemandConvertReq,
@@ -102,11 +103,9 @@ export function RequirementsManagementPage() {
       label: c.title,
     })) ?? [];
 
-  const workTypeGroupedOptions =
-    (publicData as DemandPublicData | undefined)?.worktype_list?.map((g) => ({
-      label: g.title,
-      options: (g.options ?? []).map((o) => ({ value: o.id, label: o.title })),
-    })) ?? [];
+  const workTypeGroupedOptions = buildDemandWorkTypeOptions(
+    (publicData as DemandPublicData | undefined)?.worktype_list,
+  );
 
   const resetConvertForm = () => {
     convertForm.resetFields();

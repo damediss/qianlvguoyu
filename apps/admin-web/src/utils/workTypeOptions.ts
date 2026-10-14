@@ -1,9 +1,39 @@
 import type { ExamWorkType } from '../types/exam';
+import type { WorkTypeGroup } from '../types/training';
 
 export interface WorkTypeOption {
   value: string;
   label: string;
   title: string;
+}
+
+/** 培训需求 worktype_list 的 Select 选项：平铺项或分组项 */
+export type DemandWorkTypeSelectOption =
+  | { value: number; label: string }
+  | { label: string; options: { value: number; label: string }[] };
+
+/**
+ * 培训需求工种分组数据转 Select 选项。
+ * 后端把无子工种的顶级工种（如"电工"）回填"自己"为唯一选项：
+ * 唯一选项即组本身时拍平成普通选项，避免"组标题+同名选项"重复观感。
+ */
+export function buildDemandWorkTypeOptions(
+  groups?: WorkTypeGroup[],
+): DemandWorkTypeSelectOption[] {
+  return (groups ?? []).map((g) => {
+    const opts = (g.options ?? []).map((o) => ({ value: o.id, label: o.title }));
+    if (opts.length === 1 && opts[0].value === g.id) {
+      return opts[0];
+    }
+    return { label: g.title, options: opts };
+  });
+}
+
+/** 分组/平铺混合选项拉平（反查 id→label、回显等场景用） */
+export function flattenDemandWorkTypeOptions(
+  options: DemandWorkTypeSelectOption[],
+): { value: number; label: string }[] {
+  return options.flatMap((o) => ('options' in o ? o.options : [o]));
 }
 
 /** 将课程管理工种树转换为有效叶子工种选项，值使用稳定 ID，标签显示完整路径。 */

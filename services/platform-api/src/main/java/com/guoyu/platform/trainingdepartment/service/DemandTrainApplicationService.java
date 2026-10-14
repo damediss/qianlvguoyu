@@ -325,9 +325,14 @@ public class DemandTrainApplicationService {
       for (Map<String, Object> group : workTypeList) {
         Integer groupId = (Integer) group.get("id");
         List<Map<String, Object>> options = grouped.get(groupId);
-        if (options != null) {
-          group.put("options", options);
+        if (options == null || options.isEmpty()) {
+          // 无子工种的顶级节点用它自己作为可选项（如"电工"），否则只渲染成组标题无法被选择
+          Map<String, Object> self = new LinkedHashMap<>();
+          self.put("id", groupId);
+          self.put("title", group.get("title"));
+          options = new ArrayList<>(List.of(self));
         }
+        group.put("options", options);
       }
       data.put("worktype_list", workTypeList);
     }
