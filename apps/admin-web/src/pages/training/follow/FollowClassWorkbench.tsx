@@ -43,6 +43,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import dayjs, { type Dayjs } from 'dayjs';
 import { downloadUrlFile } from '../../../api/files';
 import * as trainApi from '../../../api/training';
+import { AttendanceExportButton } from './AttendanceExportButton';
 import type { ClassStudent, TrainInfoClassListItem } from '../../../types/training';
 import { StudentAttendanceDetailDrawer } from './StudentAttendanceDetailDrawer';
 import { FollowPracticeTab } from './FollowPracticeTab';
@@ -2122,6 +2123,7 @@ export function FollowClassWorkbench({ classItem, onBack }: Props) {
                       导入考勤表
                     </Button>
                   </Upload>
+                  <AttendanceExportButton classId={classIdNum} studentTotal={studentTotal} />
                   <Typography.Text type="secondary">
                     支持人社/培训平台「考勤信息列表」.xls/.xlsx；按身份证匹配本班学员，有上课/下课时间时按课次行写入（匹配课表，必要时自动补建课次），并按「是否旷课」计课时。无时段时仍合并为按日记录。
                   </Typography.Text>

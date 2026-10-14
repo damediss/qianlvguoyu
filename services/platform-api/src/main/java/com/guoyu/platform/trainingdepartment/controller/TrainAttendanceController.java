@@ -7,9 +7,11 @@ import com.guoyu.platform.trainingdepartment.dto.TrainAttendanceCreateReq;
 import com.guoyu.platform.trainingdepartment.dto.TrainAttendanceQueryReq;
 import com.guoyu.platform.trainingdepartment.dto.TrainAttendanceUpdateReq;
 import com.guoyu.platform.trainingdepartment.service.TrainAttendanceApplicationService;
+import com.guoyu.platform.trainingdepartment.service.TrainAttendanceExportService;
 import com.guoyu.platform.trainingdepartment.vo.TrainAttendanceImportResultVO;
 import com.guoyu.platform.trainingdepartment.vo.TrainAttendanceVO;
 import jakarta.validation.Valid;
+import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
@@ -24,9 +26,13 @@ import org.springframework.web.multipart.MultipartFile;
 public class TrainAttendanceController {
 
   private final TrainAttendanceApplicationService trainAttendanceApplicationService;
+  private final TrainAttendanceExportService trainAttendanceExportService;
 
-  public TrainAttendanceController(TrainAttendanceApplicationService trainAttendanceApplicationService) {
+  public TrainAttendanceController(
+      TrainAttendanceApplicationService trainAttendanceApplicationService,
+      TrainAttendanceExportService trainAttendanceExportService) {
     this.trainAttendanceApplicationService = trainAttendanceApplicationService;
+    this.trainAttendanceExportService = trainAttendanceExportService;
   }
 
   /** 分页查询 */
@@ -86,5 +92,13 @@ public class TrainAttendanceController {
       @PathVariable Long classId,
       @RequestParam("file") MultipartFile file) {
     return ApiResponse.ok(trainAttendanceApplicationService.importFromExcel(classId, file));
+  }
+
+  /** 导出考勤表（矩阵式 xlsx：班级信息行 + 学员×日期 + 汇总统计 + 签名列） */
+  @GetMapping("/classes/{classId}/attendances/export")
+  @PreAuthorize("hasAuthority('train:attendance:export')")
+  @AuditLog(module = "training", action = "attendance:export", targetType = "train_attendance")
+  public ResponseEntity<byte[]> export(@PathVariable Long classId) {
+    return trainAttendanceExportService.export(classId);
   }
 }

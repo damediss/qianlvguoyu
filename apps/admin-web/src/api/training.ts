@@ -4162,6 +4162,24 @@ export async function importClassAttendances(classId: number, file: File) {
   );
 }
 
+/** 导出考勤表（矩阵式 xlsx：班级信息行 + 学员×日期 + 汇总统计 + 签名列） */
+export async function exportClassAttendances(classId: number | string) {
+  const response = await apiClient.get(`${BASE}/classes/${classId}/attendances/export`, {
+    responseType: 'blob',
+  });
+  const blob = new Blob([response.data], {
+    type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  });
+  const filename =
+    parseContentDispositionFilename(response) || `考勤表_${classId}.xlsx`;
+  const url = window.URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  a.click();
+  window.URL.revokeObjectURL(url);
+}
+
 export function listExamScoreImportClasses(params?: {
   companyId?: number | string;
   trainInfoId?: number | string;
