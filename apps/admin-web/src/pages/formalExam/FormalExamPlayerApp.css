@@ -294,10 +294,46 @@
 
 .formal-exam-question__title {
   display: grid;
-  grid-template-columns: auto 1fr;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: start;
   gap: 12px;
   font-size: 26px;
   margin-bottom: 24px;
+}
+
+.formal-exam-question__type {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  justify-self: end;
+  min-height: 34px;
+  padding: 4px 16px;
+  border: 1px solid rgba(143, 191, 255, 0.48);
+  border-radius: 999px;
+  background: rgba(49, 130, 206, 0.18);
+  color: #c5dcff;
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.formal-exam-question__type--single {
+  border-color: rgba(99, 179, 237, 0.62);
+  background: rgba(49, 130, 206, 0.24);
+  color: #bfdbfe;
+}
+
+.formal-exam-question__type--multi {
+  border-color: rgba(183, 148, 244, 0.68);
+  background: rgba(128, 90, 213, 0.26);
+  color: #e9d8fd;
+}
+
+.formal-exam-question__type--judge {
+  border-color: rgba(104, 211, 145, 0.66);
+  background: rgba(56, 161, 105, 0.24);
+  color: #c6f6d5;
 }
 
 .formal-exam-stem {

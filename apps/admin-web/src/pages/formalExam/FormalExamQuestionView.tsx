@@ -1,4 +1,5 @@
 import type { FormalExamPlayerQuestion } from '../../api/formalExamPlayer';
+import { EXAM_TYPE_MAP } from '../../types/exam';
 import { FormalExamChoiceOptions } from './FormalExamChoiceOptions';
 import { FormalExamFillInput } from './FormalExamFillInput';
 import { FormalExamStem } from './FormalExamStem';
@@ -22,11 +23,20 @@ export function FormalExamQuestionView({
   onFillCommit,
 }: Props) {
   const type = question.type;
+  const typeLabel = EXAM_TYPE_MAP[type] || (type === 'multiple' ? EXAM_TYPE_MAP.multi : undefined);
+  const typeTone = type === 'single' ? 'single'
+    : type === 'multi' || type === 'multiple' ? 'multi'
+      : type === 'judge' ? 'judge' : undefined;
   return (
     <div className="formal-exam-question">
       <div className="formal-exam-question__title">
         <span>{question.order}.</span>
         <FormalExamStem html={question.stem} />
+        {typeLabel ? (
+          <span className={`formal-exam-question__type${typeTone ? ` formal-exam-question__type--${typeTone}` : ''}`}>
+            {typeLabel}
+          </span>
+        ) : null}
       </div>
       {type === 'fill' ? (
         <FormalExamFillInput
