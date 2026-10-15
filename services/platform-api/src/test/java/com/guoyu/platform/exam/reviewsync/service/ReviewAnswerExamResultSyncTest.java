@@ -10,6 +10,7 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.mock;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.guoyu.platform.exam.reviewsync.dto.ReviewQuestionDetail;
@@ -83,6 +84,7 @@ class ReviewAnswerExamResultSyncTest {
   @BeforeEach
   void setUp() {
     service = new ReviewPlanApplicationService(planMapper, dayMapper, answerMapper, wrongMapper,
+        mock(com.guoyu.platform.exam.reviewsync.mapper.AiReviewInterruptLogMapper.class),
         mockPaperMapper, mockItemMapper, grayWhitelistMapper, reviewQuery, examResultWriteRepository,
         llmAssistService, dictMapper, new ObjectMapper(), aiGradeService, aiGradeMockExecutor);
     // 纯单测无 Spring 代理：self 注入自身，客观题大事务/主观题短事务方法直接直调

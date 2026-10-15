@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.mock;
 
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
@@ -90,6 +91,7 @@ class ReviewPlanInterruptIdempotenceTest {
   @BeforeEach
   void setUp() {
     service = new ReviewPlanApplicationService(planMapper, dayMapper, answerMapper, wrongMapper,
+        mock(com.guoyu.platform.exam.reviewsync.mapper.AiReviewInterruptLogMapper.class),
         mockPaperMapper, mockItemMapper, grayWhitelistMapper, reviewQuery, examResultWriteRepository,
         llmAssistService, dictMapper, new ObjectMapper(), aiGradeService, aiGradeMockExecutor);
     service.setSelf(service);

@@ -17,6 +17,7 @@ import com.guoyu.platform.common.exception.BusinessException;
 import com.guoyu.platform.common.exception.ErrorCode;
 import com.guoyu.platform.common.tenant.TenantContextHolder;
 import com.guoyu.platform.exam.reviewsync.dto.ReviewQuestionDetail;
+import com.guoyu.platform.exam.reviewsync.entity.AiReviewAnswerEntity;
 import com.guoyu.platform.exam.reviewsync.entity.AiReviewMockPaperEntity;
 import com.guoyu.platform.exam.reviewsync.entity.AiReviewMockPaperItemEntity;
 import com.guoyu.platform.exam.reviewsync.entity.AiReviewPlanDayEntity;
@@ -104,6 +105,7 @@ class ReviewMockSubjectiveGradeTest {
   @BeforeEach
   void setUp() {
     service = new ReviewPlanApplicationService(planMapper, dayMapper, answerMapper, wrongMapper,
+        mock(com.guoyu.platform.exam.reviewsync.mapper.AiReviewInterruptLogMapper.class),
         mockPaperMapper, mockItemMapper, grayWhitelistMapper, reviewQuery, examResultWriteRepository,
         llmAssistService, dictMapper, new ObjectMapper(), aiGradeService, aiGradeMockExecutor);
     // 纯单测无 Spring 代理：self 注入自身，短事务落库方法直调
@@ -207,6 +209,51 @@ class ReviewMockSubjectiveGradeTest {
     // 主观题作答落库：earnedScore=4，exam_result 直写同口径
     verify(examResultWriteRepository).insertExamResult(
         "answer", 440L, 902L, 42L, "我的作答", new BigDecimal("4"));
+  }
+
+  // ------------------------------------------------------------------
+  // W2.4 模考 per-question 计时落库（原恒写 0）
+  // ------------------------------------------------------------------
+
+  @Test
+  void mockSubmitPersistsPerQuestionUseTimeSec() {
+    stubExecutorInline();
+    when(aiGradeService.grade(eq(10159L), eq(42L), eq(902L), anyString(), anyString(), anyString(),
+        anyString(), eq(5)))
+        .thenReturn(new SubjectiveGradeResult(true, 4, true, "要点齐全", "ai"));
+
+    List<Map<String, Object>> answers = List.of(
+        Map.of("questionId", 901, "userAnswer", "对", "useTimeSec", 45),
+        Map.of("questionId", 902, "userAnswer", "我的作答", "useTimeSec", 88));
+
+    service.mockSubmit(42L, 440L, 700L, answers, 120, 10159L);
+
+    ArgumentCaptor<AiReviewAnswerEntity> answerCaptor =
+        ArgumentCaptor.forClass(AiReviewAnswerEntity.class);
+    verify(answerMapper, times(2)).insert(answerCaptor.capture());
+    Map<Long, Integer> timeByQid = new HashMap<>();
+    for (AiReviewAnswerEntity answer : answerCaptor.getAllValues()) {
+      timeByQid.put(answer.getQuestionId(), answer.getUseTimeSec());
+    }
+    assertThat(timeByQid.get(901L)).isEqualTo(45);
+    assertThat(timeByQid.get(902L)).isEqualTo(88);
+  }
+
+  @Test
+  void mockSubmitDefaultsUseTimeSecToZeroWhenAbsent() {
+    stubExecutorInline();
+    when(aiGradeService.grade(eq(10159L), eq(42L), eq(902L), anyString(), anyString(), anyString(),
+        anyString(), eq(5)))
+        .thenReturn(new SubjectiveGradeResult(true, 4, true, "要点齐全", "ai"));
+
+    service.mockSubmit(42L, 440L, 700L, ANSWERS, 120, 10159L);
+
+    ArgumentCaptor<AiReviewAnswerEntity> answerCaptor =
+        ArgumentCaptor.forClass(AiReviewAnswerEntity.class);
+    verify(answerMapper, times(2)).insert(answerCaptor.capture());
+    for (AiReviewAnswerEntity answer : answerCaptor.getAllValues()) {
+      assertThat(answer.getUseTimeSec()).isEqualTo(0);
+    }
   }
 
   // ------------------------------------------------------------------

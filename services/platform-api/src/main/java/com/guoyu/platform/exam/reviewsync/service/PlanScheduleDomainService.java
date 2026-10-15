@@ -22,14 +22,21 @@ public final class PlanScheduleDomainService {
   // §5.1 计划生成
   // ------------------------------------------------------------------
 
-  /** 阶段切分：D1=round(D×0.5)、D2=round(D×0.3)、D3=尾差（下限保护 D≥3 由调用方保证） */
+  /**
+   * 阶段切分：D1=round(D×0.5)、D2=round(D×0.3)、D3=尾差。
+   * 边界修正（F6）：保证 d1+d2+d3=D 且 D≥3 时每段 ≥1（原 D=3 时修正后三段和溢出为 4）。
+   */
   public static int[] splitStages(int totalDays) {
     int d1 = (int) Math.round(totalDays * 0.5);
     int d2 = (int) Math.round(totalDays * 0.3);
     int d3 = totalDays - d1 - d2;
     if (d3 < 1) {
       d3 = 1;
-      d2 = Math.max(1, totalDays - d1 - d3);
+      d2 = totalDays - d1 - d3;
+      if (d2 < 1) {
+        d2 = 1;
+        d1 = totalDays - d2 - d3;
+      }
     }
     return new int[]{d1, d2, d3};
   }

@@ -7,6 +7,7 @@ import com.guoyu.platform.common.exception.BusinessException;
 import com.guoyu.platform.common.exception.ErrorCode;
 import com.guoyu.platform.common.tenant.TenantContextHolder;
 import com.guoyu.platform.exam.reviewsync.entity.AiReviewAnswerEntity;
+import com.guoyu.platform.exam.reviewsync.entity.AiReviewInterruptLogEntity;
 import com.guoyu.platform.exam.reviewsync.entity.AiReviewGrayWhitelistEntity;
 import com.guoyu.platform.exam.reviewsync.entity.AiReviewMockPaperEntity;
 import com.guoyu.platform.exam.reviewsync.entity.AiReviewMockPaperItemEntity;
@@ -15,6 +16,7 @@ import com.guoyu.platform.exam.reviewsync.entity.AiReviewPlanEntity;
 import com.guoyu.platform.exam.reviewsync.entity.AiReviewWrongItemEntity;
 import com.guoyu.platform.exam.reviewsync.mapper.AiReviewAnswerMapper;
 import com.guoyu.platform.exam.reviewsync.mapper.AiReviewGrayWhitelistMapper;
+import com.guoyu.platform.exam.reviewsync.mapper.AiReviewInterruptLogMapper;
 import com.guoyu.platform.exam.reviewsync.mapper.AiReviewMockPaperItemMapper;
 import com.guoyu.platform.exam.reviewsync.mapper.AiReviewMockPaperMapper;
 import com.guoyu.platform.exam.reviewsync.mapper.AiReviewPlanDayMapper;
@@ -77,6 +79,7 @@ public class ReviewPlanApplicationService {
   private final AiReviewPlanDayMapper dayMapper;
   private final AiReviewAnswerMapper answerMapper;
   private final AiReviewWrongItemMapper wrongMapper;
+  private final AiReviewInterruptLogMapper interruptLogMapper;
   private final AiReviewMockPaperMapper mockPaperMapper;
   private final AiReviewMockPaperItemMapper mockItemMapper;
   private final AiReviewGrayWhitelistMapper grayWhitelistMapper;
@@ -100,6 +103,7 @@ public class ReviewPlanApplicationService {
       AiReviewPlanDayMapper dayMapper,
       AiReviewAnswerMapper answerMapper,
       AiReviewWrongItemMapper wrongMapper,
+      AiReviewInterruptLogMapper interruptLogMapper,
       AiReviewMockPaperMapper mockPaperMapper,
       AiReviewMockPaperItemMapper mockItemMapper,
       AiReviewGrayWhitelistMapper grayWhitelistMapper,
@@ -114,6 +118,7 @@ public class ReviewPlanApplicationService {
     this.dayMapper = dayMapper;
     this.answerMapper = answerMapper;
     this.wrongMapper = wrongMapper;
+    this.interruptLogMapper = interruptLogMapper;
     this.mockPaperMapper = mockPaperMapper;
     this.mockItemMapper = mockItemMapper;
     this.grayWhitelistMapper = grayWhitelistMapper;
@@ -664,6 +669,7 @@ public class ReviewPlanApplicationService {
   public Map<String, Object> mockStart(long platformUserId, long examId, Long tenantId) {
     gateGrayRelease(examId, platformUserId, tenantId);
     AiReviewPlanEntity plan = requirePlan(platformUserId, examId);
+    assertMockStartAllowed(plan, tenantId);
     AiReviewMockPaperEntity paper = composeMockPaper(plan, tenantId);
     List<AiReviewMockPaperItemEntity> items = mockItemMapper.selectList(
         new LambdaQueryWrapper<AiReviewMockPaperItemEntity>()
@@ -680,6 +686,20 @@ public class ReviewPlanApplicationService {
     result.put("timeLimitMin", paper.getTimeLimitMin());
     result.put("questions", questions);
     return result;
+  }
+
+  /**
+   * W2.3 模考服务端阶段校验：阶段 1 以新题为主禁止组卷；阶段 2 需并行动模考开关=1；阶段 3 放行。
+   * 包级可见供单测直断言。
+   */
+  void assertMockStartAllowed(AiReviewPlanEntity plan, Long tenantId) {
+    int stage = plan.getCurrentStage() != null ? plan.getCurrentStage() : 1;
+    if (stage < 2) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST, "当前阶段以新题为主，模考将在定向爆破阶段开放");
+    }
+    if (stage == 2 && dictInt("ai_review_mock_stage2_enabled", 1, tenantId) != 1) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST, "当前阶段以新题为主，模考将在定向爆破阶段开放");
+    }
   }
 
   // ==================================================================
@@ -712,12 +732,23 @@ public class ReviewPlanApplicationService {
       scoreByQid.put(item.getQuestionId(), item.getScore());
     }
     Map<Long, String> userAnswerByQid = new LinkedHashMap<>();
+    Map<Long, Integer> useTimeByQid = new LinkedHashMap<>();
     if (answers != null) {
       for (Map<String, Object> a : answers) {
         Object qid = a.get("questionId");
         if (qid != null) {
-          userAnswerByQid.put(Long.parseLong(String.valueOf(qid)),
+          long questionId = Long.parseLong(String.valueOf(qid));
+          userAnswerByQid.put(questionId,
               a.get("userAnswer") != null ? String.valueOf(a.get("userAnswer")) : "");
+          // W2.4 模考 per-question 计时（原恒写 0，人均耗时指标不可用）
+          Object uts = a.get("useTimeSec");
+          if (uts != null) {
+            try {
+              useTimeByQid.put(questionId, Integer.parseInt(String.valueOf(uts)));
+            } catch (NumberFormatException ignore) {
+              // 非法值按 0 处理
+            }
+          }
         }
       }
     }
@@ -765,7 +796,8 @@ public class ReviewPlanApplicationService {
     // ③ 短事务落库（答案/错题/成绩/exam_result 沿用现有机位）；
     // 并发双交撞 uk → 回放已落库结果（评审 #3，与既有 DuplicateKeyException 兜底同口径）
     try {
-      return self.persistMockSubmit(plan, examId, mockPaperId, platformUserId, items, details, judgedByQid);
+      return self.persistMockSubmit(plan, examId, mockPaperId, platformUserId, items, details,
+          judgedByQid, useTimeByQid);
     } catch (DuplicateKeyException e) {
       log.warn("[AI复习] 模考并发双交撞唯一键，回放结果：mockPaperId={}", mockPaperId);
       return mockResultView(plan, paper);
@@ -871,7 +903,8 @@ public class ReviewPlanApplicationService {
   @Transactional
   public Map<String, Object> persistMockSubmit(AiReviewPlanEntity plan, long examId, long mockPaperId,
       long platformUserId, List<AiReviewMockPaperItemEntity> items,
-      Map<Long, ReviewQuestionDetail> details, Map<Long, MockJudgedItem> judgedByQid) {
+      Map<Long, ReviewQuestionDetail> details, Map<Long, MockJudgedItem> judgedByQid,
+      Map<Long, Integer> useTimeByQid) {
     AiReviewMockPaperEntity paper = mockPaperMapper.selectById(mockPaperId);
     if (paper == null || !paper.getPlanId().equals(plan.getId())) {
       throw new BusinessException(ErrorCode.NOT_FOUND, "模考卷不存在");
@@ -932,7 +965,7 @@ public class ReviewPlanApplicationService {
         answer.setRoundType("mock");
         answer.setUserAnswer(judged.userAnswer());
         answer.setIsCorrect(judged.correct() ? 1 : 0);
-        answer.setUseTimeSec(0);
+        answer.setUseTimeSec(useTimeByQid != null ? useTimeByQid.getOrDefault(item.getQuestionId(), 0) : 0);
         answer.setAttemptSeq(countAttempts(plan.getId(), item.getQuestionId()) + 1);
         answer.setPhpSynced(1);
         answerMapper.insert(answer);
@@ -1059,7 +1092,7 @@ public class ReviewPlanApplicationService {
     if (!"active".equals(plan.getStatus()) || plan.getCurrentDayIndex() >= plan.getTotalDays()) {
       return false;
     }
-    int maxAdvance = dictInt("ai_review_advance_max_per_day", 1, plan.getTenantId());
+    int maxAdvance = dictIntInRange("ai_review_advance_max_per_day", 1, 0, 3, plan.getTenantId());
     long advancedToday = dayMapper.selectCount(new LambdaQueryWrapper<AiReviewPlanDayEntity>()
         .eq(AiReviewPlanDayEntity::getPlanId, plan.getId())
         .apply("DATE(created_at) = CURDATE()")
@@ -1256,9 +1289,9 @@ public class ReviewPlanApplicationService {
     }
 
     LocalDate today = LocalDate.now();
-    int defaultDays = dictInt("ai_review_default_days", 20, tenantId);
-    int dailyNewCap = dictInt("ai_review_daily_new_cap", 120, tenantId);
-    int dailyTotalCap = dictInt("ai_review_daily_total_cap", 200, tenantId);
+    int defaultDays = dictIntInRange("ai_review_default_days", 20, 3, 120, tenantId);
+    int dailyNewCap = dictIntInRange("ai_review_daily_new_cap", 120, 20, 300, tenantId);
+    int dailyTotalCap = dictIntInRange("ai_review_daily_total_cap", 200, 50, 600, tenantId);
     LocalDate examDate = PlanScheduleDomainService.resolveExamDate(
         planInfo.examDate(), parseDateList(planInfo.examDateList()), today);
     int totalDays = PlanScheduleDomainService.computeTotalDays(examDate, today, defaultDays);
@@ -1725,13 +1758,13 @@ public class ReviewPlanApplicationService {
     }
     WeightResolver.ResolvedWeights weights = weightsOfPlan(plan);
     Map<Long, Double> wrongRateByL3 = wrongRateByL3(plan.getId());
-    int mockSize = dictInt("ai_review_mock_size", 100, tenantId);
+    int mockSize = dictIntInRange("ai_review_mock_size", 100, 20, 200, tenantId);
     List<Long> questionIds = QuestionSelectDomainService.composeMockPaper(
         pool, weights, mockSize, wrongRateByL3, new Random());
     // 主观题数量上限（Q2-A，sys_dict ai_review_mock_subjective_max 默认 5）：同步交卷的墙钟
     // 预算约束（单题 20s + 重试 1 次）。超过按题型优先级裁（cal/answer/essay 复杂主观题优先，
     // 详见 capSubjectiveCount 注释）；被裁名额不回补客观题，总分/及格分按实际入卷题重算。
-    int subjectiveMax = dictInt("ai_review_mock_subjective_max", 5, tenantId);
+    int subjectiveMax = dictIntInRange("ai_review_mock_subjective_max", 5, 0, 20, tenantId);
     questionIds = QuestionSelectDomainService.capSubjectiveCount(questionIds, metaById, subjectiveMax);
 
     int paperNo = mockPaperMapper.selectCount(new LambdaQueryWrapper<AiReviewMockPaperEntity>()
@@ -1778,7 +1811,7 @@ public class ReviewPlanApplicationService {
   }
 
   private InterruptInfo applyInterruptIfNeeded(AiReviewPlanEntity plan, LocalDate today) {
-    int gapDays = dictInt("ai_review_interrupt_gap", 2, plan.getTenantId());
+    int gapDays = dictIntInRange("ai_review_interrupt_gap", 2, 1, 7, plan.getTenantId());
     PlanScheduleDomainService.InterruptCase interruptCase = PlanScheduleDomainService.detectInterruptCase(
         plan.getCurrentStage(), plan.getLastActiveDate(), today, gapDays,
         plan.getInterruptCount() != null ? plan.getInterruptCount() : 0);
@@ -1788,9 +1821,16 @@ public class ReviewPlanApplicationService {
     plan.setInterruptCount((plan.getInterruptCount() != null ? plan.getInterruptCount() : 0) + 1);
     // 补救当日幂等：任务已重排到当天，lastActiveDate 推进到今天后同日内不再命中 gap≥2，
     // 避免学员每次请求重复触发清洗/计数（生产实证 50 秒内重复触发 9 次、count 虚涨）
+    long actualGapDays = java.time.temporal.ChronoUnit.DAYS.between(
+        plan.getLastActiveDate() != null ? plan.getLastActiveDate() : today, today);
     plan.setLastActiveDate(today);
     planMapper.updateById(plan);
-    washWrongItems(plan.getId(), today);
+    writeInterruptLog(plan, interruptCase, (int) actualGapDays);
+    // W2.1 清洗开关（默认关）：开关=0 只重排+策略文案，不清零连对、绿牌不回黄
+    boolean cleanEnabled = interruptCleanEnabled(plan.getTenantId());
+    if (cleanEnabled) {
+      washWrongItems(plan.getId(), today);
+    }
     String strategyText = switch (interruptCase) {
       case A -> "检测到您中断了几天。别慌：今天先只做 80 道单选和判断题热热身，明天起我们把剩余题量平摊到剩余天数。"
           + "实在刷不完的偏题怪题会帮您放弃，保住 80% 基础题就赢了。";
@@ -1801,9 +1841,34 @@ public class ReviewPlanApplicationService {
       case D -> "最近学习节奏有些断续，已为您切换 3 日滚动记忆法：今天先重做上次最后 50 题热车，"
           + "明天起每天固定 100 新题拉长战线。做过的题正确率稳住，及格没问题。";
     };
-    log.info("[AI复习] 中断补救触发：planId={} case={} stage={} count={}",
-        plan.getId(), interruptCase, plan.getCurrentStage(), plan.getInterruptCount());
+    if (cleanEnabled) {
+      strategyText = strategyText + "部分错题的连对进度需要重新积累。";
+    }
+    log.info("[AI复习] 中断补救触发：planId={} case={} stage={} count={} cleanEnabled={}",
+        plan.getId(), interruptCase, plan.getCurrentStage(), plan.getInterruptCount(), cleanEnabled);
     return new InterruptInfo(interruptCase, strategyText);
+  }
+
+  /** W2.1 中断清洗开关读取（包级可见：单测 spy 覆盖，避免字典桩与灰度门互相污染） */
+  boolean interruptCleanEnabled(Long tenantId) {
+    return dictBool("ai_review_interrupt_clean_enabled", false, tenantId);
+  }
+
+  /** 每次触发中断写一行日志（D 案 7 天窗口与回归率指标的数据源） */
+  private void writeInterruptLog(AiReviewPlanEntity plan,
+      PlanScheduleDomainService.InterruptCase interruptCase, int gapDays) {
+    try {
+      AiReviewInterruptLogEntity logRow = new AiReviewInterruptLogEntity();
+      logRow.setPlanId(plan.getId());
+      logRow.setPlatformUserId(plan.getPlatformUserId());
+      logRow.setInterruptCase(interruptCase.name());
+      logRow.setGapDays(gapDays);
+      logRow.setStageAtInterrupt(plan.getCurrentStage());
+      logRow.setTenantId(plan.getTenantId());
+      interruptLogMapper.insert(logRow);
+    } catch (Exception e) {
+      log.warn("[AI复习] 中断日志写入失败 planId={}：{}", plan.getId(), e.getMessage());
+    }
   }
 
   /** 残酷清洗：近 14 天移除的绿牌回黄；在册红/黄牌连续计数清零 */
@@ -2223,6 +2288,23 @@ public class ReviewPlanApplicationService {
       log.warn("[AI复习] 读取字典 {} 失败，用默认值 {}：{}", code, defaultValue, e.getMessage());
     }
     return defaultValue;
+  }
+
+  /**
+   * W2.2 带已论证区间的字典读取：越界 clamp 到边界并 warn。区间初值见方案附录 A。
+   */
+  int dictIntInRange(String code, int defaultValue, int min, int max, Long tenantId) {
+    int value = dictInt(code, defaultValue, tenantId);
+    int clamped = clampToRange(value, min, max);
+    if (clamped != value) {
+      log.warn("[AI复习] 参数 {}={} 超出已论证区间 [{},{}]，已按 {} 生效", code, value, min, max, clamped);
+    }
+    return clamped;
+  }
+
+  /** 区间 clamp（纯函数，单测直断言） */
+  static int clampToRange(int value, int min, int max) {
+    return Math.max(min, Math.min(max, value));
   }
 
   private int dictInt(String code, int defaultValue, Long tenantId) {

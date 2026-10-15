@@ -6,6 +6,7 @@ import java.time.LocalDate;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 /** §10.1 调度算法：阶段切分、考试日解析、每日配额、双轨构成（含 183 式极端偏差）、中断 ABCD */
@@ -18,7 +19,20 @@ class PlanScheduleDomainServiceTest {
     assertThat(PlanScheduleDomainService.splitStages(20)).containsExactly(10, 6, 4);
     assertThat(PlanScheduleDomainService.splitStages(30)).containsExactly(15, 9, 6);
     assertThat(PlanScheduleDomainService.splitStages(7)).containsExactly(4, 2, 1);
-    assertThat(PlanScheduleDomainService.splitStages(3)).containsExactly(2, 1, 0 + 1); // D3 下限 1
+  }
+
+  @Test
+  @DisplayName("W2.5 边界：D=3/4/7 三段和=D 且每段≥1（F6 修正，原 D=3 溢出为 4）")
+  void splitStagesBoundarySumsToTotal() {
+    for (int d : new int[]{3, 4, 7, 20}) {
+      int[] stages = PlanScheduleDomainService.splitStages(d);
+      assertThat(stages[0] + stages[1] + stages[2]).as("D=%d 三段和", d).isEqualTo(d);
+      for (int seg : stages) {
+        assertThat(seg).as("D=%d 每段≥1", d).isGreaterThanOrEqualTo(1);
+      }
+    }
+    assertThat(PlanScheduleDomainService.splitStages(3)).containsExactly(1, 1, 1);
+    assertThat(PlanScheduleDomainService.splitStages(4)).containsExactly(2, 1, 1);
   }
 
   @Test

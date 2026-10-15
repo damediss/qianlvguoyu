@@ -1,6 +1,7 @@
 package com.guoyu.platform.exam.reviewsync;
 
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.assertNull;
 
 import com.guoyu.platform.ai.infrastructure.FaqLlmClient;
@@ -26,6 +27,15 @@ class ReviewLlmAssistStreakTest {
         Mockito.mock(DictMapper.class),
         Mockito.mock(AiGenerationDraftMapper.class),
         Mockito.mock(ThreadPoolTaskExecutor.class));
+  }
+
+  @Test
+  void wrongTierFourFiresOnceWithFallbackCopy() {
+    // W1.5：连错 4 档兜底文案（方案 §4.5 逐字），触发一次后当日不再发
+    String copy = service.streakEncouragement(1L, 1, "wrong", 4, 10);
+    assertNotNull(copy);
+    assertTrue(copy.contains("先停一停"), "应命中 §4.5 兜底句，实际=" + copy);
+    assertNull(service.streakEncouragement(1L, 1, "wrong", 4, 11));
   }
 
   @Test

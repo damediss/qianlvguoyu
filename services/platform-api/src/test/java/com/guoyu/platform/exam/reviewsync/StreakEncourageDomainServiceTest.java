@@ -52,12 +52,17 @@ class StreakEncourageDomainServiceTest {
   }
 
   @Test
-  void wrongTiersCapAtThree() {
+  void wrongTiersCapAtFour() {
+    // W1.5：连错 4 档兜底一次后沉默（5+ 不再打扰）
     assertEquals(0, StreakEncourageDomainService.tierOf(new Streak("wrong", 1)));
     assertEquals(2, StreakEncourageDomainService.tierOf(new Streak("wrong", 2)));
     assertEquals(3, StreakEncourageDomainService.tierOf(new Streak("wrong", 3)));
-    // 连错 4+ 不升档
-    assertEquals(3, StreakEncourageDomainService.tierOf(new Streak("wrong", 6)));
+    assertEquals(4, StreakEncourageDomainService.tierOf(new Streak("wrong", 4)));
+    assertEquals(4, StreakEncourageDomainService.tierOf(new Streak("wrong", 6)));
+    // 恰好等于档位才触发：连错 4 触发一次，5+ 不重发
+    assertTrue(StreakEncourageDomainService.shouldFire(new Streak("wrong", 4), 4));
+    assertFalse(StreakEncourageDomainService.shouldFire(new Streak("wrong", 5), 4));
+    assertFalse(StreakEncourageDomainService.shouldFire(new Streak("wrong", 3), 4));
   }
 
   @Test

@@ -579,10 +579,28 @@ STORM 报告基于三份文档写成；本次审核将报告 60+ 项事实性论
 
 | 参数 | 默认 | 区间 | 依据状态 | 说明 |
 |---|---|---|---|---|
-| ai_review_daily_new_cap | 120 | [20,300] | 工程拍板（需求文本曾自相矛盾 100-120 vs 150） | 方向性支持：分散练习（Cepeda 2006） |
-| ai_review_daily_total_cap | 200 | [50,600] | 工程拍板 | 同上 |
-| ai_review_interrupt_gap | 2 | [1,7] | 工程拍板 | 倒班作息适配性待 W2 访谈（报告 W2） |
-| （……全量 14+12 个参数实施时补齐……） | | | | |
+| ai_review_daily_new_cap | 120 | [20,300] | 工程拍板（需求文本曾自相矛盾 100-120 vs 150） | 方向性支持：分散练习（Cepeda 2006）；W2.2 已上线 clamp+warn |
+| ai_review_daily_total_cap | 200 | [50,600] | 工程拍板 | 同上；W2.2 已上线 |
+| ai_review_default_days | 20 | [3,120] | 工程拍板 | 无考试日时的计划长度；W2.2 已上线 |
+| ai_review_interrupt_gap | 2 | [1,7] | 工程拍板 | 倒班作息适配性待访谈（报告 W2）；W2.2 已上线 |
+| ai_review_advance_max_per_day | 1 | [0,3] | 工程拍板 | 超前学习天数上限；W2.2 已上线 |
+| ai_review_mock_size | 100 | [20,200] | 工程拍板 | 模考卷题量；W2.2 已上线 |
+| ai_review_mock_subjective_max | 5 | [0,20] | 工程拍板 | 模考卷主观题上限；W2.2 已上线 |
+| ai_review_interrupt_clean_enabled | 0 | 0/1 | 拍板（2026-10-14 ③） | W2.1 已上线（默认关）；开关=1 时策略文案追加披露句 |
+| ai_review_case_a_daily_new_cap | 180 | [120,300] | 工程拍板 | W3 实施时接 clamp |
+| ai_review_case_a_trim_ratio | 15 | [0,30]（%） | 工程拍板 | W3 实施时接 clamp |
+| ai_review_case_b_quiz_size | 100 | [30,200] | 工程拍板 | W3 实施时接 clamp |
+| ai_review_case_b_pass_rate | 70 | [50,90]（%） | 工程拍板 | W3 实施时接 clamp |
+| ai_review_case_d_warmup_size | 50 | [10,100] | 工程拍板 | W3 实施时接 clamp |
+| ai_review_case_d_daily_new | 100 | [20,200] | 工程拍板 | W3 实施时接 clamp |
+| ai_review_spaced_review_enabled | 0 | 0/1 | 灰度开关 | W4 |
+| ai_review_recall_percent | 10 | [0,30] | 工程拍板（报告 N11 方向） | W4 实施时接 clamp |
+| ai_review_entry_quiz_enabled | 0 | 0/1 | 灰度开关 | W6 |
+| ai_review_entry_quiz_size | 40 | [30,50] | 报告 T3-14 | W6 实施时接 clamp |
+| ai_review_mock_pass_rate | 60 | [0,100]（%） | O-1 待证 | W7；现为硬编码 0.6，本键接管 |
+
+> 一期（W2.2）已上线 7 个既有参数的 clamp+warn；W3/W4/W6 新参数在各自实施时接入同一
+> `dictIntInRange` 读取（越界按边界生效 + warn 日志"参数 X=Y 超出已论证区间 [a,b]"）。
 
 ## 附录 B · 审核实证清单（代码 vs 文档对照全表）
 

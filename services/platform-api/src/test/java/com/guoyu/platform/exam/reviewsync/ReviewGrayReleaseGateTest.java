@@ -39,6 +39,7 @@ class ReviewGrayReleaseGateTest {
       mock(AiReviewPlanDayMapper.class),
       mock(AiReviewAnswerMapper.class),
       mock(AiReviewWrongItemMapper.class),
+      mock(com.guoyu.platform.exam.reviewsync.mapper.AiReviewInterruptLogMapper.class),
       mock(AiReviewMockPaperMapper.class),
       mock(AiReviewMockPaperItemMapper.class),
       whitelistMapper,

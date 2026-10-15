@@ -110,7 +110,9 @@ public class ReviewLlmAssistService {
           "碰到硬骨头了。放慢一点，先圈题干关键词再选。错题现在出现，是帮你考前堵漏，不是坏事。",
           "连错 3 题，说明撞上了薄弱知识点。这是好事：它现在暴露，你就有机会在考前补上。",
           "这几题有点绕。别急着往下刷，把这题的解析读透，比再做十题都值。",
-          "连续几题没选对，不是不会，是这类题的出题套路还没摸熟。看解析找规律，马上就能翻身。"));
+          "连续几题没选对，不是不会，是这类题的出题套路还没摸熟。看解析找规律，马上就能翻身。"),
+      4, List.of(
+          "连着几题没拿下，先停一停：回头看看这几题的解析，弄懂一道比刷过十道值。准备好了再继续，不急。"));
 
   private final FaqLlmClient llmClient;
   private final FaqModelConfigApplicationService modelConfigService;

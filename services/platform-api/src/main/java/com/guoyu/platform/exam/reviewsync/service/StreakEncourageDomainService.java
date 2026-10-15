@@ -22,8 +22,8 @@ public final class StreakEncourageDomainService {
 
   /** 连对档位 */
   public static final List<Integer> CORRECT_TIERS = List.of(3, 5, 10, 15, 20);
-  /** 连错档位 */
-  public static final List<Integer> WRONG_TIERS = List.of(2, 3);
+  /** 连错档位（W1.5：第 4 档兜底一次后沉默，连错 5+ 不再打扰） */
+  public static final List<Integer> WRONG_TIERS = List.of(2, 3, 4);
 
   /**
    * 从当日作答流水（按时间序，含改错重答）末尾向前数连续同向作答。
@@ -65,6 +65,9 @@ public final class StreakEncourageDomainService {
         }
       }
       return tier;
+    }
+    if (streak.count() >= 4) {
+      return 4;
     }
     if (streak.count() >= 3) {
       return 3;
