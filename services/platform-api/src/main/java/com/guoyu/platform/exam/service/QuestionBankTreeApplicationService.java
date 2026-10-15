@@ -4,6 +4,7 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.guoyu.platform.exam.entity.ExamCourseEntity;
 import com.guoyu.platform.exam.entity.ExamKnowledgeStructureEntity;
 import com.guoyu.platform.exam.entity.ExamWorkTypeEntity;
+import com.guoyu.platform.exam.helper.ExamCourseLevels;
 import com.guoyu.platform.exam.mapper.ExamCourseMapper;
 import com.guoyu.platform.exam.mapper.ExamExamDetailMapper;
 import com.guoyu.platform.exam.mapper.ExamKnowledgeStructureMapper;
@@ -257,8 +258,9 @@ public class QuestionBankTreeApplicationService {
     vo.setKey("course-" + e.getId());
     vo.setId(e.getId());
     vo.setNodeType("course");
+    Integer nationalGrade = ExamCourseLevels.toNationalGrade(e.getLevel());
     vo.setTitle(e.getTitle() != null
-        ? e.getTitle() + (e.getLevel() != null ? " (" + e.getLevel() + "级)" : "")
+        ? e.getTitle() + (nationalGrade != null ? " (" + nationalGrade + "级)" : "")
         : null);
     vo.setSortNumber(e.getSortNumber());
     vo.setStatus(e.getStatus());

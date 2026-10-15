@@ -14,6 +14,7 @@ import com.guoyu.platform.exam.entity.ExamCourseEntity;
 import com.guoyu.platform.exam.entity.ExamExamDetailEntity;
 import com.guoyu.platform.exam.entity.ExamKnowledgeStructureEntity;
 import com.guoyu.platform.exam.entity.ExamWorkTypeEntity;
+import com.guoyu.platform.exam.helper.ExamCourseLevels;
 import com.guoyu.platform.exam.mapper.ExamCourseMapper;
 import com.guoyu.platform.exam.mapper.ExamExamDetailMapper;
 import com.guoyu.platform.exam.mapper.ExamKnowledgeStructureMapper;
@@ -769,8 +770,10 @@ public class ExamExamDetailApplicationService {
     }
 
     setCellString(row, 0, resolveKnowledgeSeriesNo(entity.getKnowledgeId(), knowledgeMap));
-    if (course != null && course.getLevel() != null) {
-      setCellNumeric(row, 1, course.getLevel());
+    // 模板 B 列表头为"级别（5：初级…1：高级技师）"，写国标等级；course.level 为 0~4 序数需换算
+    Integer nationalGrade = ExamCourseLevels.toNationalGrade(course != null ? course.getLevel() : null);
+    if (nationalGrade != null) {
+      setCellNumeric(row, 1, nationalGrade);
     }
 
     Integer typeCode = mapTypeToPropositionCode(entity.getType());
