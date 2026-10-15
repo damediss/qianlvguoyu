@@ -9,11 +9,36 @@ interface DefensePdfViewerProps {
   fileId?: string;
 }
 
-type PdfjsWorkerGlobal = {
-  pdfjsWorker?: { WorkerMessageHandler?: unknown };
-};
-
 const MAX_CANVAS_EDGE = 4096;
+
+let pdfWorkerScriptPromise: Promise<void> | null = null;
+
+/**
+ * 老 WebView 无法创建 Worker 时，pdf.js 需要 window.pdfjsWorker 全局兜底（假 Worker）。
+ * worker 文件 UMD 尾部会给 window.pdfjsWorker 赋值，以经典 script 方式加载一次即可。
+ */
+function ensurePdfWorkerGlobal(workerSrc: string): Promise<void> {
+  pdfWorkerScriptPromise ??= new Promise<void>((resolve, reject) => {
+    const script = document.createElement('script');
+    script.src = workerSrc;
+    script.onload = () => resolve();
+    script.onerror = () => reject(new Error('PDF worker 脚本加载失败'));
+    document.head.appendChild(script);
+  });
+  return pdfWorkerScriptPromise;
+}
+
+async function loadPdfjs() {
+  installLegacyBrowserPolyfills();
+  // worker 文件经 public/pdfjs/ 原样下发（不进口袋管线）：它含非 UTF-8 字节，进 esbuild
+  // 压缩/转译必炸——这正是历史上 minify:false 全局关压缩的根因。
+  // 注意：升级 pdfjs-dist 版本时须同步重拷 public/pdfjs/pdf.worker.min.js。
+  const pdfjs = await import('pdfjs-dist/legacy/build/pdf.min.js');
+  const workerSrc = `${import.meta.env.BASE_URL}pdfjs/pdf.worker.min.js`;
+  pdfjs.GlobalWorkerOptions.workerSrc = workerSrc;
+  await ensurePdfWorkerGlobal(workerSrc);
+  return pdfjs;
+}
 
 function toPdfBlob(blob: Blob) {
   if (blob.type === 'application/pdf') {
@@ -43,22 +68,6 @@ function measurePdfWidth(host: HTMLElement) {
     }
   }
   return 360;
-}
-
-async function loadPdfjs() {
-  installLegacyBrowserPolyfills();
-  const [pdfjs, workerModule, workerUrl] = await Promise.all([
-    import('pdfjs-dist/legacy/build/pdf.min.js'),
-    import('pdfjs-dist/legacy/build/pdf.worker.min.js'),
-    import('./pdfjs.worker?worker&url'),
-  ]);
-  const handler = (workerModule as { WorkerMessageHandler?: unknown }).WorkerMessageHandler
-    ?? (globalThis as PdfjsWorkerGlobal).pdfjsWorker?.WorkerMessageHandler;
-  if (handler) {
-    (globalThis as PdfjsWorkerGlobal).pdfjsWorker = { WorkerMessageHandler: handler };
-  }
-  pdfjs.GlobalWorkerOptions.workerSrc = workerUrl.default;
-  return pdfjs;
 }
 
 /** Android / 微信内置浏览器无法在 iframe 中渲染 PDF，改为交给系统阅读器或分享面板。 */

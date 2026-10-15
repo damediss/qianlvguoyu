@@ -1,6 +1,6 @@
 import * as Icons from '@ant-design/icons';
 import {
-  Avatar, Breadcrumb, Dropdown, Layout, Menu, Tabs, Tooltip, Space, Typography, notification,
+  Avatar, Breadcrumb, Dropdown, Layout, Menu, Spin, Tabs, Tooltip, Space, Typography, notification,
 } from 'antd';
 import type { MenuProps } from 'antd';
 import { DndContext, MeasuringStrategy, PointerSensor, closestCenter, useSensor, useSensors } from '@dnd-kit/core';
@@ -8,7 +8,7 @@ import type { DragEndEvent } from '@dnd-kit/core';
 import { SortableContext, horizontalListSortingStrategy, useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { useQuery } from '@tanstack/react-query';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { fetchMenus, logout } from '../api/auth';
 import { apiClient } from '../api/client';
@@ -795,6 +795,7 @@ export function AppShell({
               <Breadcrumb className="app-breadcrumb" items={breadcrumbItems} />
             )}
             <div className="app-page-body">
+              <Suspense fallback={<Spin size="large" style={{ display: 'block', margin: '120px auto' }} />}>
               {tabsEnabled ? (
                 contentOverride || tabs.map((tab) => {
                   if (!visitedKeys.includes(tab.key)) return null; // 首次激活才挂载（forceRender 不开）
@@ -814,6 +815,7 @@ export function AppShell({
               ) : (
                 contentOverride || pageMap[selectedKey] || pageMap['knowledge']
               )}
+              </Suspense>
             </div>
           </TabActiveProvider>
         </Content>

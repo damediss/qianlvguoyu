@@ -6,145 +6,146 @@ import zhCN from 'antd/locale/zh_CN';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { AppShell } from './layouts/AppShell';
 import { AuthGate } from './components/AuthGate';
-import { KnowledgePage } from './pages/knowledge/KnowledgePage';
-import ResourceCenterPage from './pages/question_bank/ResourceCenterPage';
-import KnowledgeFixPage from './pages/question_bank/KnowledgeFixPage';
-import XiMuBiaoGuanLiPage from './pages/zhi_neng_ke_cheng_cai_liao_guan_li/XiMuBiaoGuanLiPage';
-import TheoryQuestionGenPage from './pages/zhi_neng_ke_cheng_cai_liao_guan_li/TheoryQuestionGenPage';
-import SkillQuestionGenPage from './pages/zhi_neng_ke_cheng_cai_liao_guan_li/SkillQuestionGenPage';
-import AiCoursewarePage from './pages/zhi_neng_ke_cheng_cai_liao_guan_li/AiCoursewarePage';
-import { RencaishibieEmbedPage } from './pages/knowledge/RencaishibieEmbedPage';
-import { WorkTypePage } from './pages/exam/WorkTypePage';
-import { CoursePage } from './pages/exam/CoursePage';
-import { DevTaskDetailPage } from './pages/exam/DevTaskDetailPage';
-import { TaskExamAuditAssignListPage } from './pages/exam/TaskExamAuditAssignListPage';
-import { TaskExamshicaoAuditAssignListPage } from './pages/exam/TaskExamshicaoAuditAssignListPage';
-import { TaskExamsubAuditAssignListPage } from './pages/exam/TaskExamsubAuditAssignListPage';
-import { TrainingInfoPage } from './pages/training/TrainingInfoPage';
-import { TrainingDashboardPage } from './pages/training/TrainingDashboardPage';
-import { TrainingFollowClassPage } from './pages/training/TrainingFollowClassPage';
-import { TrainingFollowExamPage } from './pages/training/TrainingFollowExamPage';
-import { TrainingSubsidyDeclarePage } from './pages/training/TrainingSubsidyDeclarePage';
-import { TrainingClassPeoplePage } from './pages/training/TrainingClassPeoplePage';
-import { TrainingClassDivisionPage } from './pages/training/TrainingClassDivisionPage';
-import { TrainingClassDeclarePage } from './pages/training/TrainingClassDeclarePage';
-import { UserAuthCoursePage } from './pages/exam/UserAuthCoursePage';
-import { UserListPage } from './pages/chazheng/UserListPage';
-import { CertQueryPage } from './pages/chazheng/CertQueryPage';
-import { RequirementsManagementPage } from './pages/training/RequirementsManagementPage';
-import { EnterpriseTrainingDemandPage } from './pages/training/EnterpriseTrainingDemandPage';
-import { EnterpriseTalentDemandPage } from './pages/training/EnterpriseTalentDemandPage';
-import { TrainingProgramPage } from './pages/training/TrainingProgramPage';
-import { TrainingSchedulePage } from './pages/training/TrainingSchedulePage';
-import { TrainingGraduationPage } from './pages/training/TrainingGraduationPage';
-import { TrainingGraduationCeremonyPage } from './pages/training/TrainingGraduationCeremonyPage';
-import { TrainingGraduationClassDetailPage } from './pages/training/TrainingGraduationClassDetailPage';
-import { TrainingCapabilityPage } from './pages/training/TrainingCapabilityPage';
-import { TrainingSummaryPage } from './pages/training/TrainingSummaryPage';
-import { TrainingCertificateTemplatePage } from './pages/training/TrainingCertificateTemplatePage';
-import { TrainingInformationPage } from './pages/training/TrainingInformationPage';
-import { TrainingStudentPage } from './pages/training/TrainingStudentPage';
-import { TrainingAcademicManagePage } from './pages/training/TrainingAcademicManagePage';
-import { EnterpriseResearchPage } from './pages/training/EnterpriseResearchPage';
-import { EnterpriseManagePage } from './pages/training/EnterpriseManagePage';
-import { SolutionPlanningPage } from './pages/training/SolutionPlanningPage';
-import { EnterprisePlanReviewPage } from './pages/training/EnterprisePlanReviewPage';
-import { DataPanelPage } from './pages/zhixunplatform/DataPanelPage';
-import { TaskManagementPage } from './pages/zhixunplatform/TaskManagementPage';
-import { TaskArchivesPage } from './pages/zhixunplatform/TaskArchivesPage';
-import { TrainingProcessPage } from './pages/zhixunplatform/TrainingProcessPage';
-import { ProjectArchivesPage } from './pages/zhixunplatform/ProjectArchivesPage';
-import { MaterialArchivesPage } from './pages/zhixunplatform/MaterialArchivesPage';
-import { TalentIdentificationPage } from './pages/zhixunplatform/TalentIdentificationPage';
-import { PreliminaryPlanPage } from './pages/zhixunplatform/PreliminaryPlanPage';
-import { CreateTaskPage } from './pages/zhixunplatform/CreateTaskPage';
-import { FinalPlanPage } from './pages/zhixunplatform/FinalPlanPage';
-import { ClassDeclarationPage } from './pages/zhixunplatform/ClassDeclarationPage';
-import { TrainingImplementationPage } from './pages/zhixunplatform/TrainingImplementationPage';
-import { CertificationPage } from './pages/zhixunplatform/CertificationPage';
-import { DeclarationServicePage } from './pages/zhixunplatform/DeclarationServicePage';
-import { GraduationPage } from './pages/zhixunplatform/GraduationPage';
-import { RefundPage } from './pages/zhixunplatform/RefundPage';
-import { PersonnelArchivePage } from './pages/zhixunplatform/PersonnelArchivePage';
-import { createArchiveTablePage } from './pages/zhixunplatform/ArchiveTablePage';
-import { createPmFormPage } from './pages/zhixunplatform/PmFormPage';
-import { TaskStartPage } from './pages/expert/TaskStartPage';
-import { QuestionBankPage } from './pages/exam/QuestionBankPage';
-import { CompanyQuestionPage } from './pages/exam/CompanyQuestionPage';
-import { MakeExamPlanPage } from './pages/exam/MakeExamPlanPage';
-import { KnowledgeRatePage } from './pages/exam/KnowledgeRatePage';
-import { KnowledgeStructurePage } from './pages/exam/KnowledgeStructurePage';
-import { FaqConversionPage } from './pages/exam/FaqConversionPage';
-import { TrainExamListPage } from './pages/training/TrainExamListPage';
-import { StatsOverviewPage } from './pages/exam/reviewSyncStats/StatsOverviewPage';
-import { StudentDetailPage } from './pages/exam/reviewSyncStats/StudentDetailPage';
-import { TabletAssessorApp } from './pages/assessor/TabletAssessorApp';
-import { DefenseReviewApp } from './pages/assessor/DefenseReviewApp';
-import { PracticalCollectionApp } from './pages/practicalCollection/PracticalCollectionApp';
-import { CompetitionEventManagementPage } from './pages/competition/CompetitionEventManagementPage';
-import { CompetitionPlayerManagementPage } from './pages/competition/CompetitionPlayerManagementPage';
-import { CompetitionPlayerSortingManagementPage } from './pages/competition/CompetitionPlayerSortingPage';
-import { CompetitionPlayerDrawManagementPage } from './pages/competition/CompetitionPlayerDrawPage';
-import { CompetitionPlayerClassifyManagementPage } from './pages/competition/CompetitionPlayerClassifyPage';
-import { CompetitionRefereeManagementPage } from './pages/competition/CompetitionRefereeManagementPage';
-import { CompetitionRefereeGroupPage } from './pages/competition/CompetitionRefereeGroupPage';
-import { CompetitionEventModulePage, type CompetitionEventModule } from './pages/competition/CompetitionEventModulePage';
-import { CompetitionQuestionBankPage, CompetitionSimplePracticalQuestionPage } from './pages/competition/CompetitionQuestionBankPage';
-import { CompetitionQuestionBlueprintPage } from './pages/competition/CompetitionQuestionBlueprintPage';
-import { CompetitionMakeExamPlanPage } from './pages/competition/CompetitionMakeExamPlanPage';
-import { CompetitionPracticalScoringSchemePage } from './pages/competition/CompetitionPracticalScoringSchemePage';
-import { CompetitionPracticalJudgeApp } from './pages/competition/CompetitionPracticalJudgeApp';
-import { FormalExamPlayerApp } from './pages/formalExam/FormalExamPlayerApp';
+import type { CompetitionEventModule } from './pages/competition/CompetitionEventModulePage';
 import { findCompetitionMenuCode, isCompetitionPath } from './routes/competitionRoute';
 import { useAuthStore } from './stores/authStore';
 import { useTabStore } from './stores/tabStore';
 import { NavigationBlockerProvider, useNavigationBlocker } from './hooks/useUnsavedChangesBlocker';
 
-// Pre-instantiate factory components for stable React references
-const ArchiveEquipmentPage = createArchiveTablePage('equipment');
-const ArchiveMaterialsPage = createArchiveTablePage('materials');
-const ArchiveRulesPage = createArchiveTablePage('rules');
-const ArchiveEnvironmentPage = createArchiveTablePage('environment');
-const PmStrategicPage = createPmFormPage('strategic');
-const PmOrgPerfPage = createPmFormPage('orgPerf');
-const PmPbcPage = createPmFormPage('pbc');
-const PmCharterPage = createPmFormPage('charter');
-const PmMilestonePage = createPmFormPage('milestone');
-const PmRiskPage = createPmFormPage('risk');
-const PmIssuePage = createPmFormPage('issue');
-const PmChangePage = createPmFormPage('change');
-const PmMeetingPage = createPmFormPage('meeting');
-const PmKnowledgePage = createPmFormPage('knowledge');
-const PmWbsPage = createPmFormPage('wbs');
-const PmCommunicationPage = createPmFormPage('communication');
-const PmStatusPage = createPmFormPage('status');
-import { ProductPlaceholder } from './pages/product/ProductPlaceholder';
-import { TaskEndPage } from './pages/expert/TaskEndPage';
-import { ProjectManagementPage } from './pages/certification/ProjectManagementPage';
-import { CertificationDataPanelPage } from './pages/certification/CertificationDataPanelPage';
-import { PracticalConfigurationPage } from './pages/certification/PracticalConfigurationPage';
-import { PreparationPage } from './pages/certification/PreparationPage';
-import { DefenseManagementPage } from './pages/certification/DefenseManagementPage';
-import { CollectionTaskListPage } from './pages/certification/collection/CollectionTaskListPage';
-import { CollectionManagePage } from './pages/certification/collection/CollectionManagePage';
-import { ArchivePage } from './pages/certification/ArchivePage';
-import { TaskArchivePage } from './pages/certification/TaskArchivePage';
-import { AssessorInfoPage } from './pages/certification/info/AssessorInfoPage';
-import { ExamSiteInfoPage } from './pages/certification/info/ExamSiteInfoPage';
-import { ExamEquipmentInfoPage } from './pages/certification/info/ExamEquipmentInfoPage';
-import { ExamStaffInfoPage } from './pages/certification/info/ExamStaffInfoPage';
-import { TenantPage } from './pages/system/TenantPage';
-import { UserPage } from './pages/system/UserPage';
-import { OrgPage } from './pages/system/OrgPage';
-import { PostPage } from './pages/system/PostPage';
-import { RolePage } from './pages/system/RolePage';
-import { MenuPage } from './pages/system/MenuPage';
-import { DictPage } from './pages/system/DictPage';
-import { AuditLogPage } from './pages/system/AuditLogPage';
-import { PermissionPage } from './pages/system/PermissionPage';
 import { appTheme } from './theme';
 import './styles/tokens.css';
 import './styles/global.css';
+
+// 页面级懒加载：pageMap 全量页面拆包，进入对应菜单才下载 chunk（§ 前端构建优化）
+const KnowledgePage = React.lazy(() => import('./pages/knowledge/KnowledgePage').then((m) => ({ default: m.KnowledgePage })));
+const ResourceCenterPage = React.lazy(() => import('./pages/question_bank/ResourceCenterPage'));
+const KnowledgeFixPage = React.lazy(() => import('./pages/question_bank/KnowledgeFixPage'));
+const XiMuBiaoGuanLiPage = React.lazy(() => import('./pages/zhi_neng_ke_cheng_cai_liao_guan_li/XiMuBiaoGuanLiPage'));
+const TheoryQuestionGenPage = React.lazy(() => import('./pages/zhi_neng_ke_cheng_cai_liao_guan_li/TheoryQuestionGenPage'));
+const SkillQuestionGenPage = React.lazy(() => import('./pages/zhi_neng_ke_cheng_cai_liao_guan_li/SkillQuestionGenPage'));
+const AiCoursewarePage = React.lazy(() => import('./pages/zhi_neng_ke_cheng_cai_liao_guan_li/AiCoursewarePage'));
+const RencaishibieEmbedPage = React.lazy(() => import('./pages/knowledge/RencaishibieEmbedPage').then((m) => ({ default: m.RencaishibieEmbedPage })));
+const WorkTypePage = React.lazy(() => import('./pages/exam/WorkTypePage').then((m) => ({ default: m.WorkTypePage })));
+const CoursePage = React.lazy(() => import('./pages/exam/CoursePage').then((m) => ({ default: m.CoursePage })));
+const DevTaskDetailPage = React.lazy(() => import('./pages/exam/DevTaskDetailPage').then((m) => ({ default: m.DevTaskDetailPage })));
+const TaskExamAuditAssignListPage = React.lazy(() => import('./pages/exam/TaskExamAuditAssignListPage').then((m) => ({ default: m.TaskExamAuditAssignListPage })));
+const TaskExamshicaoAuditAssignListPage = React.lazy(() => import('./pages/exam/TaskExamshicaoAuditAssignListPage').then((m) => ({ default: m.TaskExamshicaoAuditAssignListPage })));
+const TaskExamsubAuditAssignListPage = React.lazy(() => import('./pages/exam/TaskExamsubAuditAssignListPage').then((m) => ({ default: m.TaskExamsubAuditAssignListPage })));
+const TrainingInfoPage = React.lazy(() => import('./pages/training/TrainingInfoPage').then((m) => ({ default: m.TrainingInfoPage })));
+const TrainingDashboardPage = React.lazy(() => import('./pages/training/TrainingDashboardPage').then((m) => ({ default: m.TrainingDashboardPage })));
+const TrainingFollowClassPage = React.lazy(() => import('./pages/training/TrainingFollowClassPage').then((m) => ({ default: m.TrainingFollowClassPage })));
+const TrainingFollowExamPage = React.lazy(() => import('./pages/training/TrainingFollowExamPage').then((m) => ({ default: m.TrainingFollowExamPage })));
+const TrainingSubsidyDeclarePage = React.lazy(() => import('./pages/training/TrainingSubsidyDeclarePage').then((m) => ({ default: m.TrainingSubsidyDeclarePage })));
+const TrainingClassPeoplePage = React.lazy(() => import('./pages/training/TrainingClassPeoplePage').then((m) => ({ default: m.TrainingClassPeoplePage })));
+const TrainingClassDivisionPage = React.lazy(() => import('./pages/training/TrainingClassDivisionPage').then((m) => ({ default: m.TrainingClassDivisionPage })));
+const TrainingClassDeclarePage = React.lazy(() => import('./pages/training/TrainingClassDeclarePage').then((m) => ({ default: m.TrainingClassDeclarePage })));
+const UserAuthCoursePage = React.lazy(() => import('./pages/exam/UserAuthCoursePage').then((m) => ({ default: m.UserAuthCoursePage })));
+const UserListPage = React.lazy(() => import('./pages/chazheng/UserListPage').then((m) => ({ default: m.UserListPage })));
+const CertQueryPage = React.lazy(() => import('./pages/chazheng/CertQueryPage').then((m) => ({ default: m.CertQueryPage })));
+const RequirementsManagementPage = React.lazy(() => import('./pages/training/RequirementsManagementPage').then((m) => ({ default: m.RequirementsManagementPage })));
+const EnterpriseTrainingDemandPage = React.lazy(() => import('./pages/training/EnterpriseTrainingDemandPage').then((m) => ({ default: m.EnterpriseTrainingDemandPage })));
+const EnterpriseTalentDemandPage = React.lazy(() => import('./pages/training/EnterpriseTalentDemandPage').then((m) => ({ default: m.EnterpriseTalentDemandPage })));
+const TrainingProgramPage = React.lazy(() => import('./pages/training/TrainingProgramPage').then((m) => ({ default: m.TrainingProgramPage })));
+const TrainingSchedulePage = React.lazy(() => import('./pages/training/TrainingSchedulePage').then((m) => ({ default: m.TrainingSchedulePage })));
+const TrainingGraduationPage = React.lazy(() => import('./pages/training/TrainingGraduationPage').then((m) => ({ default: m.TrainingGraduationPage })));
+const TrainingGraduationCeremonyPage = React.lazy(() => import('./pages/training/TrainingGraduationCeremonyPage').then((m) => ({ default: m.TrainingGraduationCeremonyPage })));
+const TrainingGraduationClassDetailPage = React.lazy(() => import('./pages/training/TrainingGraduationClassDetailPage').then((m) => ({ default: m.TrainingGraduationClassDetailPage })));
+const TrainingCapabilityPage = React.lazy(() => import('./pages/training/TrainingCapabilityPage').then((m) => ({ default: m.TrainingCapabilityPage })));
+const TrainingSummaryPage = React.lazy(() => import('./pages/training/TrainingSummaryPage').then((m) => ({ default: m.TrainingSummaryPage })));
+const TrainingCertificateTemplatePage = React.lazy(() => import('./pages/training/TrainingCertificateTemplatePage').then((m) => ({ default: m.TrainingCertificateTemplatePage })));
+const TrainingInformationPage = React.lazy(() => import('./pages/training/TrainingInformationPage').then((m) => ({ default: m.TrainingInformationPage })));
+const TrainingStudentPage = React.lazy(() => import('./pages/training/TrainingStudentPage').then((m) => ({ default: m.TrainingStudentPage })));
+const TrainingAcademicManagePage = React.lazy(() => import('./pages/training/TrainingAcademicManagePage').then((m) => ({ default: m.TrainingAcademicManagePage })));
+const EnterpriseResearchPage = React.lazy(() => import('./pages/training/EnterpriseResearchPage').then((m) => ({ default: m.EnterpriseResearchPage })));
+const EnterpriseManagePage = React.lazy(() => import('./pages/training/EnterpriseManagePage').then((m) => ({ default: m.EnterpriseManagePage })));
+const SolutionPlanningPage = React.lazy(() => import('./pages/training/SolutionPlanningPage').then((m) => ({ default: m.SolutionPlanningPage })));
+const EnterprisePlanReviewPage = React.lazy(() => import('./pages/training/EnterprisePlanReviewPage').then((m) => ({ default: m.EnterprisePlanReviewPage })));
+const DataPanelPage = React.lazy(() => import('./pages/zhixunplatform/DataPanelPage').then((m) => ({ default: m.DataPanelPage })));
+const TaskManagementPage = React.lazy(() => import('./pages/zhixunplatform/TaskManagementPage').then((m) => ({ default: m.TaskManagementPage })));
+const TaskArchivesPage = React.lazy(() => import('./pages/zhixunplatform/TaskArchivesPage').then((m) => ({ default: m.TaskArchivesPage })));
+const TrainingProcessPage = React.lazy(() => import('./pages/zhixunplatform/TrainingProcessPage').then((m) => ({ default: m.TrainingProcessPage })));
+const ProjectArchivesPage = React.lazy(() => import('./pages/zhixunplatform/ProjectArchivesPage').then((m) => ({ default: m.ProjectArchivesPage })));
+const MaterialArchivesPage = React.lazy(() => import('./pages/zhixunplatform/MaterialArchivesPage').then((m) => ({ default: m.MaterialArchivesPage })));
+const TalentIdentificationPage = React.lazy(() => import('./pages/zhixunplatform/TalentIdentificationPage').then((m) => ({ default: m.TalentIdentificationPage })));
+const PreliminaryPlanPage = React.lazy(() => import('./pages/zhixunplatform/PreliminaryPlanPage').then((m) => ({ default: m.PreliminaryPlanPage })));
+const CreateTaskPage = React.lazy(() => import('./pages/zhixunplatform/CreateTaskPage').then((m) => ({ default: m.CreateTaskPage })));
+const FinalPlanPage = React.lazy(() => import('./pages/zhixunplatform/FinalPlanPage').then((m) => ({ default: m.FinalPlanPage })));
+const ClassDeclarationPage = React.lazy(() => import('./pages/zhixunplatform/ClassDeclarationPage').then((m) => ({ default: m.ClassDeclarationPage })));
+const TrainingImplementationPage = React.lazy(() => import('./pages/zhixunplatform/TrainingImplementationPage').then((m) => ({ default: m.TrainingImplementationPage })));
+const CertificationPage = React.lazy(() => import('./pages/zhixunplatform/CertificationPage').then((m) => ({ default: m.CertificationPage })));
+const DeclarationServicePage = React.lazy(() => import('./pages/zhixunplatform/DeclarationServicePage').then((m) => ({ default: m.DeclarationServicePage })));
+const GraduationPage = React.lazy(() => import('./pages/zhixunplatform/GraduationPage').then((m) => ({ default: m.GraduationPage })));
+const RefundPage = React.lazy(() => import('./pages/zhixunplatform/RefundPage').then((m) => ({ default: m.RefundPage })));
+const PersonnelArchivePage = React.lazy(() => import('./pages/zhixunplatform/PersonnelArchivePage').then((m) => ({ default: m.PersonnelArchivePage })));
+const TaskStartPage = React.lazy(() => import('./pages/expert/TaskStartPage').then((m) => ({ default: m.TaskStartPage })));
+const QuestionBankPage = React.lazy(() => import('./pages/exam/QuestionBankPage').then((m) => ({ default: m.QuestionBankPage })));
+const CompanyQuestionPage = React.lazy(() => import('./pages/exam/CompanyQuestionPage').then((m) => ({ default: m.CompanyQuestionPage })));
+const MakeExamPlanPage = React.lazy(() => import('./pages/exam/MakeExamPlanPage').then((m) => ({ default: m.MakeExamPlanPage })));
+const KnowledgeRatePage = React.lazy(() => import('./pages/exam/KnowledgeRatePage').then((m) => ({ default: m.KnowledgeRatePage })));
+const KnowledgeStructurePage = React.lazy(() => import('./pages/exam/KnowledgeStructurePage').then((m) => ({ default: m.KnowledgeStructurePage })));
+const FaqConversionPage = React.lazy(() => import('./pages/exam/FaqConversionPage').then((m) => ({ default: m.FaqConversionPage })));
+const TrainExamListPage = React.lazy(() => import('./pages/training/TrainExamListPage').then((m) => ({ default: m.TrainExamListPage })));
+const StatsOverviewPage = React.lazy(() => import('./pages/exam/reviewSyncStats/StatsOverviewPage').then((m) => ({ default: m.StatsOverviewPage })));
+const StudentDetailPage = React.lazy(() => import('./pages/exam/reviewSyncStats/StudentDetailPage').then((m) => ({ default: m.StudentDetailPage })));
+const TabletAssessorApp = React.lazy(() => import('./pages/assessor/TabletAssessorApp').then((m) => ({ default: m.TabletAssessorApp })));
+const DefenseReviewApp = React.lazy(() => import('./pages/assessor/DefenseReviewApp').then((m) => ({ default: m.DefenseReviewApp })));
+const PracticalCollectionApp = React.lazy(() => import('./pages/practicalCollection/PracticalCollectionApp').then((m) => ({ default: m.PracticalCollectionApp })));
+const CompetitionEventManagementPage = React.lazy(() => import('./pages/competition/CompetitionEventManagementPage').then((m) => ({ default: m.CompetitionEventManagementPage })));
+const CompetitionPlayerManagementPage = React.lazy(() => import('./pages/competition/CompetitionPlayerManagementPage').then((m) => ({ default: m.CompetitionPlayerManagementPage })));
+const CompetitionPlayerSortingManagementPage = React.lazy(() => import('./pages/competition/CompetitionPlayerSortingPage').then((m) => ({ default: m.CompetitionPlayerSortingManagementPage })));
+const CompetitionPlayerDrawManagementPage = React.lazy(() => import('./pages/competition/CompetitionPlayerDrawPage').then((m) => ({ default: m.CompetitionPlayerDrawManagementPage })));
+const CompetitionPlayerClassifyManagementPage = React.lazy(() => import('./pages/competition/CompetitionPlayerClassifyPage').then((m) => ({ default: m.CompetitionPlayerClassifyManagementPage })));
+const CompetitionRefereeManagementPage = React.lazy(() => import('./pages/competition/CompetitionRefereeManagementPage').then((m) => ({ default: m.CompetitionRefereeManagementPage })));
+const CompetitionRefereeGroupPage = React.lazy(() => import('./pages/competition/CompetitionRefereeGroupPage').then((m) => ({ default: m.CompetitionRefereeGroupPage })));
+const CompetitionEventModulePage = React.lazy(() => import('./pages/competition/CompetitionEventModulePage').then((m) => ({ default: m.CompetitionEventModulePage })));
+const CompetitionQuestionBankPage = React.lazy(() => import('./pages/competition/CompetitionQuestionBankPage').then((m) => ({ default: m.CompetitionQuestionBankPage })));
+const CompetitionSimplePracticalQuestionPage = React.lazy(() => import('./pages/competition/CompetitionQuestionBankPage').then((m) => ({ default: m.CompetitionSimplePracticalQuestionPage })));
+const CompetitionQuestionBlueprintPage = React.lazy(() => import('./pages/competition/CompetitionQuestionBlueprintPage').then((m) => ({ default: m.CompetitionQuestionBlueprintPage })));
+const CompetitionMakeExamPlanPage = React.lazy(() => import('./pages/competition/CompetitionMakeExamPlanPage').then((m) => ({ default: m.CompetitionMakeExamPlanPage })));
+const CompetitionPracticalScoringSchemePage = React.lazy(() => import('./pages/competition/CompetitionPracticalScoringSchemePage').then((m) => ({ default: m.CompetitionPracticalScoringSchemePage })));
+const CompetitionPracticalJudgeApp = React.lazy(() => import('./pages/competition/CompetitionPracticalJudgeApp').then((m) => ({ default: m.CompetitionPracticalJudgeApp })));
+const FormalExamPlayerApp = React.lazy(() => import('./pages/formalExam/FormalExamPlayerApp').then((m) => ({ default: m.FormalExamPlayerApp })));
+const ArchiveEquipmentPage = React.lazy(() => import('./pages/zhixunplatform/ArchiveTablePage').then((m) => ({ default: m.createArchiveTablePage('equipment') })));
+const ArchiveMaterialsPage = React.lazy(() => import('./pages/zhixunplatform/ArchiveTablePage').then((m) => ({ default: m.createArchiveTablePage('materials') })));
+const ArchiveRulesPage = React.lazy(() => import('./pages/zhixunplatform/ArchiveTablePage').then((m) => ({ default: m.createArchiveTablePage('rules') })));
+const ArchiveEnvironmentPage = React.lazy(() => import('./pages/zhixunplatform/ArchiveTablePage').then((m) => ({ default: m.createArchiveTablePage('environment') })));
+const PmStrategicPage = React.lazy(() => import('./pages/zhixunplatform/PmFormPage').then((m) => ({ default: m.createPmFormPage('strategic') })));
+const PmOrgPerfPage = React.lazy(() => import('./pages/zhixunplatform/PmFormPage').then((m) => ({ default: m.createPmFormPage('orgPerf') })));
+const PmPbcPage = React.lazy(() => import('./pages/zhixunplatform/PmFormPage').then((m) => ({ default: m.createPmFormPage('pbc') })));
+const PmCharterPage = React.lazy(() => import('./pages/zhixunplatform/PmFormPage').then((m) => ({ default: m.createPmFormPage('charter') })));
+const PmMilestonePage = React.lazy(() => import('./pages/zhixunplatform/PmFormPage').then((m) => ({ default: m.createPmFormPage('milestone') })));
+const PmRiskPage = React.lazy(() => import('./pages/zhixunplatform/PmFormPage').then((m) => ({ default: m.createPmFormPage('risk') })));
+const PmIssuePage = React.lazy(() => import('./pages/zhixunplatform/PmFormPage').then((m) => ({ default: m.createPmFormPage('issue') })));
+const PmChangePage = React.lazy(() => import('./pages/zhixunplatform/PmFormPage').then((m) => ({ default: m.createPmFormPage('change') })));
+const PmMeetingPage = React.lazy(() => import('./pages/zhixunplatform/PmFormPage').then((m) => ({ default: m.createPmFormPage('meeting') })));
+const PmKnowledgePage = React.lazy(() => import('./pages/zhixunplatform/PmFormPage').then((m) => ({ default: m.createPmFormPage('knowledge') })));
+const PmWbsPage = React.lazy(() => import('./pages/zhixunplatform/PmFormPage').then((m) => ({ default: m.createPmFormPage('wbs') })));
+const PmCommunicationPage = React.lazy(() => import('./pages/zhixunplatform/PmFormPage').then((m) => ({ default: m.createPmFormPage('communication') })));
+const PmStatusPage = React.lazy(() => import('./pages/zhixunplatform/PmFormPage').then((m) => ({ default: m.createPmFormPage('status') })));
+const ProductPlaceholder = React.lazy(() => import('./pages/product/ProductPlaceholder').then((m) => ({ default: m.ProductPlaceholder })));
+const TaskEndPage = React.lazy(() => import('./pages/expert/TaskEndPage').then((m) => ({ default: m.TaskEndPage })));
+const ProjectManagementPage = React.lazy(() => import('./pages/certification/ProjectManagementPage').then((m) => ({ default: m.ProjectManagementPage })));
+const CertificationDataPanelPage = React.lazy(() => import('./pages/certification/CertificationDataPanelPage').then((m) => ({ default: m.CertificationDataPanelPage })));
+const PracticalConfigurationPage = React.lazy(() => import('./pages/certification/PracticalConfigurationPage').then((m) => ({ default: m.PracticalConfigurationPage })));
+const PreparationPage = React.lazy(() => import('./pages/certification/PreparationPage').then((m) => ({ default: m.PreparationPage })));
+const DefenseManagementPage = React.lazy(() => import('./pages/certification/DefenseManagementPage').then((m) => ({ default: m.DefenseManagementPage })));
+const CollectionTaskListPage = React.lazy(() => import('./pages/certification/collection/CollectionTaskListPage').then((m) => ({ default: m.CollectionTaskListPage })));
+const CollectionManagePage = React.lazy(() => import('./pages/certification/collection/CollectionManagePage').then((m) => ({ default: m.CollectionManagePage })));
+const ArchivePage = React.lazy(() => import('./pages/certification/ArchivePage').then((m) => ({ default: m.ArchivePage })));
+const TaskArchivePage = React.lazy(() => import('./pages/certification/TaskArchivePage').then((m) => ({ default: m.TaskArchivePage })));
+const AssessorInfoPage = React.lazy(() => import('./pages/certification/info/AssessorInfoPage').then((m) => ({ default: m.AssessorInfoPage })));
+const ExamSiteInfoPage = React.lazy(() => import('./pages/certification/info/ExamSiteInfoPage').then((m) => ({ default: m.ExamSiteInfoPage })));
+const ExamEquipmentInfoPage = React.lazy(() => import('./pages/certification/info/ExamEquipmentInfoPage').then((m) => ({ default: m.ExamEquipmentInfoPage })));
+const ExamStaffInfoPage = React.lazy(() => import('./pages/certification/info/ExamStaffInfoPage').then((m) => ({ default: m.ExamStaffInfoPage })));
+const TenantPage = React.lazy(() => import('./pages/system/TenantPage').then((m) => ({ default: m.TenantPage })));
+const UserPage = React.lazy(() => import('./pages/system/UserPage').then((m) => ({ default: m.UserPage })));
+const OrgPage = React.lazy(() => import('./pages/system/OrgPage').then((m) => ({ default: m.OrgPage })));
+const PostPage = React.lazy(() => import('./pages/system/PostPage').then((m) => ({ default: m.PostPage })));
+const RolePage = React.lazy(() => import('./pages/system/RolePage').then((m) => ({ default: m.RolePage })));
+const MenuPage = React.lazy(() => import('./pages/system/MenuPage').then((m) => ({ default: m.MenuPage })));
+const DictPage = React.lazy(() => import('./pages/system/DictPage').then((m) => ({ default: m.DictPage })));
+const AuditLogPage = React.lazy(() => import('./pages/system/AuditLogPage').then((m) => ({ default: m.AuditLogPage })));
+const PermissionPage = React.lazy(() => import('./pages/system/PermissionPage').then((m) => ({ default: m.PermissionPage })));
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -742,34 +743,36 @@ function App() {
 
   return (
     <NavigationBlockerProvider>
-      {formalExamMode ? (
-        <FormalExamPlayerApp />
-      ) : (
-      <AuthGate mode={assessorMode ? 'assessor' : defenseMode ? 'defense' : practicalCollectionMode ? 'collection' : competitionJudgeMode ? 'competitionJudge' : 'admin'}>
-        {competitionJudgeMode ? (
-          <CompetitionPracticalJudgeApp />
-        ) : assessorMode ? (
-          <TabletAssessorApp />
-        ) : defenseMode ? (
-          <DefenseReviewApp />
-        ) : practicalCollectionMode ? (
-          <PracticalCollectionApp />
-        ) : collectionManageMode ? (
-          <CollectionManageShell
-            taskId={decodeURIComponent(collectionManageTaskId!)}
-            examSessionId={collectionManageExamSessionId}
-          />
-        ) : graduationClassDetailMode ? (
-          <GraduationClassDetailShell pathname={pathname} />
-        ) : reviewSyncStatsMode ? (
-          <ReviewSyncStatsShell pathname={pathname} />
-        ) : competitionEventMode ? (
-          <CompetitionEventShell pathname={pathname} />
+      <React.Suspense fallback={null}>
+        {formalExamMode ? (
+          <FormalExamPlayerApp />
         ) : (
-          <AppShell pageMap={pageMap} />
+        <AuthGate mode={assessorMode ? 'assessor' : defenseMode ? 'defense' : practicalCollectionMode ? 'collection' : competitionJudgeMode ? 'competitionJudge' : 'admin'}>
+          {competitionJudgeMode ? (
+            <CompetitionPracticalJudgeApp />
+          ) : assessorMode ? (
+            <TabletAssessorApp />
+          ) : defenseMode ? (
+            <DefenseReviewApp />
+          ) : practicalCollectionMode ? (
+            <PracticalCollectionApp />
+          ) : collectionManageMode ? (
+            <CollectionManageShell
+              taskId={decodeURIComponent(collectionManageTaskId!)}
+              examSessionId={collectionManageExamSessionId}
+            />
+          ) : graduationClassDetailMode ? (
+            <GraduationClassDetailShell pathname={pathname} />
+          ) : reviewSyncStatsMode ? (
+            <ReviewSyncStatsShell pathname={pathname} />
+          ) : competitionEventMode ? (
+            <CompetitionEventShell pathname={pathname} />
+          ) : (
+            <AppShell pageMap={pageMap} />
+          )}
+        </AuthGate>
         )}
-      </AuthGate>
-      )}
+      </React.Suspense>
     </NavigationBlockerProvider>
   );
 }

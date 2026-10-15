@@ -139,6 +139,26 @@ function isHeicLike(bytes: Uint8Array, name: string): boolean {
   return /heic|heif|mif1|msf1/.test(head);
 }
 
+type Heic2AnyFn = (options: { blob: Blob; toType: string; quality: number }) => Promise<Blob | Blob[]>;
+
+let heic2anyScriptPromise: Promise<Heic2AnyFn | null> | null = null;
+
+/**
+ * heic2any 内嵌 wasm 含非 UTF-8 字节，进 esbuild 压缩/转译会炸（同 pdf.worker），
+ * 改经 public/ 原样下发 + 经典 script 挂载 window.heic2any。
+ * 注意：升级 heic2any 版本时须同步重拷 public/heic2any/heic2any.js。
+ */
+function loadHeic2any(): Promise<Heic2AnyFn | null> {
+  heic2anyScriptPromise ??= new Promise<Heic2AnyFn | null>((resolve) => {
+    const script = document.createElement('script');
+    script.src = `${import.meta.env.BASE_URL}heic2any/heic2any.js`;
+    script.onload = () => resolve((window as { heic2any?: Heic2AnyFn }).heic2any ?? null);
+    script.onerror = () => resolve(null);
+    document.head.appendChild(script);
+  });
+  return heic2anyScriptPromise;
+}
+
 async function convertHeicToJpeg(
   file: Blob,
   originalName: string,
@@ -148,7 +168,10 @@ async function convertHeicToJpeg(
     return null;
   }
   try {
-    const heic2any = (await import('heic2any')).default;
+    const heic2any = await loadHeic2any();
+    if (!heic2any) {
+      return null;
+    }
     const result = await heic2any({
       blob: file,
       toType: 'image/jpeg',
