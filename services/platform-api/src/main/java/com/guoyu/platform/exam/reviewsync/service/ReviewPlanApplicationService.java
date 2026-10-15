@@ -1786,6 +1786,9 @@ public class ReviewPlanApplicationService {
       return null;
     }
     plan.setInterruptCount((plan.getInterruptCount() != null ? plan.getInterruptCount() : 0) + 1);
+    // 补救当日幂等：任务已重排到当天，lastActiveDate 推进到今天后同日内不再命中 gap≥2，
+    // 避免学员每次请求重复触发清洗/计数（生产实证 50 秒内重复触发 9 次、count 虚涨）
+    plan.setLastActiveDate(today);
     planMapper.updateById(plan);
     washWrongItems(plan.getId(), today);
     String strategyText = switch (interruptCase) {
