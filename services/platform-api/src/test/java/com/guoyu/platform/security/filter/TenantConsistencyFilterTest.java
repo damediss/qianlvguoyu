@@ -7,6 +7,7 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.guoyu.platform.common.filter.TenantContextFilter;
 import com.guoyu.platform.common.tenant.TenantContextHolder;
 import com.guoyu.platform.competition.exam.security.CompetitionExamPrincipal;
 import com.guoyu.platform.competition.player.security.CompetitionPlayerPrincipal;
@@ -154,5 +155,38 @@ class TenantConsistencyFilterTest {
     filter.doFilter(request, response, chain);
 
     verify(chain).doFilter(request, response);
+  }
+
+  @Test
+  @DisplayName("租户被 TenantContextFilter 按路径强制（标记存在）→ 跳过一致性比对放行（旧 App header=1 链路）")
+  void skipsCheckWhenTenantForcedByPath() throws Exception {
+    authenticate(principal(1L));
+    TenantContextHolder.setTenantId(10159L);
+
+    FilterChain chain = mock(FilterChain.class);
+    MockHttpServletRequest request = new MockHttpServletRequest("POST", "/api/appreviewsync/availability");
+    request.setAttribute(TenantContextFilter.TENANT_FORCED_ATTRIBUTE, Boolean.TRUE);
+    MockHttpServletResponse response = new MockHttpServletResponse();
+
+    filter.doFilter(request, response, chain);
+
+    verify(chain).doFilter(request, response);
+    assertEquals(200, response.getStatus());
+  }
+
+  @Test
+  @DisplayName("无强制标记时租户不一致仍 403（强制标记不会削弱管理端防护）")
+  void stillRejectsMismatchedTenantWithoutForcedMark() throws Exception {
+    authenticate(principal(10159L));
+    TenantContextHolder.setTenantId(1L);
+
+    FilterChain chain = mock(FilterChain.class);
+    MockHttpServletRequest request = new MockHttpServletRequest("GET", "/api/system/users");
+    MockHttpServletResponse response = new MockHttpServletResponse();
+
+    filter.doFilter(request, response, chain);
+
+    assertEquals(403, response.getStatus());
+    verify(chain, never()).doFilter(any(), any());
   }
 }

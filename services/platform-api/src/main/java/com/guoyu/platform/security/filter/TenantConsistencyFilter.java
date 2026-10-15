@@ -3,6 +3,7 @@ package com.guoyu.platform.security.filter;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.guoyu.platform.common.api.ApiResponse;
 import com.guoyu.platform.common.exception.ErrorCode;
+import com.guoyu.platform.common.filter.TenantContextFilter;
 import com.guoyu.platform.common.tenant.TenantContextHolder;
 import com.guoyu.platform.security.TenantScopedPrincipal;
 import jakarta.servlet.FilterChain;
@@ -72,6 +73,13 @@ public class TenantConsistencyFilter extends OncePerRequestFilter {
       } finally {
         TenantContextHolder.clear();
       }
+      return;
+    }
+
+    if (request.getAttribute(TenantContextFilter.TENANT_FORCED_ATTRIBUTE) != null) {
+      // 租户由 TenantContextFilter 按路径强制（/appreviewsync、/appreviewai、/training/follow），
+      // 非来自请求头；与按请求头构建的主体租户比对必然失真，跳过（生产实证旧 App header=1 被误伤 403）
+      filterChain.doFilter(request, response);
       return;
     }
 

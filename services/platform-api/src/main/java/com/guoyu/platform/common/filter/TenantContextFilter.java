@@ -63,6 +63,14 @@ public class TenantContextFilter extends OncePerRequestFilter {
   /** 跟班 App 链路（含班级同步学入口）同样强制 10159，避免旧 App header=1 查空绑定 */
   private static final String APP_FOLLOW_PREFIX = "/api/training/follow";
 
+  /**
+   * 强制租户标记：TenantConsistencyFilter 据此跳过 header/主体一致性比对。
+   * 下方三个前缀的链路租户由本过滤器强制、非来自请求头，与按请求头构建的主体租户
+   * （旧 App 发 1）比对必然失真（生产实证 403 误伤同步学入口预检）。
+   */
+  public static final String TENANT_FORCED_ATTRIBUTE =
+      TenantContextFilter.class.getName() + ".TENANT_FORCED";
+
   @Override
   protected void doFilterInternal(
       HttpServletRequest request,
@@ -78,6 +86,7 @@ public class TenantContextFilter extends OncePerRequestFilter {
         || path.equals(APP_REVIEW_AI_PREFIX) || path.startsWith(APP_REVIEW_AI_PREFIX + "/")
         || path.equals(APP_FOLLOW_PREFIX) || path.startsWith(APP_FOLLOW_PREFIX + "/")) {
       try {
+        request.setAttribute(TENANT_FORCED_ATTRIBUTE, Boolean.TRUE);
         TenantContextHolder.setTenantId(TenantContextHolder.DEFAULT_TENANT_ID);
         filterChain.doFilter(request, response);
       } finally {
