@@ -24,6 +24,7 @@ import {
   Progress,
 } from "antd";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { ApiAuthImage } from "../../components/ApiAuthImage";
 import { useState, useCallback, useRef, useEffect } from "react";
 import {
   pageUsers,
@@ -296,6 +297,16 @@ export function CertQueryPage() {
             名称: {cert.certName || "-"}
             <br />
             发证日期: {cert.certDate || "-"}
+            {cert.licenseFileId ? (
+              <>
+                <br />
+                <ApiAuthImage
+                  url={`/api/files/${cert.licenseFileId}/download`}
+                  width={120}
+                  style={{ marginTop: 4 }}
+                />
+              </>
+            ) : null}
           </Descriptions.Item>
         ))}
       </Descriptions>
@@ -333,7 +344,18 @@ export function CertQueryPage() {
         return (
           <Space size={2} wrap>
             {certs.map((c, i) => (
-              <Tag key={i} color="geekblue">{c.certNo || "-"}</Tag>
+              <span key={i} style={{ display: "inline-flex", alignItems: "center", gap: 2 }}>
+                <Tag color="geekblue">{c.certNo || "-"}</Tag>
+                {c.licenseFileId ? (
+                  <Tooltip title="查看证书图片（编号以图片为准）">
+                    <ApiAuthImage
+                      url={`/api/files/${c.licenseFileId}/download`}
+                      width={22}
+                      style={{ cursor: "zoom-in", borderRadius: 2 }}
+                    />
+                  </Tooltip>
+                ) : null}
+              </span>
             ))}
           </Space>
         );

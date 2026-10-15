@@ -12,7 +12,10 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.StandardOpenOption;
 import java.time.Instant;
+import java.util.Base64;
 import com.guoyu.platform.common.util.SensitiveMaskUtils;
+import com.guoyu.platform.file.service.FileApplicationService;
+import com.guoyu.platform.file.vo.FileVO;
 import java.util.LinkedHashMap;
 import java.util.Locale;
 import java.util.List;
@@ -40,6 +43,7 @@ public class ChazhengCertQueryService {
   private final RestTemplate chazhengRestTemplate;
   private final ObjectMapper objectMapper;
   private final FixedRateLimiter rateLimiter;
+  private final FileApplicationService fileApplicationService;
 
   @Value("${chazheng.log-dir:./logs/chazheng}")
   private String chazhengLogDir;
@@ -48,10 +52,12 @@ public class ChazhengCertQueryService {
       CertCheckConfigService certCheckConfigService,
       RestTemplate chazhengRestTemplate,
       ObjectMapper objectMapper,
+      FileApplicationService fileApplicationService,
       @Value("${chazheng.batch.rate-limit-per-second:10.0}") double rateLimitPerSecond) {
     this.certCheckConfigService = certCheckConfigService;
     this.chazhengRestTemplate = chazhengRestTemplate;
     this.objectMapper = objectMapper;
+    this.fileApplicationService = fileApplicationService;
     this.rateLimiter = FixedRateLimiter.create(rateLimitPerSecond);
   }
 
@@ -76,7 +82,7 @@ public class ChazhengCertQueryService {
       Map<String, Object> reqData = new LinkedHashMap<>(template);
       reqData.put("idcode", idCard);
       reqData.put("username", name);
-      processOneTemplate(apiUrl, reqData, name, idCard, templateIdx, result);
+      processOneTemplate(apiUrl, reqData, name, idCard, tenantId, templateIdx, result);
     }
 
     // 所有模板都没拿到正常业务响应（HTTP 错误 / 网络异常 / JSON 解析失败 / 业务层错误）
@@ -100,6 +106,7 @@ public class ChazhengCertQueryService {
       Map<String, Object> reqData,
       String name,
       String idCard,
+      Long tenantId,
       int templateIdx,
       CertCheckResult result) {
     Map<String, Object> response;
@@ -172,7 +179,14 @@ public class ChazhengCertQueryService {
       String certName = buildCertName(getMapOrEmpty(cert, "metadata"));
       String certDate = cert.containsKey("bzz002") ? String.valueOf(cert.get("bzz002")) : "";
 
-      result.certs.add(new CollectedCert(certNo, certName, certDate));
+      // 证书图片：licensefile 为 base64（上游确认 serialid 永久脱敏，完整编号可从证书图片上核对）
+      String licenseFileId = null;
+      String licenseBase64 = getStringOrEmpty(cert, "licensefile");
+      if (!licenseBase64.isBlank()) {
+        licenseFileId = storeLicenseImage(licenseBase64, tenantId, certNo);
+      }
+
+      result.certs.add(new CollectedCert(certNo, certName, certDate, licenseFileId));
       result.anyCertFound = true;
     }
 
@@ -296,6 +310,76 @@ public class ChazhengCertQueryService {
       log.warn("写日志失败: {}", logFile, e);
     }
   }
+
+  /**
+   * licensefile（base64）解码并写入文件存储，返回文件 ID；任何一步失败只告警不阻断查证。
+   */
+  private String storeLicenseImage(String base64, Long tenantId, String certNo) {
+    try {
+      DecodedImage image = decodeLicenseImage(base64);
+      if (image == null) {
+        log.warn("证书图片 base64 解码失败 certNo={}", certNo);
+        return null;
+      }
+      String safeCertNo = certNo == null ? "unknown" : certNo.replaceAll("[\\/:*?\"<>|]", "_");
+      FileVO file = fileApplicationService.storeFromBytesForTenant(
+          tenantId, image.bytes(), "cert-" + safeCertNo + "." + image.extension(),
+          image.contentType(), "private");
+      return file.id() == null ? null : String.valueOf(file.id());
+    } catch (Exception ex) {
+      log.warn("证书图片存文件失败 certNo={}", certNo, ex);
+      return null;
+    }
+  }
+
+  /**
+   * 解码 licensefile base64（兼容 data:image/...;base64, 前缀），按魔数识别 png/jpg/gif。
+   * 返回 null 表示无图或解码失败。
+   */
+  static DecodedImage decodeLicenseImage(String base64) {
+    if (base64 == null) {
+      return null;
+    }
+    String value = base64.trim();
+    if (value.isEmpty()) {
+      return null;
+    }
+    String declaredType = null;
+    if (value.startsWith("data:")) {
+      int comma = value.indexOf(',');
+      if (comma <= 0) {
+        return null;
+      }
+      String meta = value.substring("data:".length(), comma);
+      int semicolon = meta.indexOf(';');
+      declaredType = semicolon > 0 ? meta.substring(0, semicolon) : meta;
+      value = value.substring(comma + 1);
+    }
+    byte[] bytes;
+    try {
+      bytes = Base64.getMimeDecoder().decode(value);
+    } catch (IllegalArgumentException ex) {
+      return null;
+    }
+    if (bytes.length < 8) {
+      return null;
+    }
+    if (bytes[0] == (byte) 0x89 && bytes[1] == 0x50 && bytes[2] == 0x4E && bytes[3] == 0x47) {
+      return new DecodedImage(bytes, "png", "image/png");
+    }
+    if ((bytes[0] & 0xFF) == 0xFF && (bytes[1] & 0xFF) == 0xD8 && (bytes[2] & 0xFF) == 0xFF) {
+      return new DecodedImage(bytes, "jpg", "image/jpeg");
+    }
+    if (bytes[0] == 'G' && bytes[1] == 'I' && bytes[2] == 'F') {
+      return new DecodedImage(bytes, "gif", "image/gif");
+    }
+    String fallbackType = declaredType != null && declaredType.startsWith("image/")
+        ? declaredType : "image/jpeg";
+    return new DecodedImage(bytes, "jpg", fallbackType);
+  }
+
+  /** 解码后的证书图片（包级可见供单测） */
+  record DecodedImage(byte[] bytes, String extension, String contentType) {}
 
   /** 请求模板里可能带姓名/身份证/手机号，落盘前按 key 特征脱敏。 */
   private Map<String, Object> sanitizeForLog(Map<String, Object> source) {

@@ -18,6 +18,8 @@ export interface ChazhengCert {
   certNo: string;
   certName: string;
   certDate: string;
+  /** 证书图片文件ID（有值时前端可预览证书图片） */
+  licenseFileId?: number | string | null;
 }
 
 export interface ChazhengUserQuery {

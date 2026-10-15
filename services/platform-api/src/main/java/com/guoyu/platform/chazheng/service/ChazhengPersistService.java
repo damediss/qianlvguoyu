@@ -50,21 +50,27 @@ public class ChazhengPersistService {
   public void persistResult(ChazhengUserEntity user, List<CollectedCert> certs,
                             boolean anyNormal, boolean anyCertFound) {
     for (CollectedCert cert : certs) {
-      boolean exists = certMapper.exists(new LambdaQueryWrapper<ChazhengCertEntity>()
+      ChazhengCertEntity existing = certMapper.selectOne(new LambdaQueryWrapper<ChazhengCertEntity>()
           .eq(ChazhengCertEntity::getUserId, user.getId())
           .eq(ChazhengCertEntity::getCertNo, cert.certNo()));
-      if (!exists) {
+      if (existing == null) {
         ChazhengCertEntity certEntity = new ChazhengCertEntity();
         certEntity.setUserId(user.getId());
         certEntity.setTenantId(user.getTenantId());
         certEntity.setCertNo(cert.certNo());
         certEntity.setCertName(cert.certName());
         certEntity.setCertDate(cert.certDate());
+        certEntity.setLicenseFileId(cert.licenseFileId());
         try {
           certMapper.insert(certEntity);
         } catch (DuplicateKeyException dup) {
           log.warn("并发插入证书已存在 user={} certNo={}", user.getId(), cert.certNo());
         }
+      } else if (cert.licenseFileId() != null
+          && !cert.licenseFileId().equals(existing.getLicenseFileId())) {
+        // 重查补齐：旧行无图（或图变更）时用新查到的图片文件 ID 覆盖
+        existing.setLicenseFileId(cert.licenseFileId());
+        certMapper.updateById(existing);
       }
     }
     if (anyCertFound) user.setIsCert(1);

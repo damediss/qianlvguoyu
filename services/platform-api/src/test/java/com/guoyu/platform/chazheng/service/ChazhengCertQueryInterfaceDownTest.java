@@ -41,7 +41,8 @@ class ChazhengCertQueryInterfaceDownTest {
   void setUp() {
     configService = mock(CertCheckConfigService.class);
     restTemplate = mock(RestTemplate.class);
-    service = new ChazhengCertQueryService(configService, restTemplate, new ObjectMapper(), 1000.0);
+    service = new ChazhengCertQueryService(configService, restTemplate, new ObjectMapper(),
+        mock(com.guoyu.platform.file.service.FileApplicationService.class), 1000.0);
     ReflectionTestUtils.setField(service, "chazhengLogDir", tempDir.toString());
     when(configService.findApiUrl(1L)).thenReturn("https://example.com/api");
     when(configService.findRequestTemplates(1L))
