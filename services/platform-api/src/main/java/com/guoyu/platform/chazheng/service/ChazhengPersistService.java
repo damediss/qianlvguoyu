@@ -49,6 +49,16 @@ public class ChazhengPersistService {
   @Transactional
   public void persistResult(ChazhengUserEntity user, List<CollectedCert> certs,
                             boolean anyNormal, boolean anyCertFound) {
+    // 上游 serialid 永久脱敏且每次查询脱敏值随机，按 cert_no 去重挡不住废行累积：
+    // 有新查询结果时先清掉该用户名下含 * 的历史脱敏行（完整编号行保留）
+    if (certs != null && !certs.isEmpty()) {
+      int cleaned = certMapper.delete(new LambdaQueryWrapper<ChazhengCertEntity>()
+          .eq(ChazhengCertEntity::getUserId, user.getId())
+          .like(ChazhengCertEntity::getCertNo, "*"));
+      if (cleaned > 0) {
+        log.info("清理历史脱敏证书行 user={} rows={}", user.getId(), cleaned);
+      }
+    }
     for (CollectedCert cert : certs) {
       ChazhengCertEntity existing = certMapper.selectOne(new LambdaQueryWrapper<ChazhengCertEntity>()
           .eq(ChazhengCertEntity::getUserId, user.getId())

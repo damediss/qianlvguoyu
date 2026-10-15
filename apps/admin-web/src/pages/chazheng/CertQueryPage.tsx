@@ -24,7 +24,9 @@ import {
   Progress,
 } from "antd";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ApiAuthImage } from "../../components/ApiAuthImage";
+import { FileTextOutlined } from "@ant-design/icons";
+import { FilePreviewModal, type FilePreviewTarget } from "../../components/FilePreviewModal";
+import { getPlatformFile } from "../../api/files";
 import { useState, useCallback, useRef, useEffect } from "react";
 import {
   pageUsers,
@@ -56,6 +58,23 @@ export function CertQueryPage() {
   const [batchProgressOpen, setBatchProgressOpen] = useState(false);
   const [batchProgress, setBatchProgress] = useState<CertCheckBatchProgress | null>(null);
   const [batchProgressYmd, setBatchProgressYmd] = useState<string>("");
+  const [certPreview, setCertPreview] = useState<FilePreviewTarget | null>(null);
+
+  // 证书文件可能是 PDF（上游 licensefile 实测为 %PDF base64），
+  // 按文件元数据走 FilePreviewModal 自适应预览（pdf/图片均可）
+  const openCertPreview = useCallback(async (licenseFileId: number | string) => {
+    const fileId = String(licenseFileId);
+    let fileName = "证书.pdf";
+    try {
+      const vo = await getPlatformFile(fileId);
+      if (vo?.originalName) {
+        fileName = vo.originalName;
+      }
+    } catch {
+      // 元数据拿不到也照常预览（按下载流嗅探）
+    }
+    setCertPreview({ fileId, fileName });
+  }, []);
   const batchPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const listQuery = useQuery({
@@ -300,11 +319,15 @@ export function CertQueryPage() {
             {cert.licenseFileId ? (
               <>
                 <br />
-                <ApiAuthImage
-                  url={`/api/files/${cert.licenseFileId}/download`}
-                  width={120}
-                  style={{ marginTop: 4 }}
-                />
+                <Button
+                  type="link"
+                  size="small"
+                  style={{ padding: 0 }}
+                  icon={<FileTextOutlined />}
+                  onClick={() => void openCertPreview(cert.licenseFileId!)}
+                >
+                  查看证书
+                </Button>
               </>
             ) : null}
           </Descriptions.Item>
@@ -347,11 +370,13 @@ export function CertQueryPage() {
               <span key={i} style={{ display: "inline-flex", alignItems: "center", gap: 2 }}>
                 <Tag color="geekblue">{c.certNo || "-"}</Tag>
                 {c.licenseFileId ? (
-                  <Tooltip title="查看证书图片（编号以图片为准）">
-                    <ApiAuthImage
-                      url={`/api/files/${c.licenseFileId}/download`}
-                      width={22}
-                      style={{ cursor: "zoom-in", borderRadius: 2 }}
+                  <Tooltip title="查看证书文件（完整编号以证书为准）">
+                    <Button
+                      type="link"
+                      size="small"
+                      style={{ padding: 0, height: "auto" }}
+                      icon={<FileTextOutlined />}
+                      onClick={() => void openCertPreview(c.licenseFileId!)}
                     />
                   </Tooltip>
                 ) : null}
@@ -539,6 +564,12 @@ export function CertQueryPage() {
           }}
         />
       </div>
+
+      <FilePreviewModal
+        open={!!certPreview}
+        target={certPreview}
+        onClose={() => setCertPreview(null)}
+      />
 
       <Modal
         title="导出证书查询"

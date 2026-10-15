@@ -333,7 +333,7 @@ public class ChazhengCertQueryService {
   }
 
   /**
-   * 解码 licensefile base64（兼容 data:image/...;base64, 前缀），按魔数识别 png/jpg/gif。
+   * 解码 licensefile base64（兼容 data:...;base64, 前缀），按魔数识别 pdf/png/jpg/gif。
    * 返回 null 表示无图或解码失败。
    */
   static DecodedImage decodeLicenseImage(String base64) {
@@ -363,6 +363,10 @@ public class ChazhengCertQueryService {
     }
     if (bytes.length < 8) {
       return null;
+    }
+    // licensefile 实测是证书 PDF（%PDF-1.4 → JVBERi0...），图片类型作兜底
+    if (bytes[0] == 0x25 && bytes[1] == 0x50 && bytes[2] == 0x44 && bytes[3] == 0x46) {
+      return new DecodedImage(bytes, "pdf", "application/pdf");
     }
     if (bytes[0] == (byte) 0x89 && bytes[1] == 0x50 && bytes[2] == 0x4E && bytes[3] == 0x47) {
       return new DecodedImage(bytes, "png", "image/png");
