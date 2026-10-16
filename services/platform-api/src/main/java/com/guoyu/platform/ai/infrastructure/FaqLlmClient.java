@@ -1,5 +1,6 @@
 package com.guoyu.platform.ai.infrastructure;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
@@ -409,18 +410,17 @@ public class FaqLlmClient {
       }
     }
     try {
-      JsonNode response = targetClient.post()
+      // 先取原始报文再手动解析（原始响应留痕）：链路截断/网关畸形时日志能看到实际收到的字节，
+      // 而不是只有 Jackson 一句 EOF。空体与非 JSON 在 parseResponseBody 归为服务端瞬时异常。
+      String rawBody = targetClient.post()
           .uri(url)
           .header(HttpHeaders.AUTHORIZATION, "Bearer " + apiKey)
           .header(HttpHeaders.CONTENT_TYPE, MediaType.APPLICATION_JSON_VALUE)
           .body(requestBody)
           .retrieve()
-          .body(JsonNode.class);
+          .body(String.class);
 
-      if (response == null) {
-        log.error("LLM 返回 null：tenantId={}, url={}", tenantId, url);
-        throw new FaqLlmServerException("LLM 返回空响应");
-      }
+      JsonNode response = parseResponseBody(rawBody, tenantId, url);
 
       // 记录响应（截断到 200 字符，仅日志）
       String responseStr;
@@ -461,6 +461,26 @@ public class FaqLlmClient {
   }
 
   // ──────────────────────── private helpers ────────────────────────
+
+  /**
+   * 原始报文 → JsonNode 校验解析：空响应体与非 JSON（截断、网关畸形页）归为
+   * FaqLlmServerException（瞬时），并把实际收到的内容记入日志——2026-10-13/10-16
+   * DeepSeek 链路截断事故（响应体只吐一个 "{" 即 EOF）复盘依赖此留痕；
+   * 此前 .body(JsonNode.class) 直解，日志里看不到原始字节。
+   */
+  JsonNode parseResponseBody(String rawBody, Long tenantId, String url) {
+    if (rawBody == null || rawBody.isBlank()) {
+      log.error("LLM 返回空响应体（HTTP 2xx）：tenantId={}, url={}", tenantId, url);
+      throw new FaqLlmServerException("LLM 返回空响应体（HTTP 2xx）");
+    }
+    try {
+      return objectMapper.readTree(rawBody);
+    } catch (JsonProcessingException e) {
+      log.error("LLM 响应体非 JSON（疑似截断/网关畸形）：tenantId={}, url={}, rawBody={}",
+          tenantId, url, abbreviateBody(rawBody), e);
+      throw new FaqLlmServerException("LLM 响应体非 JSON（截断或畸形）");
+    }
+  }
 
   /** 最深层根因的一句话摘要（如 Jackson "No content to map due to end-of-input"），定位畸形响应体用 */
   private static String rootCauseSummary(RestClientException ex) {
