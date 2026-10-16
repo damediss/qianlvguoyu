@@ -259,7 +259,9 @@ class ReviewPhase1MechanismTest {
 
     dictValue("0"); // 开关=0
     assertThatThrownBy(() -> service.assertMockStartAllowed(plan, 10159L))
-        .isInstanceOf(BusinessException.class);
+        .isInstanceOf(BusinessException.class)
+        // 阶段 2 即"定向爆破阶段"，不得沿用阶段 1 的"模考将在定向爆破阶段开放"（自相矛盾）
+        .hasMessageContaining("暂未开放模考");
 
     dictValue(null);
     plan.setCurrentStage(3);

@@ -691,6 +691,9 @@ public class ReviewPlanApplicationService {
   /**
    * W2.3 模考服务端阶段校验：阶段 1 以新题为主禁止组卷；阶段 2 需并行动模考开关=1；阶段 3 放行。
    * 包级可见供单测直断言。
+   *
+   * <p>提示语按阶段分开：阶段 2 本身就是"定向爆破阶段"，若沿用阶段 1 的"模考将在定向爆破
+   * 阶段开放"，学员会看到自相矛盾的话（review 2026-10-16 P1-1）。
    */
   void assertMockStartAllowed(AiReviewPlanEntity plan, Long tenantId) {
     int stage = plan.getCurrentStage() != null ? plan.getCurrentStage() : 1;
@@ -698,7 +701,7 @@ public class ReviewPlanApplicationService {
       throw new BusinessException(ErrorCode.BAD_REQUEST, "当前阶段以新题为主，模考将在定向爆破阶段开放");
     }
     if (stage == 2 && dictInt("ai_review_mock_stage2_enabled", 1, tenantId) != 1) {
-      throw new BusinessException(ErrorCode.BAD_REQUEST, "当前阶段以新题为主，模考将在定向爆破阶段开放");
+      throw new BusinessException(ErrorCode.BAD_REQUEST, "当前阶段暂未开放模考，请继续完成今日任务");
     }
   }
 

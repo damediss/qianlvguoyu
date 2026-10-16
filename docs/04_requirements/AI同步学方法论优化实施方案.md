@@ -206,6 +206,7 @@ STORM 报告基于三份文档写成；本次审核将报告 60+ 项事实性论
 ### 5.3 mockStart 服务端阶段校验（M18）
 
 - `mockStart` 增加校验：`currentStage >= 2` 且 `ai_review_mock_stage2_enabled=1`（阶段 2）或阶段 3 正常放行；阶段 1 抛业务异常"当前阶段以新题为主，模考将在定向爆破阶段开放"。
+- **提示语按阶段分开（review 2026-10-16 P1-1 订正）**：阶段 2 即"定向爆破阶段"，开关=0 被拒时**不得沿用阶段 1 那句**——否则学员看到"模考将在定向爆破阶段开放"而自己正处在该阶段，自相矛盾。阶段 2 用："当前阶段暂未开放模考，请继续完成今日任务"。
 - App 入口现状已是后端 `today.mock` 驱动，无需前端改动。
 
 ### 5.4 模考作答计时落库（M19）
@@ -591,13 +592,14 @@ coverageGap   = 1 - 已做题数 / 必做池该题数
 |---|---|---|
 | V（待定）_001 | `ai_review_wrong_item` 加 `next_due_date DATE NULL`；存量黄牌回填当天 | W4 |
 | V（待定）_002 | `ai_review_mock_paper` 加 `paper_type VARCHAR(16) NOT NULL DEFAULT 'mock'` | W3/W6 |
-| V（待定）_003 | 新表 `ai_review_interrupt_log`（BaseEntity 六列+三业务列，索引 plan_id/platform_user_id/created_at） | W3/W5 |
+| ~~V（待定）_003~~ | **已由一期落地，W3 不再建表**：`ai_review_interrupt_log` 建于 `V20261014_004__review_phase1_interrupt.sql`（BaseEntity 六列 + **五业务列** `plan_id / platform_user_id / interrupt_case / gap_days / stage_at_interrupt`，索引 plan_id/platform_user_id/created_at；同一脚本含 `ai_review_interrupt_clean_enabled` 种子）。**如需加列另取新号，严禁复用/重排已应用版本号** | W3/W5（仅使用，不建） |
 | V（待定）_004 | 新表 `ai_review_encourage_log`（BaseEntity 六列+五业务列） | W5 |
 | V（待定）_005 | sys_dict 种子（`INSERT IGNORE`，tenant_id=10159）：见 12.2 | W2/W3/W4/W6/W7/W8 |
 | V（待定）_006 | `ai_review_encourage_log` 加 `log_type VARCHAR(16) NOT NULL DEFAULT 'encourage'`（存量行自动落 'encourage'；与 W5.1 同表，不新开表） | W8.3 |
 
 > `ai_review_plan.dropped_question_ids` 列已存在，无需迁移（激活写入即可）。
 > `ai_review_exam_outcome` **不建**（§8.4 仅设计）。
+> **一期已落地的迁移（review 2026-10-16 订正）**：`V20261014_004` 已建 `ai_review_interrupt_log` 并种入 `ai_review_interrupt_clean_enabled`。上表原"V（待定）_003"条目已作废——**W3/W5 只需使用该表，不得再建**；重复建表即便带 `IF NOT EXISTS` 不报错，一旦版本号撞号会导致 jar 全环境无法启动。
 > **W8 不新建业务表**：讲解内容缓存复用 `ai_generation_draft`（`source_type='ai_review_question'` + `source_id=questionId` 查重）+ Caffeine 进程内缓存；提示文案随当日物化生成、不落表（曝光埋点走 `ai_review_encourage_log`）。
 
 ### 12.2 sys_dict 新增/变更清单（tenant_id=10159，幂等种子）
@@ -605,6 +607,7 @@ coverageGap   = 1 - 已做题数 / 必做池该题数
 | 键 | 默认 | 区间 | 依据状态 |
 |---|---|---|---|
 | ai_review_interrupt_clean_enabled | 0 | 0/1 | 拍板（2026-10-14 ③） |
+| ai_review_mock_stage2_enabled | 1 | 0/1 | 工程拍板（W2.3 已落地；review 2026-10-16 P1-3 补登记） |
 | ai_review_case_a_daily_new_cap | 180 | [120,300] | 工程拍板 |
 | ai_review_case_a_trim_ratio | 15 | [0,30]（%） | 工程拍板 |
 | ai_review_case_b_quiz_size | 100 | [30,200] | 工程拍板 |
@@ -871,6 +874,7 @@ coverageGap   = 1 - 已做题数 / 必做池该题数
 | ai_review_mock_size | 100 | [20,200] | 工程拍板 | 模考卷题量；W2.2 已上线 |
 | ai_review_mock_subjective_max | 5 | [0,20] | 工程拍板 | 模考卷主观题上限；W2.2 已上线 |
 | ai_review_interrupt_clean_enabled | 0 | 0/1 | 拍板（2026-10-14 ③） | W2.1 已上线（默认关）；开关=1 时策略文案追加披露句 |
+| ai_review_mock_stage2_enabled | 1 | 0/1 | 工程拍板（缺省开） | W2.3 已上线；阶段 2 并行动模考总开关，=0 时 today 静默不下发入口、mockStart 抛业务异常（提示语不得沿用阶段 1 文案，见 P1-1） |
 | ai_review_case_a_daily_new_cap | 180 | [120,300] | 工程拍板 | W3 实施时接 clamp |
 | ai_review_case_a_trim_ratio | 15 | [0,30]（%） | 工程拍板 | W3 实施时接 clamp |
 | ai_review_case_b_quiz_size | 100 | [30,200] | 工程拍板 | W3 实施时接 clamp |
