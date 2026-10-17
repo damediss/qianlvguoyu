@@ -2,6 +2,7 @@ package com.guoyu.platform.exam.controller;
 
 import com.guoyu.platform.common.api.ApiResponse;
 import com.guoyu.platform.common.audit.AuditLog;
+import com.guoyu.platform.common.web.DownloadHeaders;
 import com.guoyu.platform.exam.dto.FaqConversionQueryReq;
 import com.guoyu.platform.exam.dto.FaqConversionSubmitReq;
 import com.guoyu.platform.exam.service.FaqConversionApplicationService;
@@ -132,7 +133,7 @@ public class ExamFaqConversionController {
     return ResponseEntity.ok()
         .header(org.springframework.http.HttpHeaders.CONTENT_TYPE, "application/zip")
         .header(org.springframework.http.HttpHeaders.CONTENT_DISPOSITION,
-            org.springframework.http.ContentDisposition.attachment().filename(filename).build().toString())
+            DownloadHeaders.contentDispositionAttachment(filename))
         .body(new org.springframework.core.io.InputStreamResource(new java.io.ByteArrayInputStream(zipBytes)));
   }
 

@@ -4,6 +4,7 @@ import com.guoyu.platform.common.api.ApiResponse;
 import com.guoyu.platform.common.api.PageQuery;
 import com.guoyu.platform.common.api.PageResponse;
 import com.guoyu.platform.common.audit.AuditLog;
+import com.guoyu.platform.common.web.DownloadHeaders;
 import com.guoyu.platform.competition.sorting.dto.CompetitionPlayerSortingGroupsReq;
 import com.guoyu.platform.competition.sorting.dto.CompetitionPlayerSortingRolesReq;
 import com.guoyu.platform.competition.sorting.dto.CompetitionPlayerSortingTaskCreateReq;
@@ -15,9 +16,7 @@ import com.guoyu.platform.competition.sorting.vo.CompetitionPlayerSortingRevealV
 import com.guoyu.platform.competition.sorting.vo.CompetitionPlayerSortingTaskVO;
 import com.guoyu.platform.competition.vo.CompetitionStagePaperAssignmentPlayerVO;
 import jakarta.validation.Valid;
-import java.nio.charset.StandardCharsets;
 import java.util.List;
-import org.springframework.http.ContentDisposition;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -167,9 +166,8 @@ public class CompetitionPlayerSortingController {
     return ResponseEntity.ok()
         .contentType(MediaType.parseMediaType(
             "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"))
-        .header(HttpHeaders.CONTENT_DISPOSITION, ContentDisposition.attachment()
-            .filename("实操出场名单-任务" + taskId + ".xlsx", StandardCharsets.UTF_8)
-            .build().toString())
+        .header(HttpHeaders.CONTENT_DISPOSITION,
+            DownloadHeaders.contentDispositionAttachment("实操出场名单-任务" + taskId + ".xlsx"))
         .body(service.exportExcel(taskId));
   }
 }

@@ -5,6 +5,7 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.guoyu.platform.common.exception.BusinessException;
 import com.guoyu.platform.common.exception.ErrorCode;
+import com.guoyu.platform.common.web.DownloadHeaders;
 import com.guoyu.platform.security.SecurityContext;
 import com.guoyu.platform.system.entity.OrgEntity;
 import com.guoyu.platform.system.entity.UserEntity;
@@ -22,7 +23,6 @@ import com.guoyu.platform.trainingdepartment.vo.SignUpPeopleHistorySyncResultVO;
 import com.guoyu.platform.trainingdepartment.vo.SignUpPeopleImportResultVO;
 import java.io.IOException;
 import java.io.InputStream;
-import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -52,7 +52,6 @@ import org.apache.poi.ss.usermodel.WorkbookFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.core.io.InputStreamResource;
-import org.springframework.http.ContentDisposition;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -116,10 +115,8 @@ public class TrainSignUpPeopleImportService {
     return ResponseEntity.ok()
         .contentType(MediaType.parseMediaType(
             "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"))
-        .header(HttpHeaders.CONTENT_DISPOSITION, ContentDisposition.attachment()
-            .filename(filename, StandardCharsets.UTF_8)
-            .build()
-            .toString())
+        .header(HttpHeaders.CONTENT_DISPOSITION,
+            DownloadHeaders.contentDispositionAttachment(filename))
         .body(resource);
   }
 

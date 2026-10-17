@@ -13,6 +13,7 @@ import com.guoyu.platform.common.api.ApiResponse;
 import com.guoyu.platform.common.api.PageQuery;
 import com.guoyu.platform.common.api.PageResponse;
 import com.guoyu.platform.common.audit.AuditLog;
+import com.guoyu.platform.common.web.DownloadHeaders;
 import jakarta.validation.Valid;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.validation.annotation.Validated;
@@ -27,12 +28,10 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RequestPart;
 import org.springframework.web.bind.annotation.RestController;
-import org.springframework.http.ContentDisposition;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.multipart.MultipartFile;
-import java.nio.charset.StandardCharsets;
 import java.util.List;
 
 @Validated
@@ -54,10 +53,10 @@ public class CertificationPreparationCandidateController {
   @GetMapping(value = "/candidate-import-template", produces = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
   @PreAuthorize("hasAuthority('certification.preparation.candidate.import')")
   public ResponseEntity<byte[]> downloadExcelTemplate() {
-    // RFC 5987 filename* 必须百分号编码；裸中文会触发 Tomcat 写响应头失败 → 500
+    // RFC 5987 filename*（DownloadHeaders 手工编码）；裸中文会触发 Tomcat 写响应头失败 → 500
     return ResponseEntity.ok()
-        .header(HttpHeaders.CONTENT_DISPOSITION, ContentDisposition.attachment()
-            .filename("考生信息批量导入模板.xlsx", StandardCharsets.UTF_8).build().toString())
+        .header(HttpHeaders.CONTENT_DISPOSITION,
+            DownloadHeaders.contentDispositionAttachment("考生信息批量导入模板.xlsx"))
         .contentType(MediaType.parseMediaType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"))
         .body(excelImportService.templateBytes());
   }

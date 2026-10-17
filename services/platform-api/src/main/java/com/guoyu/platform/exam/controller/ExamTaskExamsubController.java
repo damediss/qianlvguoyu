@@ -3,6 +3,7 @@ package com.guoyu.platform.exam.controller;
 import com.guoyu.platform.common.api.ApiResponse;
 import com.guoyu.platform.common.api.PageResponse;
 import com.guoyu.platform.common.audit.AuditLog;
+import com.guoyu.platform.common.web.DownloadHeaders;
 import com.guoyu.platform.exam.dto.ExamTaskExamsubAssignExpertReq;
 import com.guoyu.platform.exam.dto.ExamTaskExamsubQueryReq;
 import com.guoyu.platform.exam.service.ExamTaskExamsubApplicationService;
@@ -13,11 +14,9 @@ import com.guoyu.platform.exam.vo.ExportResultDTO;
 import com.guoyu.platform.exam.vo.PublicDataVO;
 import jakarta.validation.Valid;
 import java.io.IOException;
-import java.nio.charset.StandardCharsets;
 import java.util.List;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.core.io.InputStreamResource;
-import org.springframework.http.ContentDisposition;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -97,7 +96,7 @@ public class ExamTaskExamsubController {
     InputStreamResource resource = new InputStreamResource(new java.io.ByteArrayInputStream(result.data()));
     return ResponseEntity.ok()
         .header(HttpHeaders.CONTENT_DISPOSITION,
-            ContentDisposition.attachment().filename(result.filename(), StandardCharsets.UTF_8).build().toString())
+            DownloadHeaders.contentDispositionAttachment(result.filename()))
         .contentType(MediaType.parseMediaType(
             "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"))
         .body(resource);

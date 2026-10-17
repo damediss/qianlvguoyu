@@ -1,8 +1,7 @@
 package com.guoyu.platform.competition.controller;
 
+import com.guoyu.platform.common.web.DownloadHeaders;
 import com.guoyu.platform.competition.service.CompetitionQuestionBlueprintTemplateService;
-import java.nio.charset.StandardCharsets;
-import org.springframework.http.ContentDisposition;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -29,7 +28,7 @@ public class CompetitionQuestionBlueprintTemplateController {
     var template = service.get(contentType);
     return ResponseEntity.ok()
         .header(HttpHeaders.CONTENT_DISPOSITION,
-            ContentDisposition.attachment().filename(template.filename(), StandardCharsets.UTF_8).build().toString())
+            DownloadHeaders.contentDispositionAttachment(template.filename()))
         .header(HttpHeaders.CONTENT_TYPE, template.contentType())
         .body(template.content());
   }

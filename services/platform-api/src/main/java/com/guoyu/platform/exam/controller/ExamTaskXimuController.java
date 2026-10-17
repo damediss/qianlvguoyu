@@ -3,6 +3,7 @@ package com.guoyu.platform.exam.controller;
 import com.guoyu.platform.common.api.ApiResponse;
 import com.guoyu.platform.common.api.PageResponse;
 import com.guoyu.platform.common.audit.AuditLog;
+import com.guoyu.platform.common.web.DownloadHeaders;
 import com.guoyu.platform.exam.dto.ExamTaskXimuAssignExpertReq;
 import com.guoyu.platform.exam.dto.ExamTaskXimuQueryReq;
 import com.guoyu.platform.exam.service.ExamTaskXimuApplicationService;
@@ -27,7 +28,6 @@ import java.nio.file.Path;
 import java.util.List;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.core.io.InputStreamResource;
-import org.springframework.http.ContentDisposition;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
@@ -116,7 +116,7 @@ public class ExamTaskXimuController {
     InputStreamResource resource = new InputStreamResource(new java.io.ByteArrayInputStream(result.data()));
     return ResponseEntity.ok()
         .header(HttpHeaders.CONTENT_DISPOSITION,
-            ContentDisposition.attachment().filename(result.filename(), StandardCharsets.UTF_8).build().toString())
+            DownloadHeaders.contentDispositionAttachment(result.filename()))
         .contentType(MediaType.parseMediaType(
             "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"))
         .body(resource);
@@ -160,10 +160,8 @@ public class ExamTaskXimuController {
       // 仅导出 zip 强制下载；证件照等仍需 inline 供 <img> 预览
       if (fp.startsWith("down/")) {
         String fileName = path.getFileName() != null ? path.getFileName().toString() : "download.zip";
-        ContentDisposition disposition = ContentDisposition.attachment()
-            .filename(fileName, StandardCharsets.UTF_8)
-            .build();
-        builder.header(HttpHeaders.CONTENT_DISPOSITION, disposition.toString());
+        builder.header(HttpHeaders.CONTENT_DISPOSITION,
+            DownloadHeaders.contentDispositionAttachment(fileName));
       }
       return builder.body(resource);
     }

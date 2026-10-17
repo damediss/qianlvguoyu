@@ -5,6 +5,7 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.guoyu.platform.common.api.PageResponse;
+import com.guoyu.platform.common.web.DownloadHeaders;
 import com.guoyu.platform.common.exception.BusinessException;
 import com.guoyu.platform.common.exception.ErrorCode;
 import com.guoyu.platform.system.entity.OrgEntity;
@@ -48,7 +49,6 @@ import java.util.Map;
 import java.util.UUID;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.http.ContentDisposition;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -292,7 +292,7 @@ public class TrainResearchCollectionApplicationService {
     byte[] bytes = exportService.export(people, research.getTitle());
     String filename = research.getTitle() + "-认定采集精简版.xlsx";
     return ResponseEntity.ok()
-        .header(HttpHeaders.CONTENT_DISPOSITION, ContentDisposition.attachment().filename(filename).build().toString())
+        .header(HttpHeaders.CONTENT_DISPOSITION, DownloadHeaders.contentDispositionAttachment(filename))
         .contentType(MediaType.parseMediaType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"))
         .body(bytes);
   }

@@ -3,6 +3,7 @@ package com.guoyu.platform.competition.controller;
 import com.guoyu.platform.common.api.ApiResponse;
 import com.guoyu.platform.common.api.PageResponse;
 import com.guoyu.platform.common.audit.AuditLog;
+import com.guoyu.platform.common.web.DownloadHeaders;
 import com.guoyu.platform.competition.dto.CompetitionQuestionCreateReq;
 import com.guoyu.platform.competition.dto.CompetitionQuestionQueryReq;
 import com.guoyu.platform.competition.dto.CompetitionQuestionUpdateReq;
@@ -12,9 +13,7 @@ import com.guoyu.platform.competition.service.CompetitionQuestionApplicationServ
 import com.guoyu.platform.competition.vo.CompetitionQuestionImportBatchVO;
 import com.guoyu.platform.competition.vo.CompetitionQuestionVO;
 import jakarta.validation.Valid;
-import java.nio.charset.StandardCharsets;
 import java.util.List;
-import org.springframework.http.ContentDisposition;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -165,7 +164,7 @@ public class CompetitionQuestionController {
             ? "competition-theory-question-template.xlsx" : "competition-practical-question-template.xlsx";
     HttpHeaders headers = new HttpHeaders();
     headers.setContentType(MediaType.parseMediaType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"));
-    headers.setContentDisposition(ContentDisposition.attachment().filename(filename, StandardCharsets.UTF_8).build());
+    headers.set(HttpHeaders.CONTENT_DISPOSITION, DownloadHeaders.contentDispositionAttachment(filename));
     return ResponseEntity.ok().headers(headers).body(body);
   }
 }

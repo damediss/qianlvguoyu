@@ -2,13 +2,12 @@ package com.guoyu.platform.competition.controller;
 
 import com.guoyu.platform.common.api.ApiResponse;
 import com.guoyu.platform.common.audit.AuditLog;
+import com.guoyu.platform.common.web.DownloadHeaders;
 import com.guoyu.platform.competition.dto.CompetitionFormalCandidateAnswerSheetExportReq;
 import com.guoyu.platform.competition.service.CompetitionFormalCandidateAnswerSheetApplicationService;
 import com.guoyu.platform.competition.vo.CompetitionFormalCandidateAnswerSheetFile;
 import com.guoyu.platform.competition.vo.CompetitionFormalCandidateAnswerSheetVO;
 import jakarta.validation.Valid;
-import java.nio.charset.StandardCharsets;
-import org.springframework.http.ContentDisposition;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -58,10 +57,8 @@ public class CompetitionFormalCandidateAnswerSheetController {
   private static ResponseEntity<byte[]> attachment(CompetitionFormalCandidateAnswerSheetFile file) {
     return ResponseEntity.ok()
         .contentType(MediaType.parseMediaType(file.mediaType()))
-        .header(HttpHeaders.CONTENT_DISPOSITION, ContentDisposition.attachment()
-            .filename(file.filename(), StandardCharsets.UTF_8)
-            .build()
-            .toString())
+        .header(HttpHeaders.CONTENT_DISPOSITION,
+            DownloadHeaders.contentDispositionAttachment(file.filename()))
         .body(file.data());
   }
 }

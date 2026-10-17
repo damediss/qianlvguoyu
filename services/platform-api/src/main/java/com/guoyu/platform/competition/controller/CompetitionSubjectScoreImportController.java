@@ -2,6 +2,7 @@ package com.guoyu.platform.competition.controller;
 
 import com.guoyu.platform.common.api.ApiResponse;
 import com.guoyu.platform.common.audit.AuditLog;
+import com.guoyu.platform.common.web.DownloadHeaders;
 import com.guoyu.platform.competition.dto.CompetitionSimulationImportConfirmReq;
 import com.guoyu.platform.competition.service.CompetitionSubjectScoreImportService;
 import com.guoyu.platform.competition.vo.CompetitionSubjectScoreImportBatchVO;
@@ -10,8 +11,6 @@ import com.guoyu.platform.security.SecurityContext;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
-import java.nio.charset.StandardCharsets;
-import org.springframework.http.ContentDisposition;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
@@ -45,8 +44,8 @@ public class CompetitionSubjectScoreImportController {
     HttpHeaders headers = new HttpHeaders();
     headers.setContentType(MediaType.parseMediaType(
         "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"));
-    headers.setContentDisposition(ContentDisposition.attachment()
-        .filename(fileName, StandardCharsets.UTF_8).build());
+    headers.set(HttpHeaders.CONTENT_DISPOSITION,
+        DownloadHeaders.contentDispositionAttachment(fileName));
     return new ResponseEntity<>(service.template(sourceType), headers, HttpStatus.OK);
   }
 
@@ -84,8 +83,8 @@ public class CompetitionSubjectScoreImportController {
     HttpHeaders headers = new HttpHeaders();
     headers.setContentType(MediaType.parseMediaType(
         "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"));
-    headers.setContentDisposition(ContentDisposition.attachment()
-        .filename("成绩导入错误明细.xlsx", StandardCharsets.UTF_8).build());
+    headers.set(HttpHeaders.CONTENT_DISPOSITION,
+        DownloadHeaders.contentDispositionAttachment("成绩导入错误明细.xlsx"));
     return new ResponseEntity<>(content, headers, HttpStatus.OK);
   }
 

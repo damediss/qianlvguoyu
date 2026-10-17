@@ -6,14 +6,13 @@ import com.guoyu.platform.certification.defense.DefenseScoringModels;
 import com.guoyu.platform.certification.defense.DefenseScoreSheetApplicationService;
 import com.guoyu.platform.common.api.ApiResponse;
 import com.guoyu.platform.common.audit.AuditLog;
+import com.guoyu.platform.common.web.DownloadHeaders;
 import com.guoyu.platform.exam.vo.ExportResultDTO;
 import jakarta.validation.Valid;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
-import java.nio.charset.StandardCharsets;
 import java.util.List;
 import org.springframework.core.io.InputStreamResource;
-import org.springframework.http.ContentDisposition;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -167,7 +166,7 @@ public class CertificationDefenseScoringController {
     InputStreamResource resource = new InputStreamResource(new ByteArrayInputStream(result.data()));
     return ResponseEntity.ok()
         .header(HttpHeaders.CONTENT_DISPOSITION,
-            ContentDisposition.attachment().filename(result.filename(), StandardCharsets.UTF_8).build().toString())
+            DownloadHeaders.contentDispositionAttachment(result.filename()))
         .contentType(result.filename() != null && result.filename().endsWith(".zip")
             ? MediaType.parseMediaType("application/zip")
             : MediaType.parseMediaType(

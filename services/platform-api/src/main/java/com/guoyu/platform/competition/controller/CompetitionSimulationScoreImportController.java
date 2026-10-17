@@ -2,6 +2,7 @@ package com.guoyu.platform.competition.controller;
 
 import com.guoyu.platform.common.api.ApiResponse;
 import com.guoyu.platform.common.audit.AuditLog;
+import com.guoyu.platform.common.web.DownloadHeaders;
 import com.guoyu.platform.competition.dto.CompetitionSimulationImportConfirmReq;
 import com.guoyu.platform.competition.service.CompetitionSimulationScoreImportService;
 import com.guoyu.platform.competition.vo.CompetitionSimulationImportBatchVO;
@@ -10,9 +11,7 @@ import com.guoyu.platform.security.PlatformUserPrincipal;
 import com.guoyu.platform.security.SecurityContext;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotNull;
-import java.nio.charset.StandardCharsets;
 import java.util.List;
-import org.springframework.http.ContentDisposition;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
@@ -44,8 +43,8 @@ public class CompetitionSimulationScoreImportController {
     HttpHeaders headers = new HttpHeaders();
     headers.setContentType(MediaType.parseMediaType(
         "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"));
-    headers.setContentDisposition(ContentDisposition.attachment()
-        .filename("仿真成绩导入模板.xlsx", StandardCharsets.UTF_8).build());
+    headers.set(HttpHeaders.CONTENT_DISPOSITION,
+        DownloadHeaders.contentDispositionAttachment("仿真成绩导入模板.xlsx"));
     return new ResponseEntity<>(service.template(), headers, HttpStatus.OK);
   }
 
@@ -88,8 +87,8 @@ public class CompetitionSimulationScoreImportController {
     HttpHeaders headers = new HttpHeaders();
     headers.setContentType(MediaType.parseMediaType(
         "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"));
-    headers.setContentDisposition(ContentDisposition.attachment()
-        .filename("仿真成绩导入错误明细.xlsx", StandardCharsets.UTF_8).build());
+    headers.set(HttpHeaders.CONTENT_DISPOSITION,
+        DownloadHeaders.contentDispositionAttachment("仿真成绩导入错误明细.xlsx"));
     return new ResponseEntity<>(content, headers, HttpStatus.OK);
   }
 

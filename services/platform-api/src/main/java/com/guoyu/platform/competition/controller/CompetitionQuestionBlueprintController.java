@@ -3,14 +3,13 @@ package com.guoyu.platform.competition.controller;
 import com.guoyu.platform.common.api.ApiResponse;
 import com.guoyu.platform.common.api.PageResponse;
 import com.guoyu.platform.common.audit.AuditLog;
+import com.guoyu.platform.common.web.DownloadHeaders;
 import com.guoyu.platform.competition.dto.CompetitionQuestionBlueprintQueryReq;
 import com.guoyu.platform.competition.service.CompetitionQuestionBlueprintApplicationService;
 import com.guoyu.platform.competition.vo.CompetitionQuestionBlueprintTreeVO;
 import com.guoyu.platform.competition.vo.CompetitionQuestionBlueprintVO;
 import com.guoyu.platform.competition.vo.CompetitionQuestionBlueprintCoverageVO;
 import jakarta.validation.Valid;
-import java.nio.charset.StandardCharsets;
-import org.springframework.http.ContentDisposition;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -103,7 +102,7 @@ public class CompetitionQuestionBlueprintController {
     byte[] bytes = service.readSourceFile(bp.getSourceFileId());
     HttpHeaders headers = new HttpHeaders();
     headers.setContentType(MediaType.APPLICATION_OCTET_STREAM);
-    headers.setContentDisposition(ContentDisposition.attachment().filename(bp.getSourceFileName(), StandardCharsets.UTF_8).build());
+    headers.set(HttpHeaders.CONTENT_DISPOSITION, DownloadHeaders.contentDispositionAttachment(bp.getSourceFileName()));
     return ResponseEntity.ok().headers(headers).body(bytes);
   }
 }

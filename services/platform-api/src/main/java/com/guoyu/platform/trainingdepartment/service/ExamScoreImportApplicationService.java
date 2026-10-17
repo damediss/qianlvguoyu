@@ -6,6 +6,7 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.guoyu.platform.common.api.PageResponse;
+import com.guoyu.platform.common.web.DownloadHeaders;
 import com.guoyu.platform.common.exception.BusinessException;
 import com.guoyu.platform.common.exception.ErrorCode;
 import com.guoyu.platform.exam.entity.ExamWorkTypeEntity;
@@ -39,7 +40,6 @@ import com.guoyu.platform.trainingdepartment.vo.ExamScoreImportRosterGapVO;
 import com.guoyu.platform.trainingdepartment.vo.ExamScoreImportTargetVO;
 import java.io.ByteArrayOutputStream;
 import java.math.BigDecimal;
-import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.time.Duration;
 import java.util.ArrayList;
@@ -57,7 +57,6 @@ import org.apache.poi.ss.usermodel.Row;
 import org.apache.poi.ss.usermodel.Sheet;
 import org.apache.poi.ss.usermodel.Workbook;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
-import org.springframework.http.ContentDisposition;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -480,8 +479,8 @@ public class ExamScoreImportApplicationService {
       return ResponseEntity.ok()
           .contentType(MediaType.parseMediaType(
               "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"))
-          .header(HttpHeaders.CONTENT_DISPOSITION, ContentDisposition.attachment()
-              .filename("成绩导入标准模板.xlsx", StandardCharsets.UTF_8).build().toString())
+          .header(HttpHeaders.CONTENT_DISPOSITION,
+              DownloadHeaders.contentDispositionAttachment("成绩导入标准模板.xlsx"))
           .body(out.toByteArray());
     } catch (Exception ex) {
       throw new BusinessException(ErrorCode.INTERNAL_ERROR, "生成模板失败");
@@ -975,8 +974,8 @@ public class ExamScoreImportApplicationService {
       return ResponseEntity.ok()
           .contentType(MediaType.parseMediaType(
               "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"))
-          .header(HttpHeaders.CONTENT_DISPOSITION, ContentDisposition.attachment()
-              .filename("成绩导入失败清单.xlsx", StandardCharsets.UTF_8).build().toString())
+          .header(HttpHeaders.CONTENT_DISPOSITION,
+              DownloadHeaders.contentDispositionAttachment("成绩导入失败清单.xlsx"))
           .body(out.toByteArray());
     } catch (Exception ex) {
       throw new BusinessException(ErrorCode.INTERNAL_ERROR, "导出失败清单失败");

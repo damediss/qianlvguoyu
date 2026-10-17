@@ -4,6 +4,7 @@ import com.guoyu.platform.common.api.ApiResponse;
 import com.guoyu.platform.common.api.PageResponse;
 import com.guoyu.platform.competition.dto.CompetitionRosterImportListQueryReq;
 import com.guoyu.platform.common.audit.AuditLog;
+import com.guoyu.platform.common.web.DownloadHeaders;
 import com.guoyu.platform.competition.dto.CompetitionRosterImportQueryReq;
 import com.guoyu.platform.competition.dto.CompetitionRosterPrecheckReq;
 import com.guoyu.platform.competition.dto.CompetitionRosterSingleImportReq;
@@ -11,7 +12,6 @@ import com.guoyu.platform.competition.service.CompetitionRosterImportApplication
 import com.guoyu.platform.competition.vo.CompetitionRosterImportDetailVO;
 import com.guoyu.platform.competition.vo.CompetitionRosterImportVO;
 import jakarta.validation.Valid;
-import java.nio.charset.StandardCharsets;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.validation.annotation.Validated;
@@ -22,7 +22,6 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
-import org.springframework.http.ContentDisposition;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -64,8 +63,8 @@ public class CompetitionRosterImportController {
     return ResponseEntity.ok()
         .contentType(MediaType.parseMediaType(
             "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"))
-        .header(HttpHeaders.CONTENT_DISPOSITION, ContentDisposition.attachment()
-            .filename("赛事名单导入模板.xlsx", StandardCharsets.UTF_8).build().toString())
+        .header(HttpHeaders.CONTENT_DISPOSITION,
+            DownloadHeaders.contentDispositionAttachment("赛事名单导入模板.xlsx"))
         .body(content);
   }
 

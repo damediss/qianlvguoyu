@@ -2,6 +2,7 @@ package com.guoyu.platform.competition.controller;
 
 import com.guoyu.platform.common.api.ApiResponse;
 import com.guoyu.platform.common.audit.AuditLog;
+import com.guoyu.platform.common.web.DownloadHeaders;
 import com.guoyu.platform.competition.dto.CompetitionTheoryAssignmentAdjustReq;
 import com.guoyu.platform.competition.dto.CompetitionTheoryRoomUpsertReq;
 import com.guoyu.platform.competition.dto.CompetitionTheoryScheduleCreateReq;
@@ -17,7 +18,6 @@ import com.guoyu.platform.competition.vo.CompetitionTheorySessionVO;
 import jakarta.validation.Valid;
 import java.util.List;
 import org.springframework.security.access.prepost.PreAuthorize;
-import org.springframework.http.ContentDisposition;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -197,8 +197,8 @@ public class CompetitionTheoryScheduleController {
     return ResponseEntity.ok()
         .contentType(MediaType.parseMediaType(
             "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"))
-        .header(HttpHeaders.CONTENT_DISPOSITION, ContentDisposition.attachment()
-            .filename("competition-theory-roster.xlsx").build().toString())
+        .header(HttpHeaders.CONTENT_DISPOSITION,
+            DownloadHeaders.contentDispositionAttachment("competition-theory-roster.xlsx"))
         .body(exportService.exportExcel(versionId));
   }
 
@@ -207,8 +207,8 @@ public class CompetitionTheoryScheduleController {
   public ResponseEntity<byte[]> exportPdf(@PathVariable Long versionId) {
     return ResponseEntity.ok()
         .contentType(MediaType.APPLICATION_PDF)
-        .header(HttpHeaders.CONTENT_DISPOSITION, ContentDisposition.attachment()
-            .filename("competition-theory-roster.pdf").build().toString())
+        .header(HttpHeaders.CONTENT_DISPOSITION,
+            DownloadHeaders.contentDispositionAttachment("competition-theory-roster.pdf"))
         .body(exportService.exportPdf(versionId));
   }
 }

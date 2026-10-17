@@ -4,14 +4,13 @@ import com.guoyu.platform.common.api.ApiResponse;
 import com.guoyu.platform.common.api.PageQuery;
 import com.guoyu.platform.common.api.PageResponse;
 import com.guoyu.platform.common.audit.AuditLog;
+import com.guoyu.platform.common.web.DownloadHeaders;
 import com.guoyu.platform.competition.classify.dto.CompetitionPlayerClassifyCreateReq;
 import com.guoyu.platform.competition.classify.service.CompetitionPlayerClassifyApplicationService;
 import com.guoyu.platform.competition.classify.vo.CompetitionPlayerClassifyTaskVO;
 import com.guoyu.platform.competition.vo.CompetitionStagePaperAssignmentPlayerVO;
 import jakarta.validation.Valid;
-import java.nio.charset.StandardCharsets;
 import java.util.List;
-import org.springframework.http.ContentDisposition;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -66,9 +65,8 @@ public class CompetitionPlayerClassifyController {
     return ResponseEntity.ok()
         .contentType(MediaType.parseMediaType(
             "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"))
-        .header(HttpHeaders.CONTENT_DISPOSITION, ContentDisposition.attachment()
-            .filename("排序分类-任务" + taskId + ".xlsx", StandardCharsets.UTF_8)
-            .build().toString())
+        .header(HttpHeaders.CONTENT_DISPOSITION,
+            DownloadHeaders.contentDispositionAttachment("排序分类-任务" + taskId + ".xlsx"))
         .body(service.exportExcel(taskId));
   }
 
