@@ -95,11 +95,7 @@ public class FaqLlmClient {
         .setResponseTimeout(Timeout.ofSeconds(90))
         .build();
 
-    CloseableHttpClient httpClient = HttpClients.custom()
-        .setConnectionManager(connectionManager)
-        .setDefaultRequestConfig(requestConfig)
-        .setKeepAliveStrategy((response, context) -> TimeValue.ofSeconds(60))
-        .build();
+    CloseableHttpClient httpClient = buildHttpClient(requestConfig);
 
     // onStatus：将 4xx/5xx 转为 RestClientResponseException，保留 response body
     this.client = buildRestClient(httpClient);
@@ -119,13 +115,26 @@ public class FaqLlmClient {
           .setConnectTimeout(Timeout.ofSeconds(70))
           .setResponseTimeout(Timeout.ofSeconds(seconds))
           .build();
-      CloseableHttpClient httpClient = HttpClients.custom()
-          .setConnectionManager(connectionManager)
-          .setDefaultRequestConfig(requestConfig)
-          .setKeepAliveStrategy((response, context) -> TimeValue.ofSeconds(60))
-          .build();
+      CloseableHttpClient httpClient = buildHttpClient(requestConfig);
       return buildRestClient(httpClient);
     });
+  }
+
+  /**
+   * 统一构建 HttpClient（各响应超时档位共享连接池，仅 RequestConfig 不同）。
+   *
+   * <p>必须禁用内容压缩：类路径含 Tika 传递依赖 org.brotli:dec 0.1.2，HttpClient 会据此自动
+   * 广告 Accept-Encoding: br；该版本无参 read() 读 1 字节后流即耗尽，而 Spring 转换响应前
+   * 恰好会先 read() 一个字节探测空体，导致 br 响应只解出首个字符 "{"（2026-10-17 DeepSeek
+   * 边缘启用 Brotli 后全线解析失败）。禁用后不协商压缩，响应为明文，LLM 文本量级可忽略。
+   */
+  private CloseableHttpClient buildHttpClient(RequestConfig requestConfig) {
+    return HttpClients.custom()
+        .setConnectionManager(connectionManager)
+        .setDefaultRequestConfig(requestConfig)
+        .setKeepAliveStrategy((response, context) -> TimeValue.ofSeconds(60))
+        .disableContentCompression()
+        .build();
   }
 
   /** 统一构建 RestClient（连接超时等由 HttpClient 默认 RequestConfig 决定，状态处理一致） */
