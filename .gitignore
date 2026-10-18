@@ -38,6 +38,10 @@ target/
 build/
 out/
 
+# 例外：历年真题 viewer 依赖 pdf.js 预构建产物（build/pdf.js + pdf.worker.js），
+# 必须入库，否则新克隆后 /pdf-viewer/viewer.html 加载 404。
+!apps/admin-web/public/pdf-viewer/build/
+
 # Spring Boot fat jar 解压产物 (jar -xf 不小心会泄到根目录)
 BOOT-INF/
 META-INF/
