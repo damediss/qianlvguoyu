@@ -1,6 +1,8 @@
 # AI 同步学 · 学习方法论优化实施方案
 
-> 版本：v1.0　日期：2026-10-14　状态：**待需求方逐项审核（审核通过前不改任何代码）**
+> 版本：**v1.3**　日期：2026-10-14（初版）／2026-10-17（二期方案审核修订）／2026-10-18（拍板落地 + 测试/验收补齐）　状态：**二期方案定稿，待实施**
+> **v1.3 修订说明**：① 需求方拍板 O-10/O-11/O-12 全部接受推荐，相关口径已改为定稿（不再“二选一”）；② 审核测试与验收清单，发现 2 处遗漏（D19 补救期被总量封顶反噬、D20 文案冻结批次已过期）并补全；③ 新增 §13.10 二期测试覆盖矩阵与缺口补全、§14.9 上线闸门与证据要求。
+> **v1.2 修订说明**：一期（W1+W2）已落地并上线；本次只审核二期（W3 → W8.1 → W8.2 + W5）方案，逐条对照 platform-api 与 gjjd_appnext 现状后修订。**审核结论与缺陷清单见 §17，与 §5~§16 冲突处以 §17 为准。**
 > 依据文档：《AI同步学学习方法论_STORM多视角分析报告(草稿)》（docs/02_drafts，2026-10-13）+ 两端代码实证审核（2026-10-14，platform-api `exam/reviewsync`/`app/reviewsync` 与 gjjd_appnext 全量核对）
 > 关联文档：《AI同步学（学员复习）实现方案》v1.7、《AI同步学统计功能设计方案》v1.3、《AI同步学-学员介绍页文案设计方案》v1.0
 >
@@ -12,6 +14,11 @@
 >
 > **需求方追加拍板（2026-10-16）**：
 > ⑤ 新增 **W8 知识漏洞提示与 AI 讲解补实现**（§10），排入**二期**，顺序锁定 `W3 → W8.1 → W8.2 + W5`；W8.4 同类题加练**不进二期**（排 W4 之后）；W8.2 准入需先过 O-7（官方解析覆盖率实测）。
+>
+> **需求方追加拍板（2026-10-18）**：
+> ⑥ **O-10 接受推荐**：阶段 1 最后一天不再“全量清空”，改为按 cap 下发、剩余顺延阶段 2（§6.2-1）；
+> ⑦ **O-11 接受推荐**：绿牌再错缺陷（`applyWrongCard` 未复位 `removed`）**纳入二期**，随 W5 同批修复并回刷存量坏行；
+> ⑧ **O-12 接受推荐**：W8.1 采用**方案 1**——提示词去掉“学员错答”，只讲题本身，按 questionId 跨学员复用缓存。
 
 ---
 
@@ -51,7 +58,7 @@ STORM 报告基于三份文档写成；本次审核将报告 60+ 项事实性论
 | ⑦ | 回写"异步+死信补偿" | 单库化后为**作答事务内同步直写** `exam_result`（exam_type=5）；失败整体回滚由学员重试；`php_synced=2` 是遗留死状态 |
 | ⑧ | §4.7 与 O7 回写口径矛盾 | 矛盾属实（文档层）；代码实际=earnedScore 优先（练习轮客观题"对=题分/错=0"，主观 AI 比例分，模考轮全部实得分）——O7 口径 |
 | ⑨ | LLM 只做鼓励语/讲解/周报 | 连对连错 toast 是 100% 预置文案；LLM 实际承担每日鼓励语+**主观题 AI 判分**（完整限流/缓存/留痕链路）+题目解析生成；**周报未实现**（`weekReport=null`） |
-| ⑩ | AI 讲解"仅加星红牌可用、LLM 故障降级官方 resolve" | 学员侧入口标记（`explainAvailable`）确实限加星答错；但通用解析接口 `POST /appexamsmart/question/resolve` **无门禁**，且降级链是**官方解析优先**、无官方解析才 LLM 生成（报告写反） |
+| ⑩ | AI 讲解"仅加星红牌可用、LLM 故障降级官方 resolve" | 学员侧入口标记（`explainAvailable`）确实限加星答错，但**App 全仓没有消费这个字段**（v1.2 核实，见 §17-D11），所以连入口都不存在；通用解析接口是 `POST /appsmart/question/resolve`（`AppExamSmartController:92`，路径写错为 appexamsmart）**无门禁**，且降级链是**官方解析优先**、无官方解析才 LLM 生成（报告写反） |
 | ⑪ | mockStart 属阶段 3/阶段2并行 | 前端入口受控，但**服务端 mockStart 无 stage 校验**，阶段 1 直接调 API 可组卷 |
 | ⑫ | reviewsync 取题链 | 按计划 `source` 等值取题（`ReviewQuestionQueryService`），与组卷抽题的 source=3 排除无冲突：source=3 的计划只会取 source=3 的题，属设计内行为，**不构成缺陷** |
 
@@ -96,7 +103,7 @@ STORM 报告基于三份文档写成；本次审核将报告 60+ 项事实性论
 | M20 | 横幅注释/首进弹窗标记时机（F3/F4） | P2 | W2.5 |
 | M21 | 模考"仿真"三参数（题型/难度/及格线）未锚定正式考核 | P2 | W7 参数位+待证（§11 O-1） |
 | M22 | 周报未实现但文档列一期增量 | P2 | 文档联动（§15）标注现状，不补实现 |
-| **M23** | **`explainAvailable=1` 承诺可讲解，但 `/appreviewsync/explain` 接口不存在**（`ReviewPlanApplicationService:1978` 发标记，全库无端点）——性质同 M1：说了没做 | **P0** | **W8.1 补实现** |
+| **M23** | **`explainAvailable=1` 承诺可讲解，但 `/appreviewsync/explain` 接口不存在**（`ReviewPlanApplicationService:1981` 发标记，全库无端点），**且 App 全仓未消费该字段（v1.2 核实：连入口都没有）**——性质同 M1：说了没做 | **P0** | **W8.1 补实现（含 App 入口）** |
 | **M24** | 学员看不懂学情数字（覆盖率/掌握度直发一线工人）；系统已按薄弱点补漏（§5.2 阶段 2）却不告知学员"今天为什么是这些题"；`user_answer`、`use_time_sec` 已落库但零消费（错因与假掌握无法识别） | **P1** | **W8.2 漏洞提示 + 错因分类** |
 
 ---
@@ -119,16 +126,18 @@ STORM 报告基于三份文档写成；本次审核将报告 60+ 项事实性论
 
 | WP | 内容 | 对应缺口 | 类型 | 建议分期 | 粗估工作量 |
 |---|---|---|---|---|---|
-| W1 | 文案名实修复（介绍页/微文案/学情页/术语/声明/连错兜底） | M2 M4 M9 M16 M17 | 文案+App 小改 | 一期 | 0.5~1 天（不含冻结评审） |
-| W2 | 机制小修：中断清洗开关、参数区间校验、mockStart 阶段校验、模考计时、阶段切分边界、App 横幅/弹窗 | M3 M5 M18 M19 M20 | 小机制 | 一期 | 1~1.5 天 |
-| W3 | ABCD 补救补实现（A 删题收敛 / B 摸底分流 / D 真窗口+滚动）+ 中断日志表 | M1 M7 | 机制（已拍板补实现） | 二期 | 3~4 天 |
-| W4 | 错题扩展间隔（next_due_date）+ 答对题间隔抽回 | M10 M11 M7 | 机制级 | 三期（灰度） | 2~3 天 |
-| W5 | 可证伪数据层：鼓励曝光落库、4 个成效指标、掉队预警清单、成绩回流设计（仅设计） | M6 M8 M13 M15 | 埋点/统计 | 二期 | 2 天 |
+| W1 | 文案名实修复（介绍页/微文案/学情页/术语/声明/连错兜底） | M2 M4 M9 M16 M17 | 文案+App 小改 | **一期（已上线）** | 已完成 |
+| W2 | 机制小修：中断清洗开关、参数区间校验、mockStart 阶段校验、模考计时、阶段切分边界、App 横幅/弹窗 | M3 M5 M18 M19 M20 | 小机制 | **一期（已上线）** | 已完成（模考计时仅后端半程，见 §17-D7） |
+| W3 | ABCD 补救补实现（A 删题收敛 / B 摸底分流 / D 真窗口+滚动）+ 中断日志表 | M1 M7 | 机制（已拍板补实现） | 二期 | **4~5 天**（含补救期状态列，见 §17-D1） |
+| W4 | 错题扩展间隔（next_due_date）+ 答对题间隔抽回 | M10 M11 M7 | 机制级 | 三期（灰度） | **3~4 天**（抽回需新下发通路，见 §17-D9） |
+| W5 | 可证伪数据层：鼓励曝光落库、4 个成效指标、掉队预警清单、成绩回流设计（仅设计） | M6 M8 M13 M15 | 埋点/统计 | 二期 | **2.5 天**（完结率口径要改，见 §17-D6） |
 | W6 | 入口摸底测验 + 三路分流 | M12 | 机制级 | 三期（灰度，依赖 W3-B 基建） | 2~3 天 |
 | W7 | 模考蓝图锚定（题型/难度/及格线参数位） | M21 | 配置位 | 待 §11 O-1 业务核实 | 0.5 天 |
-| **W8** | **知识漏洞提示 + AI 讲解补实现**（W8.1 补 `/explain` 接口 / W8.2 每日漏洞提示 / W8.3 埋点并入 W5 / W8.4 同类题加练**不进二期**） | **M23 M24** | 名实欠账 + 提示层（规则算、模型说） | **二期**（顺序：W3 → W8.1 → W8.2+W5） | **3~4 天** |
+| **W8** | **知识漏洞提示 + AI 讲解补实现**（W8.1 补接口 / W8.2 每日漏洞提示 / W8.3 埋点并入 W5 / W8.4 同类题加练**不进二期**） | **M23 M24** | 名实欠账 + 提示层（规则算、模型说） | **二期**（顺序：W3 → W8.1 → W8.2+W5） | **4~5 天**（含 App 入口与复用改造，见 §17-D10/D11） |
 
-依赖关系：W3-B 的摸底基建（quiz 卷）被 W6 复用；W4 依赖 W2.1（清洗开关）先落地；W5.2 的中断指标依赖 W3 的中断日志表；**W8.3 并入 W5 同批（共用 `ai_review_encourage_log` 加列）；W8.4 依赖 W4 落地后排四期**；**W8.2 准入依赖 O-7（解析覆盖率实测）**。
+依赖关系：W3-B 的摸底基建（quiz 卷）被 W6 复用；W4 依赖 W2.1（清洗开关）先落地；W5.2 的中断指标依赖 W3 的中断日志表；**W8.3 并入 W5 同批（共用 `ai_review_encourage_log`，建表即含 `log_type`/`hint_key`）**；**W8.4 依赖 W4 落地后排四期**；**W8.2 准入依赖 O-7（解析覆盖率实测）**。
+
+**二期新增前置**（v1.2 审核后）：W4/W5 的“绿牌再错率”依赖 §17-D14 的 `applyWrongCard` 缺陷修复，须与 W5 同批；W8.2 的错因分类依赖 §17-D7 的模考计时修复（否则模考行全部误判为“秒错”）。
 
 ---
 
@@ -212,6 +221,8 @@ STORM 报告基于三份文档写成；本次审核将报告 60+ 项事实性论
 ### 5.4 模考作答计时落库（M19）
 
 - `mock/submit` 入参本有 per-question `useTimeSec`，落 `ai_review_answer.use_time_sec`（现恒写 0）；为 W5.2 人均耗时指标补数据面。
+- **v1.2 订正：一期只做了后端半程，App 侧仍恒传 0** —— `gjjd_appnext/pages/exam/syncMock.vue:190` 每题写死 `useTimeSec: 0`，服务端 `persistMockSubmit:971` 原样落库，端到端数据仍是 0。二期必须补 App 侧：记录每题的进入/离开时间戳（切题、交卷两处打点），`useTimeSec=Math.max(0, 离开-进入)`；交卷前若当前题未离开，按交卷时刻结算。
+- 验收改为端到端：真机做 3 题后交卷，`SELECT use_time_sec FROM ai_review_answer WHERE round_type='mock'` 三行均 >0。
 
 ### 5.5 阶段切分边界修正（F6）
 
@@ -251,7 +262,28 @@ STORM 报告基于三份文档写成；本次审核将报告 60+ 项事实性论
 | A 阶段1中断 | current_stage=1 且不满足 D | 首日 80 题单选+判断预热（已有）；第 2 天起每日新题上限放宽为 `ai_review_case_a_daily_new_cap`（默认 180），按 `ceil(剩余必做÷剩余阶段1天数)` 排；超出 180 时按 §6.2 删尾部偏题（≤`ai_review_case_a_trim_ratio`，默认 15%）收敛 |
 | B 阶段2中断 | current_stage=2 且不满足 D | 首日 100 题混编摸底（§6.3）；≥70% → 次日进阶段 3；<70% → 未来 3 天只出红牌题，剩余未做新题全部放弃并如实披露 |
 | C 阶段3中断 | current_stage=3 且不满足 D | 维持现状：每日 1 套模考 + 交卷逐题解析（mustReadResolve=1），文案已属实 |
-| D 零星反复中断 | `ai_review_interrupt_log` 近 7 天行数 ≥2 | 首日热车=最近一次有作答任务日的最后 `ai_review_case_d_warmup_size`（默认 50）题（round_type=review）；第 2 天起新题固定 `ai_review_case_d_daily_new`（默认 100）/天直至必做池清空，阶段边界按剩余天数重推导 |
+| D 零星反复中断 | `ai_review_interrupt_log` **在本次之前**近 7 天行数 ≥1（含本次即 ≥2） | 首日热车=最近一次有作答任务日的最后 `ai_review_case_d_warmup_size`（默认 50）题（round_type=review）；第 2 天起新题固定 `ai_review_case_d_daily_new`（默认 100）/天直至必做池清空，阶段边界按剩余天数重推导 |
+
+#### 6.1.1 补救期状态必须落库（v1.2 修订，阻断项）
+
+**问题**：现实现只在触发中断的那一次请求里把 `InterruptInfo` 传给 `materializeDay`（`ReviewPlanApplicationService:179/216`），随后 `applyInterruptIfNeeded:1829` 立即把 `lastActiveDate` 推进到今天；次日 `detectInterruptCase` 的 gap=0 直接返回 null。`AiReviewPlanEntity` 没有任何字段承载“补救期”，因此 **A 案第 2 天起、B 案未来 3 天、D 案第 2 天起全部不会生效**（会回落到 `stage1NewTarget` / `materializeStage2` 的常态配额）。
+
+**修订**：`ai_review_plan` 增两列（与 W3 同批迁移）：
+
+| 列 | 类型 | 说明 |
+|---|---|---|
+| `recovery_case` | VARCHAR(2) NULL | A/B/D；NULL=无补救期 |
+| `recovery_until_day` | INT NULL | 补救期覆盖到第几天（含）；C 案不写（C 按阶段 3 常态执行） |
+
+- `applyInterruptIfNeeded` 触发后写：A → `until = stage1Days`；B → `until = 当前 dayIndex + 3`；D → `until = totalDays`；
+- `materializeDay` 取 `effectiveRecovery = (plan.recoveryCase != null && dayIndex <= plan.recoveryUntilDay) ? plan.recoveryCase : null`，据此分支；**不再依赖入参 `interrupt` 决定第 2 天以后的行为**；
+- 失效与清理：跨阶段（`dayIndex > stage1Days` 对 A）、`replanIfExamPlanDrifted` 重排、B 案分流完成后，置 NULL；
+- **回滚开关**：`ai_review_recovery_enabled`（默认 1）。=0 时不触发补救、不写 recovery、不下发补救文案（等于一期行为），用于线上紧急止损；已写入的方案见 §14.9 置空 SQL。
+- 重复中断覆盖：新中断直接覆盖旧值（以最后一次为准），并写日志。
+- **补救期与“每日总量封顶”的关系（v1.3 补充，D19）**：`materializeStage1:1655` 会先 `applyTotalCap(newTargetRaw, reviewTarget, dailyTotalCap=200)`——**A 案 180 与 D 案 100 都会被“总量 200”压掉**（如复盘 50 题时，新题只能排 150；复盘 120 题时新题只剩 80）。补救期口径定稿：`effectiveTotalCap = min(600, max(dailyTotalCap, newTargetRaw + reviewTarget))`，即**补救期优先保证新题目标，不被常规总量 cap 反噬**；超出 600 时仍按 600 封顶并 warn。此规则只在 `recovery_case ∈ {A,D}` 时生效，常态不变。
+- **补救期与阶段 3 的优先级**：B 案“未来 3 天”若第 2/3 天已进入阶段 3（剩余天数不足），**阶段 3 模考优先**，`recovery_until_day` 截断为 `stage1Days + stage2Days`；不得把模考日改成“只出红牌”。
+
+> 这是二期唯一无法靠“照方案写代码”绕过的结构缺陷：不补这两列，W3 只有第 1 天成立，第 2 天起全部静默失效，且因为文案已经下发，反而制造新的“说了没做”。
 
 ### 6.2 A 案：尾部删题收敛（激活 `dropped_question_ids`）
 
@@ -261,15 +293,26 @@ STORM 报告基于三份文档写成；本次审核将报告 60+ 项事实性论
 - strategyText（替换现虚数文案）："检测到您中断了几天。今天先只做 80 道单选和判断题热身；剩余题量已重新平摊。题量实在排不下，**已为您精简 X 道偏题怪题（约占总题量 Y%）**，核心基础题一道不少。"
   - 未触发删题时末句不下发（文案与实际一一对应）。
 
+**v1.2 补充（三处会直接跑偏的地方）**
+
+1. **“阶段 1 最后一天强制清空”优先级（O-10 已拍板，2026-10-18）**。`materializeStage1:1695-1703` 在 `dayIndex >= stage1Days` 时把剩余必做**全量**补进当日新题，不受 `dailyNewCap`、更不受 180 限制。若按方案实现 180 上限，最后一天仍会一次性下发几百题，文案却已承诺“已精简 X 道”。**定稿口径**：
+   - 删除“最后一天全量清空”分支，改为与平日一致：`newTarget = min(stage1NewTarget, 剩余)`，**同时受 180 上限约束**；
+   - 未下发的剩余必做**不进入 dropped**，留给阶段 2 的“薄弱 L3 新题”（`materializeStage2` 已按 `remainingNew` 取题，天然承接）；
+   - `strategyText` 禁止出现“最后一天清完剩余题”类表述；若阶段 2 结束时仍有剩余，由阶段 3 模考覆盖，不出文案承诺；
+   - 断言：`dayIndex=stage1Days` 且剩余 400 题时，当日新题 ≤ cap，次日阶段 2 仍能取到剩余题。
+2. **`dropped_question_ids` 不能一列三义**。A（排不下）、B（放弃未做新题）、W6（摸底已掌握跳过）语义不同，混存后统计与文案无法区分，也无法回答“为什么这道题不在计划里”。修订为对象数组：`[{"qid":123,"reason":"A_trim|B_drop|ENTRY_SKIP","at":"2026-10-17"}]`；读取端兼容旧纯 id 数组（`parseIds` 前先判首字符）。
+3. **删题后分母要同步扣减**。`targetQuestions`（`createPlan:1334`）与学情覆盖率分母（`progress:1138`、`progressView:2393`）目前都用 `must_do`。被删题若只从取题链排除、不从分母扣减，学员会永远看到覆盖率到不了 100%。修订：`targetQuestions = must_do.size() − dropped.size()`，覆盖率分母改为 `must_do − dropped`；`must_do_ids` 快照本身**不改写**（保留原始计划，便于审计与回滚）。
+
 ### 6.3 B 案：摸底测验与分流（复用模考卷基建）
 
 - `ai_review_mock_paper` 加列 `paper_type VARCHAR(16) NOT NULL DEFAULT 'mock'`（取值 `mock` / `remedial_quiz` / `entry_quiz`，W6 复用）。
 - 摸底组卷：从"必做池中**尚未作答**的题"按 L1 权重配额+water-filling 组卷（复用 `composeMockPaper`，入参换池子），题量 `ai_review_case_b_quiz_size`（默认 100，池不足全取）；判分走严格口径（诊断需要准确估计）。
-- 当日任务形态：new=0 / review=0 / mock=该 quiz 卷；学员在模考 UI 完成（App 零新页面）。
+- 当日任务形态：new=0 / review=0 / mock=该 quiz 卷；学员在模考 UI 完成（App 零新页面）。**当日视为“模考日”**，完成判定见 §17-D6（`finish` 对模考日放行），否则当天永远无法收尾。
 - 交卷后分流（`mock/submit` 按 `paper_type=remedial_quiz` 路由）：
-  - 正确率 ≥ `ai_review_case_b_pass_rate`（默认 70%）：`plan.current_stage=3`，后续物化走阶段 3；strategyText："摸底正确率 X%，基础扎实——直接进入模考冲刺。"
-  - <70%：未来 3 天物化为"只出红牌+加星题"（new=0）；剩余未做新题全部写入 `dropped_question_ids`；strategyText："摸底正确率 X%。接下来 3 天集中消灭红牌错题；**为避免铺太宽，已放弃剩余 X 道没做过的新题**——保住错题本就保住了大头。"
-- 摸底作答正常入 `ai_review_answer`（round_type=mock），错题正常入册。
+  - 正确率 ≥ `ai_review_case_b_pass_rate`（默认 70%）：**修订（v1.2）——不能只写 `plan.current_stage=3`**：阶段由 `dayIndex` 与 `stage1Days/stage2Days` 推导（`stageOfDay:2031`），`materializeDay:1565` 只认 `stageOfDay`，写 `current_stage` 次日必被覆写。正确做法是重算阶段边界：`stage1Days = min(stage1Days, dayIndex)`、`stage2Days = 0`、`stage3Days = totalDays − dayIndex`（并断言 `stage3Days ≥ 1`）；strategyText："摸底正确率 X%，基础扎实——直接进入模考冲刺。"
+  - <70%：未来 3 天物化为"只出红牌+加星题"（new=0）；剩余未做新题全部写入 `dropped_question_ids`（`reason=B_drop`）；那 3 天用 §6.1.1 的 `recovery_case` 承载，不靠临时变量；strategyText："摸底正确率 X%。接下来 3 天集中消灭红牌错题；**为避免铺太宽，已放弃剩余 X 道没做过的新题**——保住错题本就保住了大头。"
+- **摸底卷必须能被 App 取到（v1.2 新增）**：`syncMock.vue:120` 进入模考页固定调 `mock/start`，而 `mockStart:673` 每次新建一张普通卷（`paperNo+1`），不会复用 `day.mockPaperId`。因此 `mockStart` 需增加前置：当日存在 `paper_type='remedial_quiz' AND status='ready'` 的卷则直接返回该卷并带 `paperType`；App 按 `today.mock.paperType` 渲染标题（"摸底测验" vs "仿真模考"）。否则 B 案的 quiz 永远到不了学员手里，学员拿到的是一张普通模考卷，分流逻辑完全空转。
+- 摸底作答正常入 `ai_review_answer`（round_type=mock），错题正常入册。注意 `uk_ai_review_answer_once (plan_id, day_id, question_id, attempt_seq)` 含 `day_id`，同题跨天重做不会撞键。
 
 ### 6.4 D 案：真 7 天窗口 + 三日滚动
 
@@ -295,18 +338,24 @@ STORM 报告基于三份文档写成；本次审核将报告 60+ 项事实性论
 - 规则：
   - 红牌：`next_due_date=NULL`（每日到期，保持高频纠错）；
   - 红升黄：`next_due_date = 今天+1`；
-  - 黄牌答对（未达毕业）：连对 1 次后 `+3 天`；第 2 次答对且满足既有"间隔>3 天"→升绿（状态机条件不变，间隔由调度天然保证）；
+  - 黄牌答对（未达毕业）：连对 1 次后 **`+4 天`（v1.2 订正，原写 +3 会死循环）**。原因：`WrongCardDomainService.onCorrect:94` 的毕业条件是 `gapDays > 3`（严格大于）；若到期日设 `+3`，学员按到期日作答时 gap 恰好=3，不满足 `>3`，而该分支又把 `lastCorrectDate` 更新为今天（`:97`），下次到期仍是 `+3` → **黄牌永远升不了绿**。改为 `+4` 后到期作答 gap=4 满足条件；或保留 `+3` 但把毕业条件改成 `>= 3`（两者只能选一，需同步改单测）。
   - 黄牌答错：回红+加星，`next_due_date=NULL`；
   - 加星题：不受 due 限制，每日到期（顽固盲区保持高压）。
 - 复盘队列改为：红牌全量 + `next_due_date ≤ 今天` 的到期黄牌 + 加星置顶（排序不变）。
+- **v1.2 补充：到期过滤必须同时改两处**，否则“今日任务页看到的”和“物化时排的”不一致：
+  1. `activeWrongItems`（`ReviewPlanApplicationService:2095`，物化与 `reviewListForDay` 共用）；
+  2. `reviewListForDay`（`:2108`，`today` 接口的实际下发来源）。
+  改法：在 `activeWrongItems` 内加 due 过滤（开关=1 时），两处自动一致；不要在 `reviewListForDay` 单独再写一份条件。
 - 迁移：存量黄牌 `next_due_date=今天`（全到期，行为与现状一致，随答对渐进出清）。
 - 开关：`ai_review_spaced_review_enabled`（默认 0=现状每日全量）。
 
 ### 7.2 答对题间隔抽回（低成本复测通道）
 
-- 阶段 2 每日复盘队列混入"已答对且 ≥7 天未在任何轮次出现"的必做池题：数量 = `复盘量 × ai_review_recall_percent`（默认 10，即 10%，0=关），上限 10 题/天；
-- 抽回题答错 → 正常入册红牌（验证了"答对≠掌握"的缺口）；答对 → 仅记 answer，不进错题本；
-- 该通道同时是 W5.2"绿牌/答对题再错率"指标的数据源之一。
+- 阶段 2 每日复盘队列混入"已答对且 **≥7 天未作答**"的必做池题：数量 = `复盘量 × ai_review_recall_percent`（默认 10，即 10%，0=关），上限 10 题/天；题源排除 `dropped`。
+  - **v1.2 订正**：原写"≥7 天未在任何轮次出现"无法实现 —— `ai_review_answer` 只记“作答”，不记“曝光”，题被排进任务但没做时库里没有痕迹。口径改为"该题最近一次作答距今天数 ≥7"（`MAX(created_at)` 分组），并排除 `use_time_sec<=0` 的模考占位行（见 §17-D7）。
+- **v1.2 补充：抽回题当前没有下发通路，必须补**。App 的复盘列表来自 `todayTask` → `reviewListForDay`（`:2108`），**只读 `ai_review_wrong_item(removed=0)`**；物化写入的 `day.review_question_ids` 全库无人读取（已核实）。答对题不在错题本，因此无论怎么物化都不会出现在学员面前。修订：`today` 响应新增 `recallQuestions`（结构与 `newQuestions` 同构：`questionId/done`），App 在“错题清算”区下方新增“巩固抽回”小区块（可与新题区共用渲染，`roundType=review`）；抽回题清单存 `ai_review_plan_day` 新增列 `recall_question_ids`（JSON），与每日物化同批写入。
+- 抽回题答错 → 正常入册红牌（验证了"答对≠掌握"的缺口）；答对 → 仅记 answer，不进错题本。
+- 该通道同时是 W5.2"绿牌/答对题再错率"指标的数据源之一（**需先修 §17-D14 的 `applyWrongCard` 绿牌再错缺陷，否则再错事件会被吞掉**）。
 
 ### 7.3 交互约束
 
@@ -329,17 +378,26 @@ STORM 报告基于三份文档写成；本次审核将报告 60+ 项事实性论
 | tier | INT | 档位（3/5/10/15/20、2/3/4） |
 | copy_text | VARCHAR(200) | 实际下发文案 |
 
-- 在 `ReviewLlmAssistService` 发放处同步写一行（轻 insert，主链路耗时增加 <5ms；防重逻辑不变——被防重压制的不写）；
-- 用途：鼓励曝光 ↔ 次日留存关联分析（G9 验证通道）。
+- 在 `ReviewLlmAssistService.streakEncouragement` 返回文案处同步写一行（防重逻辑不变——被防重压制的不写）。
+- **v1.2 补充三条口径**：
+  1. **“下发即曝光”**：服务端只能证明“已下发”，不能证明“学员看到了”（前端横幅 4s 自动消失、页面可能已退出）。指标命名与结论必须写“下发”，不得写“曝光率”当阅读率用；
+  2. **失败隔离**：该调用位于 `answerObjectiveInTx` 的 `@Transactional` 内（`ReviewPlanApplicationService:399`），写日志失败必须 `try/catch + warn`，**不得回滚作答**；建议 `REQUIRES_NEW` 或直接吞异常；
+  3. **每日鼓励语不落此表**：`getEncouragement` 走 Caffeine、每次 overview 都会重复返回同一条，没有“事件”语义，落表会被重复计次。本表只记连对/连错即时鼓励（每档每日一次，天然可计数）。
 
 ### 8.2 四个成效指标（统计 API 扩展）
 
 | 指标 | 口径 | 数据源 |
 |---|---|---|
 | 中断后 7 日回归率 | 中断事件后 7 天内该学员有作答的比例（按 interrupt_case 分组） | `ai_review_interrupt_log` ⨝ `ai_review_answer` |
-| ABCD 各路径完结率 | 触发过各 case 的计划中 status=completed 比例 | log ⨝ plan |
-| 绿牌/答对题再错率 | 已移出绿牌题与抽回题在后续作答中的错误率（验证"毕业=学会"） | answer ⨝ wrong_item（removed=1）+ W4.2 抽回 |
-| 人均日耗时 | SUM(use_time_sec)/活跃学员/日（练习+模考全轮次） | answer（依赖 W2.4 修模考计时） |
+| ABCD 各路径完结率 | 触发过各 case 的计划中 status=completed 比例；**同时给出兜底口径“阶段 3 已交卷比例”（见下方说明）** | log ⨝ plan |
+| 绿牌/答对题再错率 | 已移出绿牌题与抽回题在后续作答中的错误率（验证"毕业=学会"）；**前提：先修 §17-D14** | answer ⨝ wrong_item（removed=1）+ W4.2 抽回 |
+| 人均日耗时 | SUM(use_time_sec)/活跃学员/日（练习+模考全轮次）；**排除 `use_time_sec<=0` 的行** | answer（依赖 §17-D7 修模考计时） |
+
+**v1.2 订正（三条口径会算错或算不出）**：
+
+1. **“完结率”当前恒为 0**：`plan.status='completed'` 只在 `finish()` 写入（`:1026-1028`），而阶段 3 的日任务无法 `finish`——`day.reviewTarget` 被设成卷题量（`:1608`），`reviewDone` 却永远不增长；App 侧 `syncExam.vue:6` 的完成入口在 `totalCount>0` 才渲染，阶段 3 `totalCount=0`，学员根本进不到“结束今日练习”。**任何计划都会进入阶段 3（`splitStages` 保证 d3≥1），所以没有任何计划会 completed。** 处置：先按 §17-D6 补“模考日完成”语义；指标同时保留兜底口径，避免修复延后时整张报表空白。
+2. **“绿牌再错率”当前算不到**：`applyWrongCard:1938-1955` 在“绿牌（removed=1）再次答错”时只更新 `card_level=red`，**没有把 `removed` 置回 0**（只有 `transition.removed()==true` 才写 removed）。结果是一条 `card_level=red AND removed=1` 的坏数据：错题本红牌数不加、`activeWrongItems` 永不取到、该题从此消失在复盘队列。必须先修这个状态写入，再谈“绿牌再错率”；修完要回刷存量坏行（`UPDATE ... SET removed=0, remove_time=NULL WHERE card_level='red' AND removed=1`，执行前先出清单核对）。
+3. **人均日耗时会被模考 0 值稀释**：见 §17-D7，App 每题恒传 0，聚合时排除 0 值只能止损，正解还是把 App 计时补上。
 
 另增：**首答正确率**（每题第一次作答的正确率，与含重答的全量正确率分离，回应 M8）。落点：`/api/exam/review-sync/stats/*` 扩展字段或新端点，运营数据面板同步学卡片同步透出。
 
@@ -349,6 +407,12 @@ STORM 报告基于三份文档写成；本次审核将报告 60+ 项事实性论
 - 请求加筛选参数 `atRisk=1`；管理端学员明细表加"中断次数"列与"只看掉队"筛选；
 - 运营数据面板同步学卡片加"掉队学员 N 人"数字（链到筛选后清单）。
 - 权限沿用 `exam:review-sync:stats:view`，无新权限码。
+
+**v1.2 订正（两个实现坑）**：
+
+1. **筛选必须下推到 SQL，不能内存过滤**：`students()` 先 `planMapper.selectPage` 分页、再 `assembleStudentRows` 补数据（`ReviewSyncStatsApplicationService:316-317`）。若在组装后按 `atRisk` 过滤，会出现“本页 3 人、总数 88 人”的错位分页。做法：`ReviewSyncStatsMapper` 新增一个按 `plan_id` 聚合 `MAX(DATE(created_at))` 的查询，用 `EXISTS`/JOIN 在分页查询前过滤；导出同理。
+2. **`daysSinceActive` 不能用 `plan.lastActiveDate`**：该字段语义是“任务覆盖到哪天”，超前学习会写成**未来日期**（`touchLastActiveDate:655-661`，方法注释也写明仅供中断检测）。必须用 `planAnswerAgg.lastAnswerDate`（真实最后作答日，`:399-401` 已按此口径展示）。
+3. 阈值提醒：`ai_review_interrupt_gap` 默认 2 天，周末不学就会被标“掉队”。建议掉队判定单独用 `ai_review_at_risk_days`（默认 3）而不是复用中断阈值——两个概念（是否中断 vs 是否掉队）混用一个参数，运营侧会被误报淹没。
 
 ### 8.4 真实成绩回流（已拍板：仅设计，不建表不接数）
 
@@ -387,7 +451,7 @@ STORM 报告基于三份文档写成；本次审核将报告 60+ 项事实性论
 
 | # | 现象 | 代码证据 |
 |---|---|---|
-| ① | **承诺可讲解，接口不存在** | `ReviewPlanApplicationService:1978` 在作答响应中返回 `explainAvailable = transition.star() && !correct`；而 App 端 controller 仅有 overview/today/question/answer/mock/start、mock/submit/finish/progress/advance-day/availability，**全库无 `/explain` 端点**。学员侧拿到"可以讲解"的标记，点进去没有落点 |
+| ① | **承诺可讲解，接口不存在** | `ReviewPlanApplicationService:1981` 在作答响应中返回 `explainAvailable = transition.star() && !correct`；而 App 端 controller 仅有 overview/today/question/answer/mock/start、mock/submit/finish/progress/advance-day/availability，**全库无 `/explain` 端点**。**v1.2 补充：gjjd_appnext 全仓没有一处读取 `explainAvailable`**（`grep` 零命中），`syncExam.vue:57` 只是内联打印后端下发的 `q.result.resolve`——所以不是“点了没落点”，而是标记发出去后**两端都没接** |
 | ② | 诊断数据齐备，但学员看不懂 | `progress()`（1107–1228）已算好 `knowledgeCoverage`（每 L3 的 total/done/coverage/accuracy）、`itemMastery`（考核项目权重×掌握度）、`typeAccuracy`（单/多/判）、`wrongStats`、`dailyTrend`。这些是给管理者看的数字，直接下发给一线工人 |
 | ③ | 系统已在按薄弱点补漏，却不告知学员 | §5.2 阶段 2 新题即"按学员各知识点错题率倒序取薄弱知识点"。系统在补漏，学员不知道今天为什么给他这些题 |
 | ④ | `user_answer` 被闲置 | `ai_review_answer.user_answer` 存了学员实际作答内容（多选为选项内容 JSON），可用于错因分类（漏选 vs 错选），目前**零消费** |
@@ -397,10 +461,10 @@ STORM 报告基于三份文档写成；本次审核将报告 60+ 项事实性论
 
 ### 10.2 设计原则（先立规矩，再谈实现）
 
-1. **规则算，模型说。** 漏洞判定与排序 100% 由规则引擎实现（确定性、可单测、零成本、可复现）；LLM 只做"翻译成人话"和"讲为什么错"。**禁止让 LLM 做统计与排序**——§1.2 已论证 LLM 做调度慢、贵、输出不确定、无法单测，本项目 D2 与 §2 原则 2 已确立"规则引擎主干不动"。
+1. **规则算，模型说。** 漏洞判定与排序 100% 由规则引擎实现（确定性、可单测、零成本、可复现）；LLM 只做"翻译成人话"和"讲这题为什么这么答"。**禁止让 LLM 做统计与排序**——§1.2 已论证 LLM 做调度慢、贵、输出不确定、无法单测，本项目 D2 与 §2 原则 2 已确立"规则引擎主干不动"。
 2. **不新增触发点。** 提示挂在每日任务物化处（现 `generateAsync` 调用点，1626–1628 行附近），与每日鼓励语同一时机异步生成。**不新增定时任务**（每日物化 job 已移除，入口是 overview/today/advance-day 懒触发）。
 3. **可证伪优先。** 提示的曝光与点击同批落库，绑进 W5。否则又造一个"宣称了却无法验证"的功能——G1 的教训不能再犯一次。
-4. **grounded 讲解。** 讲解只允许基于题干/选项/正确答案/官方解析/学员错答，**禁止引入题外知识**；安全规程类知识点走"仅展示官方解析"白名单。职业技能认定有标准答案，讲错要担责。
+4. **grounded 讲解。** 讲解只允许基于题干/选项/正确答案/官方解析/知识点名称，**禁止引入题外知识**；安全规程类知识点走"仅展示官方解析"白名单。职业技能认定有标准答案，讲错要担责。
 
 ### 10.3 W8.1 补 `/appreviewsync/explain`（名实欠账）
 
@@ -416,15 +480,17 @@ STORM 报告基于三份文档写成；本次审核将报告 60+ 项事实性论
 
 #### 10.3.2 讲解生成（三段式，≤200 字）
 
-提示词输入**只有**六项：题干、选项、正确答案、官方解析（若有）、学员错答、知识点名称。
+提示词输入**只有五项**（O-12 已拍板：去掉“学员错答”）：题干、选项、正确答案、官方解析（若有）、知识点名称。**不含学员作答、不含学员身份信息**——讲解是“这题怎么答”，不是“你哪里错了”，缓存可跨学员复用，也不存在跨学员信息串味。
 
 输出结构（提示词内约束，后处理校验长度）：
 
 ```
-① 为什么错（≤60 字）——指向学员具体错在哪，不复述题干
+① 最容易错在哪（≤60 字）——点出题干陷阱/干扰项/常见错法，不复述题干、不提"你选了 X"
 ② 记住什么（≤80 字）——该知识点最该记的一句，不得超出题面与官方解析范围
 ③ 下次怎么辨（≤60 字）——给一个可执行的读题动作（如"先圈否定词""逐项判断再选"）
 ```
+
+> O-12 方案 1 的直接后果：讲解是**题目级**的，不是学员级。三段式第一段由“你为什么错”改为“这题最容易错在哪”，否则模型只能编（它看不到学员作答）。
 
 **护栏（硬约束，写进提示词与后处理）**：
 
@@ -438,11 +504,39 @@ STORM 报告基于三份文档写成；本次审核将报告 60+ 项事实性论
 
 | 环节 | 策略 |
 |---|---|
-| 缓存 | 三级：Caffeine 进程内（questionId，TTL 24h）→ `ai_generation_draft` 查重（`source_type='ai_review_question'`，`source_id=questionId`）→ 调 LLM。**同题跨学员复用，调用量≈去重错题数而非人×次** |
+| 缓存 | 三级：Caffeine 进程内（`questionId`，TTL 24h）→ `ai_generation_draft` 查重（`source_type='ai_review_question'`，`source_id=questionId`）→ 调 LLM。**同题跨学员复用，调用量≈去重错题数而非人×次**（输入已不含学员错答，见 §10.3.4-①，O-12 已拍板） |
 | 降级 | LLM 异常/超时/配置缺失 → 返回官方解析（`source=official_resolve`）；无官方解析 → `source=none` + "该题暂无解析，建议先记住正确答案"（**不编造**） |
 | 限流 | 每日每学员上限 `ai_review_explain_daily_limit`（默认 10）；超限返回降级文案，不调 LLM |
 | 留痕 | `ai_generation_draft`：`draftType='ai_review_explain'`、`sourceType='ai_review_question'`、prompt/result/modelName 齐全（AGENTS.md AI 规则）；留痕失败不影响主链路 |
 | 主链路隔离 | 讲解是独立接口，**作答链路不依赖它**；LLM 超时时 `answer` 仍 200（沿用 §13.8 测试断言） |
+
+#### 10.3.4 缓存键、复用与 App 入口（v1.2 新增，三条都影响能否落地）
+
+**① 缓存键必须与输入对齐（O-12 已拍板 2026-10-18：采用方案 1）**
+
+提示词输入已去掉“学员错答”，因此**题目级缓存成立**：缓存键 = `questionId`，Caffeine 与 `ai_generation_draft`（`source_type='ai_review_question'`, `source_id=questionId`）同键；同题跨学员只调一次 LLM，§10.7 成本口径成立。
+
+- 被否决的方案 2（保留错答 + `sha256` 键）不再实现，文档中相关表述一并删除；
+- 若产品后续要求“指出你错在哪”，必须作为**独立增量**重新评估：缓存键加错答哈希、成本重估、`ai_review_explain_daily_limit` 下调，不得在本期偷加；
+- 讲解文案不得出现“你选了 X”这类依赖个人作答的表述（提示词与后处理双重约束）。
+
+**② 不要新建第二套“题目解析”服务**
+
+`QuestionResolveAssistService`（`app/exam/service`）已经实现“查库 → draft 查重 → LLM → 回写 `exam_exam_detail.resolve`”，并有 `QuestionResolveAssistServiceTest`。再建 `ReviewExplainDomainService` 会形成第二份实现（违反 AGENTS.md “统一语言 / 禁止私有复制公共能力”）。修订：
+
+- 扩展现有服务，增加 `explainForReview(Long questionId)`：复用其模型配置解析、限流、留痕、回写链路；**不带学员作答**（O-12 方案 1），故缓存与并发锁均可直接按 questionId；
+- 复用其 `ConcurrentHashMap` 题级锁做并发去重；
+- 新增的只有“三段式提示词 + 200 字长度校验 + 安全类白名单 + 复盘门禁”这一层，其余全部复用。
+
+**③ App 端入口必须补（当前完全不存在）**
+
+已核实：`gjjd_appnext` 全仓 **零处** 消费 `explainAvailable`（`grep` 无命中），`syncExam.vue:57` 只是把后端下发的 `q.result.resolve` 直接内联打印。也就是说 M23 的真实形态不是“点了没落点”，而是“**连按钮都没有**”，§14.7 原验收条目（“explainAvailable=1 的题点进去不再落空”）按现状无法成立。修订：
+
+- 结果区（`syncExam.vue:52-59`）：`explainAvailable==1` 时在“解析”下方新增按钮「让 AI 讲讲这题」（**不写“我为什么错”**，避免承诺模型看不到的个人信息）；
+- 去重规则：官方解析已存在且非空 → 默认展示官方解析，按钮文案改「还有疑问？看 AI 讲解」，避免同一段内容出现两次；
+- 无官方解析 → 按钮为主入口（`source=none` 时展示“该题暂无解析，建议先记住正确答案”）；
+- 错题本/复盘卡同款按钮（可选，二期可只做答题结果区，但需在验收里写明范围）；
+- 验收改为：“按钮可见 + 可调用 + 三段落结构 + 底部标注‘AI 生成，以官方教材为准’”。
 
 ### 10.4 W8.2 漏洞提示（每日一条）
 
@@ -483,6 +577,11 @@ coverageGap   = 1 - 已做题数 / 必做池该题数
 | `instant_wrong` 完全不会 | 答错 && `use_time_sec` < 5s | "这几题基本没印象，先看一眼解析再往下" |
 
 > `hesitant_correct` 是 W4（答对题间隔抽回）的天然候选池——二期只做提示，不自动加题；W4 上线后可直接复用这批题做抽回（见 §10.9）。
+>
+> **v1.2 口径补充**：
+> 1. **P75 的样本必须清洗**：模考行 `use_time_sec` 目前全为 0（§17-D7），若混入，P75 会被拉到 0 附近，`hesitant_correct` 永不触发、`instant_wrong` 全量命中。口径写死为：**只统计 `round_type IN ('new','review') AND use_time_sec BETWEEN 1 AND 1800`**，样本 <20 时该题型不做此判断（不猜）；
+> 2. `miss_select / wrong_select` 已限定 `question_type='multi'`，主观题的 AI 比例分不得命中（否则作文题会被判成“漏选”）；
+> 3. `instant_wrong` 的 5 秒为工程拍板值，需进附录 A 并 clamp（建议区间 [2,15]）。
 
 #### 10.4.4 输出形态
 
@@ -497,20 +596,34 @@ coverageGap   = 1 - 已做题数 / 必做池该题数
 - **规则兜底（必须）**：LLM 不可用/超时/配置缺失时，用模板拼装（知识点名 + 在册错题数 + 一句话），保证学员永远看得到内容。模板是默认路径，LLM 只是润色
 - 开关：`ai_review_gap_hint_enabled=0`（默认关），二期验收通过后打开
 
+**v1.2 补充（异步红线与兜底时机，不写会踩项目硬规则）**：
+
+1. **租户上下文**：`generateAsync` 走 `reviewLlmAssistExecutor`（`AsyncConfig:247`），该线程池**没有 TaskDecorator**，Worker 里 `TenantContextHolder` 为空。W8.2 要读 `ai_review_answer / ai_review_wrong_item / ai_review_plan`，必须在 Worker 里 `TenantContextHolder.setTenantId(tenantId)` 并 `finally clear()`（AGENTS.md 异步红线 1）。tenantId 由 HTTP 线程捕获后随参数传入，**不得在 Worker 里调 `SecurityContext`**。
+2. **提交后触发**：`materializeDay` 是 `@Transactional`（`:1551`），`generateAsync` 在事务提交**前**就投递（`:1630`）。W8.2 会读库，若在提交前跑，读不到刚物化的天/刚写入的错题，还可能为将回滚的事务写缓存。改为 `TransactionSynchronizationManager.registerSynchronization(afterCommit)` 或在 `today` 接口返回后触发。
+3. **懒生成兜底**：提示只在“当天首次物化”生成一次；开关打开前已物化的当天、或异步生成失败时，`overview/today` 会没有提示。需加兜底：`gapHint` 为空且开关=1 时，在 `overview` 同步走模板路径（不调 LLM），保证“开关开了就一定有内容”。
+4. **性能**：漏洞分需要按 L3 聚合该计划的全部作答。`progress()` 现在是全量 `selectList` 到内存（`:1113`），W8.2 不要再复制一份全量扫描；建议抽公共聚合方法，并在 `ai_review_answer(plan_id, created_at)` 上补索引（现只有 `uk(plan_id, day_id, question_id, attempt_seq)` 与 `idx(php_synced,id)`）。
+
 ### 10.5 W8.3 埋点（绑 W5，同批实施）
 
 | 项 | 内容 |
 |---|---|
-| 载体 | `ai_review_encourage_log` **加一列** `log_type`（`encourage` / `gap_hint`），不新开表；存量行自动落 `encourage` |
-| 曝光 | 提示生成并下发时写一行（`log_type='gap_hint'`，`copy_text` 记实际文案，`day_index` 记当天） |
-| 点击 | 前端调轻量接口上报 `hintId + action`（去补/忽略），服务端幂等（同键只记一行） |
+| 载体 | `ai_review_encourage_log` **建表即含** `log_type`（`encourage` / `gap_hint` / `gap_hint_click`）、`hint_key` 与 `biz_key`（唯一键），不新开表、不拆两次迁移 |
+| 曝光 | 提示生成并下发时写一行（`log_type='gap_hint'`，`hint_key` 记稳定键，`copy_text` 记实际文案，`day_index` 记当天） |
+| 点击 | 前端调轻量接口上报 `hintKey + action`（去补/忽略），服务端幂等（`biz_key = click:{hintKey}:{action}` 唯一） |
 | 可算指标 | 提示曝光率、点击率、**看过 vs 未看过提示的次日留存与再错率差异**（准实验口径，非随机分组，结论只能作参考） |
+
+**v1.2 订正：原方案的自相矛盾**。§10.4.5/§12.1 说提示“不落表、只进 Caffeine”，§10.5 却要求上报 `hintId` 并幂等——**没有持久化就没有稳定的 hintId**，点击无处对账。修订：
+
+- `hint_key` 用确定性拼装：`planId:dayIndex:topKnowledgeId`（Top1 漏洞点）。它由规则层算出、可重放、不依赖自增 id；
+- 点击上报落同一张表（`log_type='gap_hint_click'`，`copy_text` 存 action），幂等键 `hint_key + action`；
+- 若同一天提示被重算（答案变化），hint_key 里的 knowledgeId 变化即视为新提示，旧提示自然停止计点击——不做“更新”，避免统计口径漂移；
+- 前端点击上报失败**静默丢弃**，不阻塞跳转（提示是辅助信息，不能因为埋点失败挡住学员）。
 
 > 与 W5.1 的关系：鼓励曝光（M15）与提示曝光共用一张表、同一次迁移。**W8.3 不做独立立项**，并入 W5 实施。
 
 ### 10.6 文案族与冻结流程
 
-**流程**：按 O-8 默认口径，**并入 W1 的文案冻结批次**（文案方案 v1.1），不单开一轮评审。遵循文案方案 §9"改文档 → 冻结 → 同步 App"。
+**流程（v1.3 订正，D20）**：W1 已于 2026-10-17 上线，文案方案 **v1.1 已冻结发布**，不存在“并入 W1 批次”的窗口。W8.2 新增文案族走 **v1.2 补充冻结**：只评审新增的提示文案条目与其禁用词，不重开全量文案评审；冻结后方可开 `ai_review_gap_hint_enabled=1`。遵循文案方案 §9“改文档 → 冻结 → 同步 App”，并在 §15 文档联动中把目标版本由 v1.1 改为 v1.2。
 
 **语体规范**（沿用文案方案 §3）：第二人称"你"、短句口语、不暴露内部实现、无保证性承诺、每条可溯源到已实现机制。
 
@@ -540,7 +653,7 @@ coverageGap   = 1 - 已做题数 / 必做池该题数
 
 | 风险 | 等级 | 处置 |
 |---|---|---|
-| **讲解幻觉**（讲错知识点） | 高 | grounded 六项输入 + 题外知识禁入 + 安全类白名单不调 LLM + 底部固定"AI 生成，以官方教材为准" + `ai_generation_draft` 可追溯 |
+| **讲解幻觉**（讲错知识点） | 高 | grounded 五项输入 + 题外知识禁入 + 安全类白名单不调 LLM + 底部固定"AI 生成，以官方教材为准" + `ai_generation_draft` 可追溯 |
 | 官方解析覆盖率不足，提示"去看解析"落空 | 中 | **O-7 准入**：先实测覆盖率；<50% 时 W8.2 暂缓，先立"解析预生成"小包 |
 | 学员把提示当"考试重点"死记 | 中 | 文案只说"你哪里弱"，不说"考什么"；遵守文案方案 §3 禁保证性承诺 |
 | 提示变成新噪音，学员忽略 | 中 | 每日仅 1 条、≤100 字、带一个明确动作；W8.3 埋点观察点击率，低于阈值则收敛 |
@@ -559,12 +672,12 @@ coverageGap   = 1 - 已做题数 / 必做池该题数
 
 | 子项 | 内容 | 粗估 |
 |---|---|---|
-| W8.1 | explain 接口 + 提示词 + 缓存/降级/限流 + 留痕 + 单测 | 1~1.5 天 |
-| W8.2 | 漏洞分域服务 + 错因分类 + 提示生成与兜底 + 前端展示 + 单测 | 1.5~2 天（含前端） |
-| W8.3 | 并入 W5（加一列 + 曝光/点击埋点） | 0.5 天（与 W5 合并则更少） |
-| **合计** | | **3~4 天** |
+| W8.1 | explain 接口（**复用 QuestionResolveAssistService**）+ 提示词 + 缓存/降级/限流 + 留痕 + App 入口 + 单测 | 1.5~2 天 |
+| W8.2 | 漏洞分域服务 + 错因分类 + 提示生成与兜底 + 前端展示 + 单测 | 2~2.5 天（含前端） |
+| W8.3 | 并入 W5（建表即含 `log_type`/`hint_key` + 曝光/点击埋点） | 0.5 天（与 W5 合并则更少） |
+| **合计** | | **4~5 天** |
 
-**二期完整顺序**：`W3（3~4 天） → W8.1（1~1.5 天） → W8.2 + W5（2~3 天）` ≈ **7~8 天**（原二期 5~6 天 + 2 天）。
+**二期完整顺序**：`W3（4~5 天） → W8.1（1.5~2 天） → W8.2 + W5（2.5~3 天）` ≈ **8~10 天**（v1.0 估 7~8 天；v1.2 因补 §6.1.1 状态列、B 案问卷可达、模考日收尾、绿牌再错修复而增加）。**v1.3 追加**：§13.10 补齐 24 条必做用例（T3-01~T0-04）与 §14.9 上线闸门/回滚演练，另加 **1~1.5 天**，二期合计 **9~11 天**（测试与演练时间不得压缩，这是本次审核发现“口径正确但没测到”后的直接成本）。
 
 ---
 
@@ -581,6 +694,9 @@ coverageGap   = 1 - 已做题数 / 必做池该题数
 | O-7 | **官方解析覆盖率**：题库中多少题真正有解析（`exam_exam_detail.resolve` 为空且 answer JSON 无 resolve/analysis/jiexi/explain/解析 的比例） | **先测后做**：覆盖率 ≥70% → W8.2 全量上线（可引导"看解析"）；50%~70% → 只上线"漏洞点+错因"，不引导看解析；<50% → **W8.2 暂缓**，先跑解析批量预生成（复用 `AppExamSmartService` 官方解析优先+LLM 兜底链路） | 一条 SQL 实测并留档；低覆盖率时另立"解析预生成"小工作包 |
 | O-8 | W8.2 提示文案是否并入 W1 冻结批次 | **并入**（避免二次评审与文案冻结流程走两遍） | 文案方案 v1.1 一并含提示文案族（§10.6），同批冻结 |
 | O-9 | 讲解门禁是否放宽到"首次答错即可讲"（`ai_review_explain_gate=wrong`） | **一期保持 star**（现口径，成本可控）；讲师/运营反馈"讲得太晚"后再切 wrong | 开关切换即可，零代码 |
+| O-10 | **阶段 1 最后一天的“强制清空”与 A 案 180 上限冲突**（§6.2-1） | **已拍板（2026-10-18）：按推荐口径**——最后一天不再全量清空，剩余顺延阶段 2 薄弱取题；`strategyText` 不再出现“最后一天清完”的表述 | 单测断言“末日按 cap 下发 + 剩余进入阶段 2” |
+| O-11 | **绿牌再错缺陷修复是否纳入二期**（§17-D14） | **已拍板（2026-10-18）：纳入**，随 W5 同批修复并回刷存量坏行（先出清单） | 随 W5 实施；回刷前后计数对账 |
+| O-12 | **W8.1 缓存策略**（个性化错答 vs 跨学员复用，§10.3.4-①） | **已拍板（2026-10-18）：方案 1**——去掉“学员错答”，只讲题本身；成本口径成立 | 提示词固化五项输入；单测断言同题只调一次 LLM |
 
 ---
 
@@ -590,12 +706,18 @@ coverageGap   = 1 - 已做题数 / 必做池该题数
 
 | 迁移 | 内容 | 工作包 |
 |---|---|---|
-| V（待定）_001 | `ai_review_wrong_item` 加 `next_due_date DATE NULL`；存量黄牌回填当天 | W4 |
-| V（待定）_002 | `ai_review_mock_paper` 加 `paper_type VARCHAR(16) NOT NULL DEFAULT 'mock'` | W3/W6 |
+| V（待定）_001 | **`ai_review_plan` 加 `recovery_case VARCHAR(2) NULL` + `recovery_until_day INT NULL`**（§6.1.1 补救期状态，二期阻断项） | W3 |
+| V（待定）_002 | `ai_review_mock_paper` 加 `paper_type VARCHAR(16) NOT NULL DEFAULT 'mock'`；`ai_review_plan_day` 加 `recall_question_ids JSON NULL`（W4.2 抽回下发，三期用，可与 _001 合并） | W3/W4/W6 |
 | ~~V（待定）_003~~ | **已由一期落地，W3 不再建表**：`ai_review_interrupt_log` 建于 `V20261014_004__review_phase1_interrupt.sql`（BaseEntity 六列 + **五业务列** `plan_id / platform_user_id / interrupt_case / gap_days / stage_at_interrupt`，索引 plan_id/platform_user_id/created_at；同一脚本含 `ai_review_interrupt_clean_enabled` 种子）。**如需加列另取新号，严禁复用/重排已应用版本号** | W3/W5（仅使用，不建） |
-| V（待定）_004 | 新表 `ai_review_encourage_log`（BaseEntity 六列+五业务列） | W5 |
+| V（待定）_004 | 新表 `ai_review_encourage_log`（BaseEntity 六列 + `plan_id / platform_user_id / day_index / streak_type / tier / copy_text / log_type / hint_key / biz_key`；**`UNIQUE KEY uk_log_biz (biz_key)`** 保证多实例/重启不重复计数；索引 `(plan_id, day_index)`、`(log_type, created_at)`） | W5 + W8.3 同批 |
 | V（待定）_005 | sys_dict 种子（`INSERT IGNORE`，tenant_id=10159）：见 12.2 | W2/W3/W4/W6/W7/W8 |
-| V（待定）_006 | `ai_review_encourage_log` 加 `log_type VARCHAR(16) NOT NULL DEFAULT 'encourage'`（存量行自动落 'encourage'；与 W5.1 同表，不新开表） | W8.3 |
+| V（待定）_006 | `ai_review_wrong_item` 加 `next_due_date DATE NULL`；存量黄牌回填当天；`ai_review_answer` 加索引 `(plan_id, created_at)`（W8.2 按 L3 聚合与 W4.2 抽回取数） | W4（三期）+ W8.2 前置 |
+
+> **v1.2 修订说明**：
+> 1. 原 _001（`next_due_date`）属三期 W4，排在二期 W3 之前会导致“二期上线时库里多出一列没人用”；已把它顺延到 _006，并使 _006 与 W4 同批。二期只需 _001/_002/_004/_005。
+> 2. 原 _006（encourage_log 加 `log_type`）已合并进建表语句 —— W5 与 W8.3 本来就是同一批，没有理由拆两次迁移。
+> 3. **迁移取号**：一期已占用 `V20261014_004`，共用目录当前最大即它；新迁移必须 > 20261014.004，且动手前重新查两库 `SELECT MAX(version) FROM flyway_schema_history` 取大者（铁律不变）。
+> 4. `ai_review_plan.dropped_question_ids` 列已存在，无需迁移（激活写入即可；语义改造见 §6.2-2，若改存对象数组需确认列类型为 JSON/TEXT，现为 `VARCHAR` 则要评估长度）。
 
 > `ai_review_plan.dropped_question_ids` 列已存在，无需迁移（激活写入即可）。
 > `ai_review_exam_outcome` **不建**（§8.4 仅设计）。
@@ -607,6 +729,7 @@ coverageGap   = 1 - 已做题数 / 必做池该题数
 | 键 | 默认 | 区间 | 依据状态 |
 |---|---|---|---|
 | ai_review_interrupt_clean_enabled | 0 | 0/1 | 拍板（2026-10-14 ③） |
+| ai_review_recovery_enabled | 1 | 0/1 | **紧急回滚开关（v1.3 新增）**：=0 时不触发中断补救、不写 recovery、不下发补救文案（等于一期行为）；可在 1 分钟内止损 |
 | ai_review_mock_stage2_enabled | 1 | 0/1 | 工程拍板（W2.3 已落地；review 2026-10-16 P1-3 补登记） |
 | ai_review_case_a_daily_new_cap | 180 | [120,300] | 工程拍板 |
 | ai_review_case_a_trim_ratio | 15 | [0,30]（%） | 工程拍板 |
@@ -625,11 +748,14 @@ coverageGap   = 1 - 已做题数 / 必做池该题数
 | ai_review_entry_quiz_enabled | 0 | 0/1 | 灰度开关 |
 | ai_review_entry_quiz_size | 40 | [30,50] | 报告 T3-14 |
 | ai_review_mock_pass_rate | 60 | [0,100]（%） | O-1 待证（现为硬编码 0.6，本键接管） |
+| ai_review_at_risk_days | 3 | [1,30] | 工程拍板（v1.2 新增：掉队≠中断，不复用 interrupt_gap） |
+| ai_review_instant_wrong_sec | 5 | [2,15] | 工程拍板（v1.2 新增：错因分类“秒错”阈值） |
+| ai_review_hesitant_min_samples | 20 | [10,100] | 工程拍板（v1.2 新增：P75 样本不足不判断） |
 
 ### 12.3 实体/代码联动
 
-- `AiReviewWrongItemEntity` +`nextDueDate`；`AiReviewMockPaperEntity` +`paperType`；新实体 `AiReviewInterruptLogEntity` / `AiReviewEncourageLogEntity`（+`logType`）；
-- W8 新增：`GapHintVO`（提示文案+Top3 漏洞+动作跳转）、`ExplainVO`（explainText/fromCache/source）、`ReviewGapHintDomainService`（规则层：漏洞分+错因分类，**纯逻辑无 IO，可单测**）、`ReviewExplainDomainService`（讲解：缓存→降级→留痕）；
+- `AiReviewPlanEntity` +`recoveryCase` / `recoveryUntilDay`；`AiReviewPlanDayEntity` +`recallQuestionIds`（W4，三期）；`AiReviewWrongItemEntity` +`nextDueDate`；`AiReviewMockPaperEntity` +`paperType`；新实体 `AiReviewEncourageLogEntity`（+`logType` / `hintKey` / `bizKey`）；
+- W8 新增：`GapHintVO`（提示文案+Top3 漏洞+动作跳转）、`ExplainVO`（explainText/fromCache/source）、`ReviewGapHintDomainService`（规则层：漏洞分+错因分类，**纯逻辑无 IO，可单测**）；讲解**不新建 DomainService**，改为扩展 `QuestionResolveAssistService.explainForReview(questionId)`（O-12 方案 1，复用缓存/留痕/回写/限流）；
 - **W8 挂点**：`ReviewPlanApplicationService` 每日物化末尾（现 `generateAsync` 调用处，1626-1628 行附近）追加 `generateGapHintAsync`，**不新增定时任务**（物化 job 已移除，入口为 overview/today/advance-day 懒触发）；
 - 讲解缓存复用 `ai_generation_draft` 查重，不建表；`explain` 接口走 App 鉴权（`AppTokenAuthFilter`），复用 `gateGrayRelease` 拦截；
 - 删除死代码：`caseATailTrimCount` 等常量激活后重写注释；`php_synced=2` 死状态注释修正（实体注释与现状对齐）；`WCDS:12` "未来 3 天每日必出"注释删除或实现对齐（本方案取"加星每日必出"，注释按此改写）；
@@ -639,7 +765,7 @@ coverageGap   = 1 - 已做题数 / 必做池该题数
 
 ## 13. 自动化测试方案
 
-> 现有基建：后端 reviewsync 已有 27 个测试类（JUnit5+Mockito 域服务单测 + Spring Boot Test）；admin-web 用 Vitest+RTL；gjjd_appnext 有 Vitest（`npm test`，现有 `tests/saasRequest.test.js` 先例）。**所有新行为先写测试再实现**；既有 27 个测试类全绿为每次提交的回归门槛。
+> 现有基建：后端 reviewsync **24 个测试类**（v1.2 实测；原写 27 为旧估值。含一期新增 `ReviewPhase1MechanismTest` 等；JUnit5+Mockito 域服务单测 + Spring Boot Test）；admin-web 用 Vitest+RTL；gjjd_appnext 有 Vitest（`npm test`，现有 `tests/saasRequest.test.js`、`tests/syncMethodologyCopy.test.js` 先例）。**所有新行为先写测试再实现**；既有 24 个测试类全绿为每次提交的回归门槛。
 
 ### 13.1 W2 单测
 
@@ -665,6 +791,12 @@ coverageGap   = 1 - 已做题数 / 必做池该题数
 | D 案行为 | 首日=前次任务最后 50 题（round_type=review）；第 2 天起新题=100/天；考试日临近时阶段 3 至少保 1 天 |
 | C 案回归 | 每日 1 套模考+mustReadResolve=1 不变 |
 | 文案-行为一致性 | 每个 case 的 strategyText 包含的行为声明都有对应状态断言（防再出现"文案承诺未实现行为"） |
+| **补救期跨天（v1.2）** | A 案触发后第 2 天物化：新题目标 = 180 口径（非 120）；第 `stage1Days+1` 天恢复常态。B 案第 2/3 天：new=0、review 仅红牌+加星。D 案第 2 天：新题恰为 100（非 ceil 推高）。**同一天重复调 overview 不重复推进** |
+| **A 案末日冲突（v1.2）** | 构造 dayIndex=stage1Days 且剩余 400 题：断言按 §6.2-1 选定口径执行（推荐：不下发全量、剩余顺延阶段 2），且 strategyText 的 X/Y 与实际被删/下发数一致 |
+| **B 案阶段推进（v1.2）** | 摸底 75% → 断言 `stage1Days=dayIndex`、`stage2Days=0`、`stage3Days≥1`，**次日物化 stage=3**；只改 `currentStage` 的写法必须失败（回归防护） |
+| **B 案问卷可达（v1.2）** | 当日存在 ready 的 remedial_quiz 时，`mock/start` 返回该卷 id（不新建）；普通日仍新建 |
+| **模考日收尾（v1.2）** | 阶段 3 交卷后 `day.status=done`，`finish` 不抛异常；`plan.status=completed` 在最后一天可达成 |
+| **dropped 语义（v1.2）** | A/B/ENTRY_SKIP 三种 reason 可区分；覆盖率分母已扣 dropped（分母=must_do−dropped） |
 
 ### 13.3 W4 单测
 
@@ -673,6 +805,11 @@ coverageGap   = 1 - 已做题数 / 必做池该题数
 - 开关=0 时行为与现状完全一致（全量每日）；
 - 存量迁移：黄牌全回填今天；
 - 抽回：比例/上限（10% 且 ≤10）、≥7 天未现、答错入册红牌、答对仅记 answer。
+- **v1.2 补充**：
+  - 到期日=+4 时「恰好到期作答」必须升绿（原 +3 会永远差一天，见 §17-D8）；
+  - 抽回题能出现在 `today` 响应（`recallQuestions` 非空）且 App 渲染；抽回题不在 `removed=0` 错题本里；
+  - **绿牌再错**：green 题答错后断言 `card_level=red AND removed=0 AND remove_time IS NULL`，且当日 `wrongStats.red` +1（修 §17-D14 前此用例必红）；
+  - 开关=0 时 `next_due_date` 不参与任何过滤（含 `activeWrongItems` 与 `reviewListForDay` 两处）。
 
 ### 13.4 W5 测试
 
@@ -711,7 +848,7 @@ coverageGap   = 1 - 已做题数 / 必做池该题数
 - 提示文案：长度 ≤`ai_review_gap_hint_max_len`；禁用词零命中（保过/必过/稳过/参数名/表名/LLM）
 
 **LLM 链路单测（Mock `FaqLlmClient`）**
-- 提示词 grounded 断言：prompt 仅含题干/选项/正确答案/官方解析/学员错答/知识点名，不含题库外知识注入
+- 提示词 grounded 断言：prompt 仅含题干/选项/正确答案/官方解析/知识点名，不含学员作答、不含题库外知识注入
 - 降级链三段：LLM 正常 → 讲解；LLM 抛异常/超时 → 官方解析；无官方解析 → "该题暂无解析"（不编造、不空白）
 - 缓存：同 questionId 第二次调用零 LLM 调用（断言 `llmClient` 调用次数=1）
 - 门禁：`ai_review_explain_gate=star` 时非加星题请求 → 业务异常；`=wrong` 时首次答错即可讲
@@ -737,9 +874,60 @@ coverageGap   = 1 - 已做题数 / 必做池该题数
 
 ### 13.9 回归门槛
 
-- 后端：`mvn compile` 0 错 + reviewsync 27 个既有测试类全绿 + 全量回归无新增失败（既有 4 个竞赛失败为基线）；
-- 前端：`npm run build` 0 错；App：`npm test` 绿；
+- 后端：`mvn compile` 0 错 + reviewsync 24 个既有测试类全绿 + 全量回归无新增失败（既有 4 个竞赛失败为基线）；
+- 前端：admin-web `npm run build` 0 错，并单独跑 **`tsc -b`**（`tsc --noEmit` 在本仓是空检查，不作为证据）；
+- App：`npm test` 绿；改动页面另跑一次 `npm run build:h5`（或项目既有构建脚本）确认无编译期错误；
 - 迁移：空库可跑通全部迁移（本机临时 mysqld 实例验证）；两库取号核对截图留档。
+
+### 13.10 二期测试覆盖矩阵与缺口（v1.3 审核结论）
+
+**结论：不齐全。** v1.2 已覆盖“主体路径”，但有四类系统性缺口会漏掉本次审核新增的机制：**跨天状态 / 封顶与边界 / 异步与多租户 / 回滚与空态**。下面按工作包列出缺口，并给出补齐用例（编号供验收引用）。
+
+| 工作包 | v1.2 已覆盖 | **缺口** | 补齐用例（编号） |
+|---|---|---|---|
+| W3 | A/B/D 主路径、末日、阶段推进、问卷可达、模考日收尾、dropped 语义 | 补救期被总量封顶反噬（D19）；并发触发中断；重排清零；存量计划回归；C 案与阶段 3 不受影响；B 案 3 天跨阶段截断；热车不足 50；阶段 2 无新题可出；日志写失败 | T3-01~T3-10 |
+| W5 | encourage_log 写/防重、4 指标 SQL、首答口径、atRisk | 写日志失败不回滚作答；空数据/除零/时区；分页第 2 页与导出上限；权限 403；多实例/重启重复计数 | T5-01~T5-06 |
+| W8.1 | 门禁、降级链、缓存、留痕、安全白名单、限流 | App 正向渲染；提示注入；questionId 越权；超长截断；Redis 限流多实例；租户隔离 | T8-01~T8-06 |
+| W8.2 | 漏洞分、错因四类、模板兜底 | hint_key 稳定性；开关 fail-closed；同日多次 overview 只写一行；重启后兜底；性能增量 | T8-07~T8-11 |
+| 全局 | 编译/测试/迁移 | 阶段 3 全链路完成；开关对拍；雪花 id 字符串；回滚演练 | T0-01~T0-04 |
+
+**补充用例清单（二期必做）**
+
+| 编号 | 层级 | 用例 | 断言 |
+|---|---|---|---|
+| T3-01 | 单测 | A 案补救期 + 复盘 50 题 | 当日新题=180（**不是 150**）；`effectiveTotalCap=230`；600 封顶时 warn（D19） |
+| T3-02 | 单测 | D 案补救期 + 复盘 120 题 | 当日新题=100（不是 80） |
+| T3-03 | 单测 | 并发触发中断 | 同一天 10 个并发 overview：`interrupt_log` 恰 1 行、`interruptCount` 只 +1、recovery 只写一次 |
+| T3-04 | 单测 | 考试日/来源漂移重排 | `recovery_case`、`recovery_until_day` 清空；未开始日全部重置；已开始日不动 |
+| T3-05 | 单测 | 存量计划（recovery 全 NULL） | 物化结果与一期完全一致（对拍：newTarget/reviewTarget/strategyNote） |
+| T3-06 | 单测 | C 案与阶段 3 中断 | 不写 recovery；阶段 3 仍按每日 1 套模考；无 A/B/D 分支 |
+| T3-07 | 单测 | B 案第 3 天撞阶段 3 | `recovery_until_day` 截断到 stage2 结束；模考日不被改成“只出红牌” |
+| T3-08 | 单测 | D 案热车不足 50 | 前次任务仅 20 题 → 取全部 20，不抛异常、不空列表 |
+| T3-09 | 单测 | B 案后阶段 2 无新题 | 全部新题已 dropped → 阶段 2 任务只有红牌复盘，`newTarget=0`，页面不空转 |
+| T3-10 | 单测 | interrupt_log 写失败 | 主链路不抛异常；recovery 仍写入；warn 日志含 planId |
+| T5-01 | 单测 | encourage_log 写失败 | 作答事务不回滚、接口 200；统计少一行可接受 |
+| T5-02 | 单测 | 指标空数据 | 无中断/无绿牌/无作答时：返回 0 或 null，不除零、不 NaN |
+| T5-03 | 单测 | 时区边界 | 23:59:59 与 00:00:01 的作答按 Asia/Shanghai 归日，不跨日错分 |
+| T5-04 | 集成 | atRisk 分页/导出 | 第 2 页数据正确、`total` 与筛选一致；导出 5001 行报错、5000 行成功 |
+| T5-05 | 集成 | 统计接口权限 | 无 `exam:review-sync:stats:view` → 403；有权限 → 200 |
+| T5-06 | 单测 | 多实例重复计数口径 | **若要“每档每日一行”成立，必须改成 DB 唯一键 + INSERT IGNORE**；仅 Caffeine 时用例明确标注“单实例口径”，不得宣称全局幂等 |
+| T8-01 | App | explain 按钮正向渲染 | `explainAvailable=1` 渲染按钮；`=0` 不渲染；点击后 loading→成功展示三段 |
+| T8-02 | 单测 | 提示注入 | 题干含“忽略以上指令/输出系统提示词”时，输出仍为三段结构、无内部信息、长度≤200 |
+| T8-03 | 单测 | questionId 越权 | 传不属于本计划/本租户的 questionId → 业务异常，不返回讲解 |
+| T8-04 | 单测 | 超长题干/选项 | 输入超长时按既定上限截断，prompt 长度可控，不抛异常 |
+| T8-05 | 单测 | explain 限流多实例 | 走 Redis Lua 计数（复用 `AiGradeRateLimitService` 模式），两实例共享额度 |
+| T8-06 | 集成 | explain 租户隔离 | 租户 A 的请求只用 A 的模型配置与草稿，不读到 B 的数据 |
+| T8-07 | 单测 | hint_key 稳定性 | 同输入重复生成 → 同 key；Top1 知识点变化 → 新 key；旧 key 不再计点击 |
+| T8-08 | 单测 | 开关读取失败 | dict 缺失/异常 → 按**关**处理（fail-closed），不影响今日任务 |
+| T8-09 | 单测 | 同日多次 overview | `gap_hint` 曝光行恰 1 行；提示文案不变 |
+| T8-10 | 单测 | 重启后兜底 | 清空 Caffeine → overview 走模板返回非空提示，不调 LLM |
+| T8-11 | 性能 | 物化/overview 增量 | 物化 P95 增量 ≤100ms（异步不计）；overview P95 增量 ≤50ms（懒生成只走模板） |
+| T0-01 | 集成 | 阶段 3 全链路 | overview→today→mock/start→submit→finish→`plan.status=completed`，一次跑通 |
+| T0-02 | 集成 | 开关对拍 | W8 两开关=0 时，overview/today 响应字段与一期逐字段一致（新增字段为 null/缺省） |
+| T0-03 | 集成 | 雪花 id 字符串 | 新增/既有 id 字段（planId/mockPaperId/hintKey）按约定下发，JS 不丢精度 |
+| T0-04 | 演练 | 紧急回滚 | 关闭 `ai_review_recovery_enabled` 后：新中断不再触发补救、不再下发补救文案；已写入 recovery 的计划可置 NULL 恢复常态（含操作 SQL 与验证步骤） |
+
+> 说明：W4/W6/W8.4 的用例（§13.3、§14.4/§14.6）**不属于二期必做**，但 T5-06 的唯一键改造会顺带影响 W4 的到期调度，实施时合并评审。
 
 ---
 
@@ -771,6 +959,17 @@ coverageGap   = 1 - 已做题数 / 必做池该题数
 - [ ] A 案 dropped 题三处取题链排除；15% 上限生效；文案带真实 X/Y 数字
 - [ ] D 案 7 天窗口判定正确；热车 50 题；100/天
 - [ ] interrupt_log 逐次中断落行
+- [ ] **补救期状态落库**：`recovery_case/recovery_until_day` 写入并在次日生效（A 180/日、B 3 天只红牌、D 100/日），跨阶段与重排能正确清零（§6.1.1）
+- [ ] **B 案阶段推进按阶段天数重算**，不是只改 `current_stage`（§6.3）
+- [ ] **摸底卷可被 App 取到**（`mock/start` 复用 ready 的 quiz 卷，带 `paperType`）
+- [ ] **A 案与“阶段 1 最后一天清空”的优先级已按 §6.2-1 写死并有单测**
+- [ ] **模考日可收尾**：阶段 3 交卷后当日完成、计划可 completed（§17-D6）
+- [ ] **dropped 三义可区分**（reason 字段）且覆盖率分母已扣减
+- [ ] **补救期不被总量封顶反噬**（D19）：复盘 50 题时 A 案新题仍为 180、复盘 120 题时 D 案仍为 100（用例 T3-01/T3-02）
+- [ ] **并发幂等**：同一天并发进入只写 1 行中断日志、只推进 1 次（T3-03）
+- [ ] **存量计划零差异**：recovery 为 NULL 的计划，物化结果与一期逐字段一致（T3-05）
+- [ ] **B 案模考日空态正确**：今日任务 new=0/review=0 且存在 mock 时，App 展示“今日为摸底测验，请进入模考”，不得显示“今日任务已完成”（避免学员以为没事做）
+- [ ] **紧急回滚可演练**：`ai_review_recovery_enabled=0` 后新中断不触发补救、不下发补救文案；已写入 recovery 的计划有置空 SQL 与验证步骤（T0-04）
 - [ ] 死代码常量和注释清理完成
 
 ### 14.4 W4 间隔调度（灰度）
@@ -786,6 +985,10 @@ coverageGap   = 1 - 已做题数 / 必做池该题数
 - [ ] 4 指标+首答正确率 API 返回口径与 §8.2 一致
 - [ ] 学员明细 interruptCount/atRisk 透出，前端列与筛选可用
 - [ ] §8.4 成绩回流设计章节评审通过（不建表）
+- [ ] **“完结率”有数据**：`status=completed` 能真实产生；否则已启用兜底口径（阶段 3 交卷比例）（§17-D6）
+- [ ] **`applyWrongCard` 绿牌再错缺陷已修**并回刷存量坏行（`card_level='red' AND removed=1`），错题本红牌数与列表一致（§17-D14）
+- [ ] **人均耗时排除 0 值行**，App 模考计时已端到端生效（§17-D7）
+- [ ] **atRisk 筛选在 SQL 层完成**，分页 total 与列表一致；`daysSinceActive` 取真实最后作答日（§8.3 订正）
 
 ### 14.6 W6 入口摸底（灰度）
 
@@ -796,9 +999,12 @@ coverageGap   = 1 - 已做题数 / 必做池该题数
 ### 14.7 W8 知识漏洞提示与 AI 讲解
 
 **W8.1 讲解补实现（名实欠账）**
-- [ ] `POST /appreviewsync/explain` 真实存在且可调用；`explainAvailable=1` 的题点进去不再落空
+- [ ] `POST /appreviewsync/explain` 真实存在且可调用
+- [ ] **App 端入口真实存在**：答题结果区在 `explainAvailable=1` 时渲染「让 AI 讲讲这题」按钮，点击可拉取并展示三段式内容（现状 App 零消费该字段，原验收条目无法成立，见 §10.3.4-③）
+- [ ] 与内联官方解析去重（官方解析非空时按钮降级为“还有疑问？”，不重复展示同段文字）
+- [ ] 复用 `QuestionResolveAssistService` 的模型配置/留痕/回写链路，**未新建第二套解析实现**（违反则视为不通过）
 - [ ] 门禁参数化生效：`ai_review_explain_gate=star` 保持现口径；`=wrong` 时首次答错即可讲
-- [ ] 讲解 grounded：提示词只喂题干/选项/正确答案/官方解析/学员错答/知识点名，**无题外知识注入**（单测断言 prompt 不含题库外内容）
+- [ ] 讲解 grounded：提示词只喂题干/选项/正确答案/官方解析/知识点名（**不含学员作答**），**无题外知识注入**（单测断言 prompt 不含题库外内容）
 - [ ] 三段式输出 ≤200 字；缓存按 questionId 复用（同题第二次调用零 LLM）
 - [ ] 降级链：LLM 失败/超时 → 展示官方解析；无官方解析 → "该题暂无解析"提示，不编造
 - [ ] 安全规程类知识点走"仅展示官方解析"白名单，不调 LLM
@@ -813,6 +1019,15 @@ coverageGap   = 1 - 已做题数 / 必做池该题数
 - [ ] 错因分类（漏选/错选/犹豫答对/秒错）单测覆盖四类判定
 - [ ] 漏洞分 Top3 排序可复现（同输入同输出，与 LLM 无关）
 - [ ] **准入门槛已过**：O-7 官方解析覆盖率实测完成且结论记录在案
+- [ ] **缓存键与输入对齐**（O-12 方案 1）：同题不同学员只调一次 LLM；prompt 与输出均不含个人作答信息（单测断言）
+- [ ] **异步租户上下文**：Worker 内 `TenantContextHolder` 已 set/clear，跨租户无越界查询（§10.4.5）
+- [ ] **懒生成兜底**：开关=1 但当天提示为空时，`overview` 走模板同步返回非空提示（不空白、不报错）
+- [ ] **P75 口径清洗**：`hesitant_correct` 只统计 new/review 且 1≤use_time≤1800 的行，样本<20 不判断
+- [ ] **提示可见性**：今日页提示在多次刷新后仍在（不能只在物化那一次出现）
+- [ ] **输入不含学员作答**（O-12 方案 1）：单测断言 prompt 中无 userAnswer / 无“你选了”类措辞；同题跨学员只调一次 LLM
+- [ ] **提示文案已补充冻结**：文案方案 v1.2（仅新增条目）完成评审并留档，开关才允许打开（D20）
+- [ ] **开关失败按关处理**：dict 读取异常时今日任务零变化、无报错（T8-08）
+- [ ] **同日曝光只记一行**：多次 overview 不重复写 `gap_hint`（T8-09），`biz_key` 唯一键生效
 
 **W8.3 埋点**
 - [ ] `ai_review_encourage_log` 增列 `log_type` 已迁移；提示曝光落库
@@ -833,12 +1048,48 @@ coverageGap   = 1 - 已做题数 / 必做池该题数
 
 ---
 
+### 14.9 上线闸门与证据要求（v1.3 新增）
+
+**证据**：14.1~14.8 每个勾选项必须附一种可复核证据——`测试类#方法名` / SQL 结果截图 / App 截图 / 日志片段。**只有勾没有证据 = 未验收**，不接受口头确认。
+
+**上线顺序**（每步都要停一天看数据）：
+1. 合并 + 迁移（空库/两库取号核对）；
+2. 开关全关发布（W8 两个开关默认 0）；**W3 不做灰度**——机制变更对单个学员是全有全无，灰度反而让同一计划两种行为，改为“回滚开关 `ai_review_recovery_enabled`（默认 1）+ 小范围先用（1 个考试计划）”控制影响面；
+3. W3 上线（A/B/D 行为变更），观察 3 天：中断触发数、A 案删题数/比例、B 案分流占比、D 案触发数、次日留存；
+4. W8.1 上线（讲解入口），观察 3 天：调用量/成功率/降级率/平均耗时；
+5. W8.2 开白名单（1 个考试计划、≤10 人），观察 3 天后再全量；
+6. W5 指标随 W3/W8 一起出数，**不单独上线**。
+
+**回滚矩阵**（必须逐项演练一次）：
+
+| 工作包 | 回滚手段 | 生效时间 | 备注 |
+|---|---|---|---|
+| W3 | `ai_review_recovery_enabled=0` | ≤1 分钟 | 新中断不再补救、不下发文案；已写入 `recovery_*` 的计划置 NULL（附 SQL） |
+| W8.1 | 讲解开关（`ai_review_explain_gate`）保持 star + `ai_review_explain_daily_limit=1` | ≤1 分钟 | 不删接口，只压调用量 |
+| W8.2 | `ai_review_gap_hint_enabled=0` | ≤1 分钟 | 今日任务回到一期形态 |
+| W5 | 无开关（只读统计） | — | 指标异常只影响报表，不影响学员 |
+
+**可观测（缺一不可）**：
+- `[AI复习] 中断补救触发`：planId / case / gapDays / cleanEnabled / recoveryUntil；
+- `[AI复习] 补救期清空`：planId / 原因（跨阶段/重排/回滚）；
+- `[AI复习] 漏洞提示降级`：planId / dayIndex / reason（LLM超时/配置缺失/样本不足）；
+- `[AI复习] 讲解降级`：questionId / reason（限流/超时/无解析）；
+- 指标：中断触发数、A 案删题比例、B 案分流占比、D 案触发数、讲解调用量/降级率、提示曝光/点击。
+
+**性能门槛**：`overview` P95 增幅 ≤50ms；物化 P95 增幅 ≤100ms；`mock/submit` 不劣化（对比发布前 7 天同口径）。
+
+**数据回刷（D14）**：回刷前备份 `ai_review_wrong_item`（表快照或 CSV），回刷后对账 `card_level='red' AND removed=1` 行数必须为 0；错题本红牌数与 `wrongStats.red` 一致。
+
+**多租户抽检**：10159 之外至少再取 1 个租户，走完 overview/today/answer，确认无跨租户数据。
+
+---
+
 ## 15. 文档联动清单
 
 | 文档 | 动作 |
 |---|---|
 | 《AI同步学（学员复习）实现方案》→ v1.8 | §5.4 删"加星连续 3 天必出"改"加星每日必出置顶"；§5.5 ABCD 更新为 §6.1 修订版决策表；§15.2 灰度默认值修正为 fail-open；§8 定时任务移除物化 job 的现状标注；§4.7 与 O7 口径统一；**§7.9/§12 AI 讲解链路按 W8.1 重写（接口真实落地、门禁参数化、降级链修正为「官方解析优先」）**；新增 W2/W3/W4/W6/W8 机制章节指针 |
-| 《AI同步学-学员介绍页文案设计方案》→ v1.1 | §4.1/§4.2 对照表落入并走冻结流程（§9）；§7 溯源表同步修订；**新增"漏洞提示"文案族（W8.2 §10.6），并入同一次冻结评审，不单开一轮** |
+| 《AI同步学-学员介绍页文案设计方案》→ **v1.2（补充冻结）** | v1.1 已随一期上线冻结；本期只新增“漏洞提示”文案族（W8.2 §10.6）与对应禁用词，走补充冻结，不重开全量评审；§7 溯源表补提示文案条目 |
 | 《AI同步学统计功能设计方案》→ v1.4 | 新增 §8.2 四指标+首答正确率口径、§8.3 预警清单、判分口径注释（M8）；**新增提示曝光/点击指标（W8.3）** |
 | STORM 报告（02_drafts） | 建议移入 `docs/04_requirements/` 作为方法论基线附件（与本方案并存；§1.3 修正表并入其附录或保留本文为准） |
 | 附录 A《参数取值区间与依据状态清单》 | 随 W2.2 产出，挂本方案附录；W8 四个新参数一并纳入 clamp |
@@ -850,15 +1101,126 @@ coverageGap   = 1 - 已做题数 / 必做池该题数
 
 | 期 | 工作包 | 出口标准 |
 |---|---|---|
-| 一期（本周可启） | W1 + W2 | §14.1/§14.2 全勾；对外宣称风险清零 |
-| 二期 | W3 → W8.1 → W8.2 + W5（**顺序锁定**） | §14.3/§14.7/§14.5 全勾；可证伪数据开始积累 |
+| 一期（**已上线 2026-10-17**） | W1 + W2 | §14.1/§14.2 全勾；对外宣称风险清零。**遗留两项见 §17.2：模考计时 App 半程、中断文案不持久** |
+| 二期（**方案已修订，待实施**） | W3 → W8.1 → W8.2 + W5（**顺序锁定**） | §14.3/§14.7/§14.5 全勾；可证伪数据开始积累；**§17-D1/D2/D6 三个阻断项必须先解决** |
 | 三期（灰度） | W4 + W6（依赖 W3-B） | §14.4/§14.6 全勾 + 灰度观察 2 周 |
 | 四期（或并入 W6 灰度批） | W8.4 同类题加练（依赖 W4 落地后） | §14.7 增补条目 |
 | 待证触发 | W7（O-1 核实后）、成绩回流（O-5 数据源到位后） | 对应验收节 |
 
 **二期顺序为何锁定为 W3 → W8.1 → W8.2 + W5**：二期主体是"补课"（补死代码、建数据管道），业务侧零感知，排期评审时最易被砍；W8.2 是二期唯一学员看得见的东西，天然更容易活下来。若不锁顺序，会出现"新功能挤掉 P0 欠账"的倒挂——而真正消除风险的是 W3。故约定：**W3 未过验收，W8.2 不得上线**（W8.1 为名实欠账，可与 W3 并行或紧随）。W8.2 另带独立开关 `ai_review_gap_hint_enabled`，工期紧张时可单独滑出二期而不拖累欠账。
 
-**审核方式建议**：按工作包逐项回复"通过/调整/不做"，我按回复修订本方案后冻结为 v1.1，再按分期实施。
+**审核方式建议**：按工作包逐项回复“通过/调整/不做”。**2026-10-18 已完成拍板（O-10/O-11/O-12 全部接受推荐），方案冻结为 v1.3**，二期按 §17.5 顺序实施，测试与验收按 §13.10/§14.9 执行。
+
+---
+
+## 17. 二期方案审核结论（2026-10-17 初审 / 2026-10-18 补审，v1.3）
+
+> 审核对象：本方案二期范围 **W3 → W8.1 → W8.2 + W5**（一期 W1/W2 已上线，只核对落地状态，不重审）。
+> 审核方法：逐条读 platform-api 现行主干（`exam/reviewsync`、`app/reviewsync`、`app/exam`）与 gjjd_appnext 现行源码，以 `file:line` 为证；凡方案与代码机制不一致处，一律以代码为准修订方案，**本机未改任何代码**。
+
+### 17.1 一期落地核对
+
+**已落地（有代码/迁移为证）**
+
+| 项 | 证据 |
+|---|---|
+| 参数区间 clamp + warn | `ReviewPlanApplicationService.dictIntInRange:2299-2303`，7 个既有参数已接入 |
+| 中断清洗开关（默认关） | `V20261014_004__review_phase1_interrupt.sql` 建表 + 种子；`applyInterruptIfNeeded:1833-1836` |
+| mockStart 阶段校验（含阶段 2 独立提示语） | `assertMockStartAllowed:698-706` |
+| splitStages 边界（D=3 不溢出） | `PlanScheduleDomainService.splitStages:29-42` |
+| 学情页预估分限定语 | `syncProgress.vue:4-8`（“练习预估分”“不是正式考试成绩”） |
+| 鼓励横幅常量 / 首进弹窗标记时机 | `syncExam.vue:513`；`syncHome.vue:133-135` |
+| 一期单测 | `ReviewPhase1MechanismTest`（清洗开关、clamp、mockStart 门禁 5 例） |
+
+**未闭环（二期必须收口）**
+
+1. **模考计时只做了后端半程**：`syncMock.vue:190` 每题 `useTimeSec: 0` → 落库仍是 0（§17-D7）；
+2. **中断策略文案不持久**：只在触发当次 `overview.interrupt` 里出现，刷新即消失（§17-D15）。
+
+### 17.2 二期缺陷清单
+
+分级：**P0**=按方案实现会直接跑不通或静默失效；**P1**=能跑但目标达不到/指标算错；**P2**=口径、性能、一致性问题。
+
+| # | 等级 | 缺陷（方案原文 vs 代码实际） | 代码证据 | 后果 | 修订落点 |
+|---|---|---|---|---|---|
+| **D1** | **P0** | 方案假设 A/B/D 的“第 2 天起”行为靠中断上下文延续；实际 `InterruptInfo` 只在触发当次作为参数传入，且 `lastActiveDate` 立即推进到今天，次日 gap=0 返回 null；`ai_review_plan` 无补救期字段 | `materializeDay:1586-1614`、`applyInterruptIfNeeded:1816-1830`、`AiReviewPlanEntity` 全字段 | **A 案回落 120/天、B 案仍出 50 新题、D 案回落 ceil 推高；W3 只有第 1 天成立** | §6.1.1（新增 `recovery_case/recovery_until_day`） |
+| **D2** | **P0** | 方案写“B 案 ≥70% → `plan.current_stage=3`，后续物化走阶段 3”；实际阶段由 `stageOfDay(dayIndex)` 按 `stage1Days/stage2Days` 推导，跨天还会覆写 `current_stage` | `materializeDay:1565`、`getOrMaterializeDay:1533`、`stageOfDay:2031-2039` | 分流后第二天仍是阶段 2，**B 案分流等于没分流** | §6.3（改为重算阶段天数） |
+| **D3** | **P0** | A 案 180/日硬上限与既有“阶段 1 最后一天强制清空剩余必做”直接冲突，后者无上限、无 15% 删题 | `materializeStage1:1695-1703` | 最后一天一次性下发数百题，文案却说“已精简 X 道” | §6.2-1（优先级必须写死，见 O-10） |
+| **D4** | P1 | `dropped_question_ids` 一列承载 A（排不下）/B（放弃）/W6（已掌握跳过）三种语义；且 `targetQuestions` 与覆盖率分母仍按全量 `must_do` | `AiReviewPlanEntity:46`、`createPlan:1334`、`progress:1138`、`progressView:2393` | 统计无法解释“为什么这题不在计划里”；覆盖率永远到不了 100% | §6.2-2/3（reason 字段 + 分母扣减） |
+| **D5** | P1 | B 案把 quiz 卷挂 `day.mockPaperId`，但 App 进模考页固定调 `mock/start`，后者每次新建普通卷 | `syncMock.vue:118-127`、`mockStart:673`、`mockView:2366` | **摸底卷永远到不了学员手里**，学员做的是普通模考卷 | §6.3（mockStart 复用 ready 的 quiz 卷） |
+| **D6** | P1 | 模考交卷不更新当日 `status/newDone/reviewDone`；`finish` 要求 new/review 达标；阶段 3 的 `reviewTarget=卷题量` 但 `reviewDone` 不增长；App 完成入口在 `totalCount>0` 才渲染 | `persistMockSubmit:986-991`、`finish:1015-1019`、`materializeDay:1608`、`syncExam.vue:6` | **阶段 3 日任务永远收不了尾 → `plan.status` 永不 completed**（`finish:1026-1028` 是唯一写入点）→ W5“各路径完结率”恒为 0 | §8.2、§14.5（补模考日完成语义 + 兜底口径） |
+| **D7** | P1 | 一期“模考计时”只改了后端；App 每题恒传 0 | `syncMock.vue:190`、`persistMockSubmit:971` | 人均耗时被稀释；W8.2 的 P75/`instant_wrong` 在模考行全错 | §5.4、§10.4.3 |
+| **D8** | P1 | W4 把黄牌到期日设为 `+3 天`，但毕业条件严格要求 `gap>3`；未毕业分支又会刷新 `lastCorrectDate` | `WrongCardDomainService.onCorrect:89-98`（`gapDays > 3`、`:97` 刷新日期） | **按到期日作答永远差 1 天，黄牌永远升不了绿** | §7.1（改 +4 或改 `>=3`，二选一） |
+| **D9** | P1 | W4.2 抽回题“混入复盘队列”，但 App 复盘列表来自 `reviewListForDay`（只读 `wrong_item(removed=0)`），物化写的 `reviewQuestionIds` 全库无人读 | `todayTask:239`、`reviewListForDay:2108-2123`、`AiReviewPlanDayEntity:25`（仅声明） | 抽回题**没有任何通道能送到学员**；同时“≥7 天未出现”不可实现（表只记作答不记曝光） | §7.2（`recallQuestions` + 新增列 + “未作答”口径） |
+| **D10** | P1 | W8.1 输入含“学员错答”，却按 questionId 跨学员缓存；且已存在同能力的 `QuestionResolveAssistService` | §10.3.2 输入六项、§10.3.3 缓存行、`QuestionResolveAssistService` 全类 | 学员 A 的错答被讲给 B（串味/隐私）；第二份解析实现违反统一语言；成本口径“≈去重错题数”不成立 | §10.3.4-①②（O-12 拍板） |
+| **D11** | P1 | 方案称“学员拿到可讲解标记，点进去没有落点”；实际 App 全仓零处消费 `explainAvailable`，且已内联展示 `q.result.resolve` | `applyWrongCard:1981` 发标记；App `grep explainAvailable` 无命中；`syncExam.vue:57` 内联解析 | **连入口都没有**，§14.7 原验收条目无法成立；W8.1 工作量被低估 | §10.3.4-③、§14.7 |
+| **D12** | P1 | W8.2 挂在 `generateAsync`（`reviewLlmAssistExecutor`，无 TaskDecorator），Worker 无 TenantContext；且投递发生在 `@Transactional` 提交前 | `AsyncConfig:247-259`（无 decorator）、`materializeDay:1551/1630` | 异步查询可能查空或跨租户；为将回滚的事务写缓存 | §10.4.5 |
+| **D13** | P1 | W8.3 要求点击上报 `hintId` 并幂等，但提示“不落表只进 Caffeine”，log 表也没有 hint 维度列 | §10.4.5、§12.1、§10.5 | **没有稳定 hintId**，曝光与点击无法对账，埋点做了等于白做 | §10.5（`hint_key` 确定性拼装） |
+| **D14** | P1 | 绿牌（`removed=1`）再答错时只改 `card_level=red`，`removed` 不复位（只有 `transition.removed()==true` 才写） | `applyWrongCard:1938-1955` | 产生 `red AND removed=1` 坏行：错题本红牌不增、`activeWrongItems` 永不取到，题从此消失；**W4/W5 的“绿牌再错率”算不出来** | §8.2-2、§14.5（随 W5 修 + 回刷存量） |
+| **D15** | P2 | 中断策略文案只在触发当次 `overview.interrupt` 可见；`today.strategyNote` App 未渲染 | `overview:194-201`、`materializeDay:1589/1596`、App `grep strategyNote` 无命中 | 刷新一次“已放弃 X 道题”“已精简 X 道”的披露就消失，W3 的如实披露形同虚设 | §17.4-④（改用 `day.strategyNote` 驱动横幅） |
+| **D16** | P2 | `students()` 先分页后组装，`atRisk` 若内存过滤会导致 total 与列表不一致；`daysSinceActive` 若取 `plan.lastActiveDate` 会因超前学习出现负数 | `ReviewSyncStatsApplicationService:316-317`、`touchLastActiveDate:655-661`、`:399-401` | 分页错位、掉队判定错人 | §8.3 订正 |
+| **D17** | P2 | 方案写“27 个测试类”，实测 24 个 | `find ... -name "*Test.java" \| wc -l` = 24 | 回归门槛基数错，验收口径不可核对 | §13 / §13.9（已改 24） |
+| **D18** | P2 | D 案判定写“近 7 天 ≥2（含本次）”，但判定发生在写日志之前；且日志表 2026-10-15 才建 | `detectInterruptCase:217-234`、`writeInterruptLog:1861-1875` | 阈值实际应为“不含本次 ≥1”；存量计划冷启动无历史，D 案短期不会触发 | §6.1 表 + 实施说明（冷启动按存量 `interrupt_count` 过渡一版） |
+| **D19** | **P1** | A 案“180/天”、D 案“100/天”会被既有“每日总量封顶 200”反噬：`applyTotalCap` 先算 `new = 200 − reviewTarget` | `materializeStage1:1654-1656`、`PlanScheduleDomainService.applyTotalCap:101-106` | 复盘 50 题时新题只能 150（不是 180）；复盘 120 题时新题只剩 80（不是 100）——**补救文案再次“说了没做”** | §6.1.1（补救期 `effectiveTotalCap = min(600, max(cap, 新题目标+复盘量))`） |
+| **D20** | P2 | W8.2 文案写“并入 W1 的 v1.1 冻结批次”，但 W1 已于 2026-10-17 上线、v1.1 已冻结发布 | 一期上线记录；§10.6、§15 | 提示文案没有冻结窗口，开关打开即绕过文案评审 | §10.6（改为 v1.2 补充冻结）、§15 |
+
+### 17.3 三个阻断项（P0）的处理口径
+
+1. **D1 补救期状态**：新增 `recovery_case` + `recovery_until_day`，中断触发时写入、`materializeDay` 按天读取；这是 W3 的地基，**必须先于 A/B/D 任何分支实现**，否则后两个 P0 的验证会被“第 2 天无效”掩盖。
+2. **D2 阶段推进**：B 案分流不是改状态字段，而是**重算阶段天数**（`stage1Days=min(stage1Days,dayIndex)`、`stage2Days=0`、`stage3Days=totalDays-dayIndex`），并断言 `stage3Days≥1`。W6 的“快进路径”同理。
+3. **D3 末日清空**：在 `materializeStage1` 里把“最后一天清空”降级为“按 cap 下发 + 剩余顺延阶段 2”，否则 180 上限与删题文案都是假的。
+
+### 17.4 其他必须一起改的三处
+
+- ④ **中断横幅改为读 `day.strategyNote`**（`overview` 不再只在中断当次给 `interrupt`），保证“已精简/已放弃”的披露当日持续可见；`today` 也回同一字段。这一条不影响机制，但直接决定 W3 是否算“如实告知”。
+- ⑤ **模考日收尾**：`persistMockSubmit` 内按 `paper_type` 把当日置 `done`（`reviewDone=reviewTarget`），或 `finish` 对“有 `mockPaperId` 的日”放行；两条选一条，写进单测。
+- ⑥ **绿牌再错复位（O-11 已拍板，纳入二期）**：`applyWrongCard` 在 `transition.toLevel()` 为 `red` 时强制 `removed=0, removeTime=null`；上线前先跑清单核对存量坏行再回刷（备份 → 回刷 → 对账，见 §14.9）。
+
+### 17.5 修订后的二期实施顺序与闸门
+
+```
+W3-1 迁移（recovery 列 / paper_type / recall_question_ids）
+  → W3-2 补救期状态机（D1）          闸门：A/B/D 跨天单测全绿
+  → W3-3 B 案（问卷可达 + 阶段重算）  闸门：模拟交卷→次日 stage=3
+  → W3-4 A 案（末日口径 + dropped）    闸门：末日 400 题用例
+  → W3-5 模考日收尾（D6）+ 中断文案持久（D15）
+  → W8.1（复用解析服务 + App 入口）
+  → W8.2 + W5（含 D14 修复、D7 计时补全、D13 hint_key）
+```
+
+**停止线**：W3-2 未过，不得开始 W3-3 之后任何一项——否则会在“第 2 天失效”的假象上叠加新逻辑，回归时无法定位。
+
+### 17.6 审核边界（未验证项，如实报告）
+
+- 本机**未运行** `mvn compile` / `mvn test` / `npm run build`：本次只读代码，未产生编译与测试证据；
+- **未连库**实测 O-7（官方解析覆盖率），该项仍为实施前必须完成的准入动作；
+- **未做真机验证**（App 入口、模考计时打点均为代码级核对）；
+- 所有 `file:line` 基于 2026-10-17 主干，实施前需按 §10 引用约定复核行号；
+- 一期 W1 的文案改动只核对了 App 侧关键句与测试文件存在，未逐字比对介绍页全文。
+
+### 17.7 补审结论：测试与验收是否齐全（2026-10-18）
+
+**结论：v1.2 不齐全。** 主体路径覆盖到了，但四类系统性缺口恰好落在本次审核新增的机制上——**跨天状态、封顶与边界、异步与多租户、回滚与空态**。若按 v1.2 的清单验收，会漏掉 D19（补救期被总量封顶反噬）和 D6（阶段 3 收不了尾）这类“单测全绿、线上仍不对”的问题。
+
+**补了什么**：
+
+| 补充 | 位置 | 数量 |
+|---|---|---|
+| 测试覆盖矩阵（工作包 × 缺口） | §13.10 | 5 个工作包 |
+| 必做用例清单（T3/T5/T8/T0 编号，可被验收直接引用） | §13.10 | **24 条** |
+| 上线闸门（证据、顺序、回滚矩阵、可观测、性能、回刷、多租户抽检） | §14.9 | 7 项 |
+| 验收条目补充（D19 封顶、并发幂等、存量零差异、B 案空态、回滚演练、输入不含作答、开关 fail-closed、曝光只一行、文案 v1.2 冻结） | §14.3 / §14.7 | 9 条 |
+| 新增缺陷（D19/D20） | §17.2 | 2 条 |
+
+**仍然不测（明确排除，避免范围蔓延）**：W4/W6/W8.4 的行为用例（三期/四期）；导出 Excel 的像素级样式；LLM 输出质量的语义评测（只测结构、长度、禁用词、降级，不测“讲得好不好”）。
+
+**测试可执行性约束**（避免“写了跑不了”）：
+- 单测一律 Mock `FaqLlmClient` / Redis / 租户上下文，不依赖外部服务；
+- 集成测试用 H2（`MODE=MySQL`）或 Testcontainers 二选一，**不得依赖本机 MySQL**；
+- 时间相关用例统一用固定日期：优先注入 `Clock`；若不想改方法签名，至少抽出 `protected LocalDate today()` 供测试 spy 覆写。禁止在断言里直接依赖 `LocalDate.now()`（否则跨天用例必然 flaky）；
+- App 用例用 Vitest + 假定时器，不跑真机。
+
+> 一句话：**方案可以实施了，但“做完”不等于“验收过”——24 条用例与 7 项上线闸门是二期的完成定义（DoD），不是附加项。**
 
 ---
 
@@ -886,6 +1248,9 @@ coverageGap   = 1 - 已做题数 / 必做池该题数
 | ai_review_entry_quiz_enabled | 0 | 0/1 | 灰度开关 | W6 |
 | ai_review_entry_quiz_size | 40 | [30,50] | 报告 T3-14 | W6 实施时接 clamp |
 | ai_review_mock_pass_rate | 60 | [0,100]（%） | O-1 待证 | W7；现为硬编码 0.6，本键接管 |
+| ai_review_at_risk_days | 3 | [1,30] | 工程拍板（v1.2） | W5.3；掉队判定独立于中断阈值 |
+| ai_review_instant_wrong_sec | 5 | [2,15] | 工程拍板（v1.2） | W8.2 错因分类；接 clamp |
+| ai_review_hesitant_min_samples | 20 | [10,100] | 工程拍板（v1.2） | W8.2 P75 样本下限；不足不判断 |
 | ai_review_gap_hint_enabled | 0 | 0/1 | 灰度开关 | W8.2；上线验收后开 |
 | ai_review_gap_hint_top_n | 3 | [1,5] | 工程拍板（一次记不住更多） | W8.2 实施时接 clamp |
 | ai_review_gap_hint_max_len | 100 | [60,200] | 工程拍板（阅读耐心） | W8.2 实施时接 clamp |
@@ -907,3 +1272,17 @@ coverageGap   = 1 - 已做题数 / 必做池该题数
 > - 回写：`ExamResultWriteRepository` 事务内直写 exam_type=5、earnedScore 优先
 > - App：syncIntro.vue（5 卡+短文）、promote/exam.vue:20（微文案①）、syncProgress.vue:5（预估分无限定语）、syncHome.vue:123-142（首进弹窗标记时机）
 > - **W8（2026-10-16 增补）**：`ReviewPlanApplicationService:1978` 返回 `explainAvailable=star && !correct`，而 `AppReviewSyncController` 仅 9 个端点、全库无 `/explain` → M23；`progress()`（1107-1228）已算 knowledgeCoverage/itemMastery/typeAccuracy → M24 的数据基础；`ai_review_answer.user_answer`/`use_time_sec` 零消费；每日物化末尾 `generateAsync`（1626-1628）为 W8.2 挂点
+> - **二期审核（2026-10-17，v1.2）**：
+>   - 状态缺失：`materializeDay:1586-1614`（仅首日）、`applyInterruptIfNeeded:1829`（立即推进 lastActiveDate）、`AiReviewPlanEntity` 无补救期列
+>   - 阶段推进：`stageOfDay:2031` / `materializeDay:1565` / `getOrMaterializeDay:1533`（`current_stage` 被覆写）
+>   - 末日清空：`materializeStage1:1695-1703`
+>   - 摸底卷不可达：`syncMock.vue:118-127`（固定 mock/start）、`mockStart:673`
+>   - 模考日收不了尾：`persistMockSubmit:986-991`、`finish:1015-1019`、`syncExam.vue:6`
+>   - 模考计时：`syncMock.vue:190`（恒 0）、`persistMockSubmit:971`
+>   - 间隔调度：`WrongCardDomainService.onCorrect:89-98`（`gapDays > 3` 与 `+3 天` 冲突）
+>   - 抽回无通路：`reviewListForDay:2108-2123`、`AiReviewPlanDayEntity:25`（`reviewQuestionIds` 无读取点）
+>   - 讲解：App `grep explainAvailable` 零命中；`QuestionResolveAssistService` 已有同能力实现
+>   - 异步：`AsyncConfig:247-259`（无 TaskDecorator）、`materializeDay:1551/1630`
+>   - 绿牌再错：`applyWrongCard:1938-1955`（removed 未复位）
+>   - 统计：`ReviewSyncStatsApplicationService:316-317`（先分页后组装）、`:399-401`（真实最后作答日口径）
+>   - 测试基数：`find ... -name "*Test.java" | wc -l` = 24
