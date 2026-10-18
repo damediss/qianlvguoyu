@@ -296,8 +296,7 @@ public class AsyncConfig {
   }
 
   @Bean(name = "certImportExecutor")
-  public ThreadPoolTaskExecutor certImportExecutor() {
-    ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
+  public ThreadPoolTaskExecutor certImportExecutor() {    ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
     // 预览匹配：PDF 解析 / OCR 可并行，提速批量证书导入
     executor.setCorePoolSize(4);
     executor.setMaxPoolSize(8);
@@ -306,6 +305,24 @@ public class AsyncConfig {
     executor.setWaitForTasksToCompleteOnShutdown(true);
     executor.setAwaitTerminationSeconds(120);
     executor.setRejectedExecutionHandler(new ThreadPoolExecutor.CallerRunsPolicy());
+    executor.initialize();
+    return executor;
+  }
+
+  /**
+   * 历年真题异步批量导入池（方案 §2.9）：core=max=2，queue=20。
+   * AbortPolicy：队列满直接拒绝 → 调用方标记导入记录失败并返回 503（坑 #12/#14）。
+   */
+  @Bean(name = "zhentiImportExecutor")
+  public ThreadPoolTaskExecutor zhentiImportExecutor() {
+    ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
+    executor.setCorePoolSize(2);
+    executor.setMaxPoolSize(2);
+    executor.setQueueCapacity(20);
+    executor.setThreadNamePrefix("zhenti-import-");
+    executor.setWaitForTasksToCompleteOnShutdown(true);
+    executor.setAwaitTerminationSeconds(300);
+    executor.setRejectedExecutionHandler(new ThreadPoolExecutor.AbortPolicy());
     executor.initialize();
     return executor;
   }

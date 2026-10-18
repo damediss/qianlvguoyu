@@ -164,6 +164,10 @@ public class SecurityConfig {
             auth.requestMatchers(HttpMethod.GET, "/ws/competition/formal-exam/console").permitAll();
             auth.requestMatchers(HttpMethod.POST, "/appregistration/**").permitAll();
             auth.requestMatchers(HttpMethod.POST, "/appsms/**", "/appauth/**", "/appuser/**", "/appuserv4/**", "/apphome/**", "/appsmart/**", "/appcoach/**").permitAll();
+            // 历年真题 App 链路（A1/A2）与 F1 文件流：登录态由 AppTokenAuthFilter 校验，
+            // F1 仅信 HMAC 签名（方案 §2.6/§2.7，与 /appsmart/** 同模式）
+            auth.requestMatchers(HttpMethod.POST, "/appzhenti/list", "/appzhenti/preview").permitAll();
+            auth.requestMatchers(HttpMethod.GET, "/appzhenti/file/**").permitAll();
             // App 端接口（身份证 OCR 等），由 AppTokenAuthFilter 验证登录态即可
             auth.requestMatchers("/training/app/**").permitAll();
             // 培训管理·扫码学员报名 —— 学员匿名链路（生产功能：学员扫码填报名表，未登录，

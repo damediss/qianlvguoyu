@@ -296,6 +296,11 @@
                -Xmx1024m 限制 fork JVM 堆上限：全量回归在内存紧张的开发机上曾因原生内存不足
                直接崩溃（hs_err native OOM），显式限堆可与其他进程共存。 -->
           <argLine>-Djdk.attach.allowAttachSelf=true -XX:+EnableDynamicAgentLoading -Xmx1024m</argLine>
+          <!-- 历年真题接口测试以 *IT 命名（方案 §5.2）；surefire 默认只扫 *Test，这里显式纳入 -->
+          <includes>
+            <include>**/*Test.java</include>
+            <include>**/*IT.java</include>
+          </includes>
         </configuration>
       </plugin>
       <plugin>

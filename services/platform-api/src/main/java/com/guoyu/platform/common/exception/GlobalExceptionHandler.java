@@ -93,6 +93,15 @@ public class GlobalExceptionHandler {
         .body(ApiResponse.fail(ErrorCode.BAD_REQUEST, "请求体格式错误，请检查时间格式和字段类型"));
   }
 
+  /** multipart 超过全局上限（历年真题 zip 200MB 之外的异常包体）。 */
+  @ExceptionHandler(org.springframework.web.multipart.MaxUploadSizeExceededException.class)
+  public ResponseEntity<ApiResponse<Void>> handleMaxUploadSize(
+      org.springframework.web.multipart.MaxUploadSizeExceededException ex) {
+    log.warn("Upload rejected: exceeds multipart limit ({})", ex.getMessage());
+    return ResponseEntity.status(HttpStatus.PAYLOAD_TOO_LARGE)
+        .body(ApiResponse.fail(ErrorCode.PAYLOAD_TOO_LARGE, "上传文件超过大小限制"));
+  }
+
   @ExceptionHandler(NoResourceFoundException.class)
   public ResponseEntity<ApiResponse<Void>> handleNoResourceFound(NoResourceFoundException ex) {
     log.warn("Resource not found: {}", ex.getResourcePath());
@@ -220,6 +229,8 @@ public class GlobalExceptionHandler {
       case ErrorCode.FORBIDDEN -> HttpStatus.FORBIDDEN;
       case ErrorCode.NOT_FOUND -> HttpStatus.NOT_FOUND;
       case ErrorCode.CONFLICT -> HttpStatus.CONFLICT;
+      case ErrorCode.PAYLOAD_TOO_LARGE -> HttpStatus.PAYLOAD_TOO_LARGE;
+      case ErrorCode.UNSUPPORTED_MEDIA_TYPE -> HttpStatus.UNSUPPORTED_MEDIA_TYPE;
       case ErrorCode.UNPROCESSABLE_ENTITY -> HttpStatus.UNPROCESSABLE_ENTITY;
       case ErrorCode.INTERNAL_ERROR -> HttpStatus.INTERNAL_SERVER_ERROR;
       case ErrorCode.NOT_IMPLEMENTED -> HttpStatus.NOT_IMPLEMENTED;

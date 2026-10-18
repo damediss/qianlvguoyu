@@ -34,6 +34,10 @@ public class TenantContextFilter extends OncePerRequestFilter {
       "/api/appsmart/",
       "/api/appcoach/",
       "/api/apphome/",
+      // 历年真题：App 端 A1/A2 与 F1（pdf.js 请求不带 X-Tenant-Id，仅签名/App token 鉴权）
+      "/api/appzhenti/list",
+      "/api/appzhenti/preview",
+      "/api/appzhenti/file/",
       "/api/exam/files/",
       // OnlyOffice Document Server 拉取/回调（无管理端登录态）
       "/api/training/office/",

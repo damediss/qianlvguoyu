@@ -136,7 +136,7 @@ ssh ubuntu@<PUBLIC_IP> 'sudo systemctl restart platform-api'
 | CORS 报错 | `.env` 里 `CORS_ALLOWED_ORIGINS` 没填对,或者来源不在白名单 |
 | 登录 401 | MySQL 没起来 / 密码错;`mysql -u guoyu_app -p` 验证 |
 | 登录后菜单 403 | Redis 没起 / 密码错;`redis-cli -a <pwd> ping` 验证 |
-| 文件上传 500 | `client_max_body_size` 是否 ≥ 50M;COS 凭证是否对;`journalctl -u platform-api` 看堆栈 |
+| 文件上传 500 | `client_max_body_size` 是否 ≥ 210M（历年真题 zip 上限 200MB）;COS 凭证是否对;`journalctl -u platform-api` 看堆栈 |
 | 打印版 PDF 生成失败 | `test -r /usr/share/fonts/truetype/wqy/wqy-zenhei.ttc`;检查 `.env` 的 `COLLECTION_PDF_FONT_PATH`;不要使用 CFF `.otf` |
 | 前端白屏 | 浏览器 F12 看 console,大概率是 JS 404;`/data/guoyu/web/` 下 dist 拷齐了吗 |
 | Flyway 报错 | MySQL 版本必须 8.4(脚本装的 8.0 也行,但 Flyway 会 warn 兼容),字符集 utf8mb4 |

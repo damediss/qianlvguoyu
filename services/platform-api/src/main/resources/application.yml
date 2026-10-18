@@ -147,6 +147,17 @@ weknora:
   origin: ${WEKNORA_ORIGIN:http://localhost:5173}
 
 platform:
+  # 历年真题（方案 docs/04_requirements/历年真题-实施计划与测试验收.md §2.8）
+  # sign-secret 生产必须用 ZHENTI_SIGN_SECRET 注入随机值；默认值仅限本地开发。
+  zhenti:
+    sign-secret:${ZHENTI_SIGN_SECRET:}
+    sign-ttl-seconds: ${ZHENTI_SIGN_TTL_SECONDS:600}
+    viewer-origin: ${ZHENTI_VIEWER_ORIGIN:https://java.app.gjjd168.com}
+    api-base: ${ZHENTI_API_BASE:/api}
+    async-threshold: ${ZHENTI_ASYNC_THRESHOLD:50}
+    # 软删满 90 天物理清理（每日 03:30）
+    cleanup-enabled: ${ZHENTI_CLEANUP_ENABLED:true}
+    cleanup-cron: "${ZHENTI_CLEANUP_CRON:0 30 3 * * ?}"
   # 理论试题生成（优化方案 v0.3 P3）：块级并发度（2026-09-08 由 5 扩至 50，跑满 glm-5.3-flash
   # 并发闸口上限；环境变量 PLATFORM_THEORY_GEN_BLOCK_CONCURRENCY 可覆盖）。
   # 多批次并行共享闸口 50 并发，先到先得。

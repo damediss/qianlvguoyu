@@ -88,8 +88,36 @@ public class AuditLogAspect {
 
   private Long resolveTargetId(JoinPoint joinPoint) {
     Object[] args = joinPoint.getArgs();
-    if (args.length > 0 && args[0] instanceof Long id) {
+    if (args.length == 0 || args[0] == null) {
+      return null;
+    }
+    Object first = args[0];
+    if (first instanceof Long id) {
       return id;
+    }
+    if (first instanceof Integer id) {
+      return id.longValue();
+    }
+    // 请求 DTO（record 的 id() 或普通 bean 的 getId()）也能落到审计目标 id
+    try {
+      java.lang.reflect.Method method;
+      try {
+        method = first.getClass().getMethod("id");
+      } catch (NoSuchMethodException ex) {
+        method = first.getClass().getMethod("getId");
+      }
+      Object value = method.invoke(first);
+      if (value instanceof Long id) {
+        return id;
+      }
+      if (value instanceof Integer id) {
+        return id.longValue();
+      }
+      if (value instanceof String text && text.matches("\\d{1,19}")) {
+        return Long.valueOf(text);
+      }
+    } catch (ReflectiveOperationException | RuntimeException ignored) {
+      // 无 id 的入参（如 MultipartFile）保持 null
     }
     return null;
   }
