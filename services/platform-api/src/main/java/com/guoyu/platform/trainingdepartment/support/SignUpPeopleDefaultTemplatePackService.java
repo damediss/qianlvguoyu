@@ -446,7 +446,9 @@ public class SignUpPeopleDefaultTemplatePackService {
     vars.put("exp_position", exp.position());
     vars.put("exp_user", exp.proveName());
     vars.put("exp_phone", exp.provePhone());
-    vars.put("workExp", firstNonBlank(exp.rangeOngoing(), exp.rangeText()));
+    // 认定申请表「个人工作简历」：入职日期至今 + 本公司 + 申报工种，不用学员自填经历里的单位/岗位
+    vars.put("workExp", levelApplyWorkResume(
+        workStart, firstNonBlank(ctx.companyName, companyName), reqWorkType));
     vars.put("work_time", firstNonBlank(person.getWorkTime(), workStart));
     vars.put("work_start_date", formatYearMonth(workStart));
     vars.put("work_age", intToChinese(reqAge));
@@ -1142,6 +1144,47 @@ public class SignUpPeopleDefaultTemplatePackService {
     } catch (Exception e) {
       return "";
     }
+  }
+
+  /**
+   * 职业技能等级认定申请表个人工作简历。
+   * 例：2012-06-05至今，在广西强强碳素股份有限公司从事炭极生产工工作。
+   */
+  static String levelApplyWorkResume(String startDate, String company, String workType) {
+    String start = normalizeResumeDate(startDate);
+    String period = StringUtils.hasText(start) ? start + "至今" : "至今";
+    return period + "，在" + safe(company) + "从事" + safe(workType) + "工作";
+  }
+
+  static String normalizeResumeDate(String date) {
+    if (!StringUtils.hasText(date)) {
+      return "";
+    }
+    String normalized = date.trim()
+        .replace('.', '-')
+        .replace('/', '-')
+        .replace("年", "-")
+        .replace("月", "-")
+        .replace("日", "");
+    while (normalized.endsWith("-")) {
+      normalized = normalized.substring(0, normalized.length() - 1);
+    }
+    String[] parts = normalized.split("-");
+    try {
+      if (parts.length >= 3 && parts[0].matches("\\d{4}")) {
+        return String.format(
+            "%s-%02d-%02d",
+            parts[0],
+            Integer.parseInt(parts[1]),
+            Integer.parseInt(parts[2]));
+      }
+      if (parts.length == 2 && parts[0].matches("\\d{4}")) {
+        return String.format("%s-%02d", parts[0], Integer.parseInt(parts[1]));
+      }
+    } catch (NumberFormatException ignored) {
+      return date.trim();
+    }
+    return date.trim();
   }
 
   private static String formatYearMonth(String date) {

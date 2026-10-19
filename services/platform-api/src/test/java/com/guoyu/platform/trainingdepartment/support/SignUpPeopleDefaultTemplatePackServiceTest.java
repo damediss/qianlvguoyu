@@ -19,6 +19,16 @@ import org.springframework.core.io.ClassPathResource;
 class SignUpPeopleDefaultTemplatePackServiceTest {
 
   @Test
+  void levelApplyWorkResumeUsesCompanyAndDeclaredWorkType() {
+    assertThat(SignUpPeopleDefaultTemplatePackService.levelApplyWorkResume(
+        "2012-06-05", "广西强强碳素股份有限公司", "炭极生产工"))
+        .isEqualTo("2012-06-05至今，在广西强强碳素股份有限公司从事炭极生产工工作");
+    assertThat(SignUpPeopleDefaultTemplatePackService.levelApplyWorkResume(
+        "2012年6月5日", "广西强强碳素股份有限公司", "炭极生产工"))
+        .isEqualTo("2012-06-05至今，在广西强强碳素股份有限公司从事炭极生产工工作");
+  }
+
+  @Test
   void classLevelOneMapsToSeniorTechnician() {
     assertThat(SignUpPeopleDefaultTemplatePackService.classLevelToReqIndex(1)).isEqualTo(4);
     assertThat(SignUpPeopleDefaultTemplatePackService.classLevelToReqIndex(5)).isEqualTo(0);
