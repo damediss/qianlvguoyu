@@ -119,7 +119,7 @@ export function TrainExamListPage() {
   };
 
   const columns: ColumnsType<TrainExam> = [
-    { title: '标题', dataIndex: 'title', ellipsis: true, width: 220 },
+    { title: '标题', dataIndex: 'title', ellipsis: true, width: 270 },
     { title: '等级', dataIndex: 'level', width: 80 },
     {
       title: '类型', dataIndex: 'type', width: 80,
@@ -133,9 +133,9 @@ export function TrainExamListPage() {
         : <Tag color="green">内部</Tag>,
     },
     { title: '考试日期', dataIndex: 'examDate', width: 120 },
-    { title: '考试时长(分)', dataIndex: 'examTime', width: 110 },
+    { title: '考试时长(分)', dataIndex: 'examTime', width: 90 },
     {
-      title: '关联课程数', dataIndex: 'courseIdList', width: 110,
+      title: '关联课程数', dataIndex: 'courseIdList', width: 80,
       render: (v?: number[]) => (Array.isArray(v) ? v.length : 0),
     },
     { title: '创建时间', dataIndex: 'createTime', width: 160 },
