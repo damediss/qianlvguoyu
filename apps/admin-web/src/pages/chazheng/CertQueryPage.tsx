@@ -125,6 +125,40 @@ export function CertQueryPage() {
     pollRef.current = setInterval(poll, 2000);
   }, [queryClient]);
 
+  /** 本批次查证进度轮询：终态（completed/aborted）停止并刷新列表 */
+  const startBatchPoll = useCallback(
+    (batchId: number, ymd: string) => {
+      if (batchPollRef.current) clearInterval(batchPollRef.current);
+      setBatchProgressYmd(ymd);
+      setBatchProgress(null);
+      setBatchProgressOpen(true);
+      const poll = async () => {
+        if (!paneActiveRef.current) return; // 标签不可见：跳过本轮请求，服务端查证照常进行
+        try {
+          const data = await getCertBatchProgress(batchId);
+          setBatchProgress(data);
+          if (data.status !== "processing") {
+            if (batchPollRef.current) clearInterval(batchPollRef.current);
+            batchPollRef.current = null;
+            queryClient.invalidateQueries({ queryKey: ["chazheng-certs"] });
+            queryClient.invalidateQueries({ queryKey: ["chazheng-ymd-list"] });
+            if (data.failed > 0) {
+              message.warning(
+                `重新查证结束：成功 ${data.success + data.successNoCert} 人，失败 ${data.failed} 人`,
+              );
+            } else {
+              message.success(`重新查证完成：成功 ${data.success + data.successNoCert} 人`);
+            }
+          }
+        } catch {
+          // 轮询失败不打断，下一轮继续
+        }
+      };
+      poll();
+      batchPollRef.current = setInterval(poll, 2000);
+    },
+    [queryClient],
+  );
   const handleImport = useCallback(
     async (file: File) => {
       setImporting(true);
@@ -137,7 +171,9 @@ export function CertQueryPage() {
         try {
           const batch = await triggerCertCheckByYmd(result.ymd, file.name);
           message.success("批量查证已启动：" + batch.total + " 条");
-          openProgress();
+          // 按本批 batchId 轮询（勿用全库 isChecked 进度，失败用户永远到不了 100%）
+          startBatchPoll(batch.batchId, result.ymd);
+          setQuery((prev) => ({ ...prev, ymd: result.ymd, page: 1 }));
         } catch (err: any) {
           message.error(err?.message || "批量查证启动失败");
         }
@@ -148,7 +184,7 @@ export function CertQueryPage() {
       }
       return false;
     },
-    [queryClient, openProgress],
+    [queryClient, startBatchPoll],
   );
 
   const handleDownloadTemplate = useCallback(async () => {
@@ -223,40 +259,6 @@ export function CertQueryPage() {
     [certMutation],
   );
 
-  /** 本批次查证进度轮询：终态（completed/aborted）停止并刷新列表 */
-  const startBatchPoll = useCallback(
-    (batchId: number, ymd: string) => {
-      if (batchPollRef.current) clearInterval(batchPollRef.current);
-      setBatchProgressYmd(ymd);
-      setBatchProgress(null);
-      setBatchProgressOpen(true);
-      const poll = async () => {
-        if (!paneActiveRef.current) return; // 标签不可见：跳过本轮请求，服务端查证照常进行
-        try {
-          const data = await getCertBatchProgress(batchId);
-          setBatchProgress(data);
-          if (data.status !== "processing") {
-            if (batchPollRef.current) clearInterval(batchPollRef.current);
-            batchPollRef.current = null;
-            queryClient.invalidateQueries({ queryKey: ["chazheng-certs"] });
-            queryClient.invalidateQueries({ queryKey: ["chazheng-ymd-list"] });
-            if (data.failed > 0) {
-              message.warning(
-                `重新查证结束：成功 ${data.success + data.successNoCert} 人，失败 ${data.failed} 人`,
-              );
-            } else {
-              message.success(`重新查证完成：成功 ${data.success + data.successNoCert} 人`);
-            }
-          }
-        } catch {
-          // 轮询失败不打断，下一轮继续
-        }
-      };
-      poll();
-      batchPollRef.current = setInterval(poll, 2000);
-    },
-    [queryClient],
-  );
 
   const closeBatchProgress = useCallback(() => {
     setBatchProgressOpen(false);

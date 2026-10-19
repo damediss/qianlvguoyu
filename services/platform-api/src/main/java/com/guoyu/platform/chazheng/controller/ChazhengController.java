@@ -56,9 +56,11 @@ public class ChazhengController {
     chazhengCertCheckExecutor = new ThreadPoolTaskExecutor();
     chazhengCertCheckExecutor.setCorePoolSize(3);
     chazhengCertCheckExecutor.setMaxPoolSize(5);
-    chazhengCertCheckExecutor.setQueueCapacity(1000);
+    // 大批次（>1005）时 AbortPolicy 会直接丢任务；队列放大并用 CallerRuns 兜底，避免尾部人员永远不查
+    chazhengCertCheckExecutor.setQueueCapacity(5000);
     chazhengCertCheckExecutor.setThreadNamePrefix("cert-check-");
-    chazhengCertCheckExecutor.setRejectedExecutionHandler(new java.util.concurrent.ThreadPoolExecutor.AbortPolicy());
+    chazhengCertCheckExecutor.setRejectedExecutionHandler(
+        new java.util.concurrent.ThreadPoolExecutor.CallerRunsPolicy());
     chazhengCertCheckExecutor.setWaitForTasksToCompleteOnShutdown(true);
     chazhengCertCheckExecutor.setAwaitTerminationSeconds(60);
     chazhengCertCheckExecutor.initialize();

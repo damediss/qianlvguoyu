@@ -12,7 +12,8 @@ import org.springframework.util.StringUtils;
 
 /**
  * 跟班学员课时口径：45 分钟 = 1 课时；课表起止时间优先，否则用 classHours（不再 ÷45）。
- * 已上课时按「是否旷课」：仅统计截止日及以前的课次；默认计入，仅考勤明确缺勤扣除。
+ * 已上课时按「有考勤才计」：仅统计截止日及以前、且考勤为出勤/迟到/早退的课次；无考勤不计；缺勤不计。
+ * 导入考勤若挂旧课次号（课表已重导），按备注「导入课次：HH:mm-HH:mm」折算实际课时。
  */
 public final class FollowClassHourCalculator {
 
@@ -23,13 +24,20 @@ public final class FollowClassHourCalculator {
   public static final ZoneId ZONE = ZoneId.of("Asia/Shanghai");
 
   private static final BigDecimal FORTY_FIVE = BigDecimal.valueOf(MINUTE_UNIT);
+  private static final java.util.regex.Pattern IMPORT_TIME_RANGE =
+      java.util.regex.Pattern.compile("(\\d{1,2}:\\d{2})\\s*[-~～—–]\\s*(\\d{1,2}:\\d{2})");
 
   private FollowClassHourCalculator() {}
 
   public record SessionInput(
       Long id, String scheduleDate, String startTime, String endTime, String classHours) {}
 
-  public record AttendanceInput(Long peopleId, String attendanceDate, Long scheduleId, Integer status) {}
+  public record AttendanceInput(
+      Long peopleId, String attendanceDate, Long scheduleId, Integer status, String remark) {
+    public AttendanceInput(Long peopleId, String attendanceDate, Long scheduleId, Integer status) {
+      this(peopleId, attendanceDate, scheduleId, status, null);
+    }
+  }
 
   public record StudentInput(Long peopleId, String name) {}
 
@@ -168,30 +176,63 @@ public final class FollowClassHourCalculator {
       }
     }
 
+    Map<Long, ResolvedSession> sessionById = new LinkedHashMap<>();
+    for (ResolvedSession session : allSessions) {
+      if (session.id() != null) {
+        sessionById.put(session.id(), session);
+      }
+    }
+
     BigDecimal hours = BigDecimal.ZERO;
     int presentSessions = 0;
     int absentSessions = 0;
     boolean partial = false;
-    // 仅截止日及以前：默认计入；明确缺勤扣除。未来课次不计入已上课时。
+    // 仅截止日及以前：有考勤（出勤/迟到/早退）才计入；无考勤 / 缺勤 / 未来课次均不计。
     for (ResolvedSession session : allSessions) {
       if (!isOnOrBefore(session.date(), asOfDate)) {
         continue;
       }
+      SessionAttendanceMark mark = attendanceMarkForSession(session, days);
       if (!session.convertible()) {
-        DayBundle bundle = StringUtils.hasText(session.date()) ? days.get(session.date()) : null;
-        if (bundle != null
-            && (bundle.dayLevel != null
-                || (session.id() != null && bundle.sessions.containsKey(session.id())))) {
+        if (mark != SessionAttendanceMark.NONE) {
           partial = true;
         }
         continue;
       }
-      boolean absent = isAbsentForSession(session, days);
-      if (absent) {
+      if (mark == SessionAttendanceMark.ABSENT) {
         absentSessions++;
-      } else {
+      } else if (mark == SessionAttendanceMark.PRESENT) {
         hours = hours.add(session.hours());
         presentSessions++;
+      }
+    }
+    // 导入考勤挂在已失效课次号上：按备注时段折算，避免课表重导后已上课时变 0
+    for (AttendanceInput row : personAtt) {
+      if (!isPresent(row.status())) {
+        continue;
+      }
+      String date = normalizeDate(row.attendanceDate());
+      if (!isOnOrBefore(date, asOfDate)) {
+        continue;
+      }
+      if (row.scheduleId() != null && sessionById.containsKey(row.scheduleId())) {
+        continue;
+      }
+      if (row.scheduleId() == null) {
+        // 按日考勤已在上面按课表课次计入；无课次号且当天课表无课次时尝试备注
+        DayBundle bundle = StringUtils.hasText(date) ? days.get(date) : null;
+        boolean dayHasScheduleSessions = allSessions.stream()
+            .anyMatch(s -> date != null && date.equals(s.date()) && s.convertible());
+        if (dayHasScheduleSessions || (bundle != null && !bundle.sessions.isEmpty())) {
+          continue;
+        }
+      }
+      BigDecimal imported = hoursFromImportRemark(row.remark());
+      if (imported != null) {
+        hours = hours.add(imported);
+        presentSessions++;
+      } else if (row.scheduleId() != null) {
+        partial = true;
       }
     }
     for (DayBundle bundle : days.values()) {
@@ -199,12 +240,14 @@ public final class FollowClassHourCalculator {
         continue;
       }
       for (Long scheduleId : bundle.sessions.keySet()) {
-        ResolvedSession session = allSessions.stream()
-            .filter(s -> scheduleId.equals(s.id()))
-            .findFirst()
-            .orElse(null);
+        ResolvedSession session = sessionById.get(scheduleId);
         if (session == null || !session.convertible()) {
-          partial = true;
+          AttendanceInput att = bundle.sessions.get(scheduleId);
+          if (att != null && isPresent(att.status()) && hoursFromImportRemark(att.remark()) == null) {
+            partial = true;
+          } else if (session != null && !session.convertible()) {
+            partial = true;
+          }
         }
       }
     }
@@ -236,26 +279,51 @@ public final class FollowClassHourCalculator {
     }
   }
 
-  /** 按日缺勤仅在无课次行时生效；有课次行则按该课次是否旷课。 */
-  private static boolean isAbsentForSession(ResolvedSession session, Map<String, DayBundle> days) {
+  private enum SessionAttendanceMark {
+    NONE,
+    PRESENT,
+    ABSENT
+  }
+
+  /**
+   * 课次行优先：有该课次考勤则按该行状态；当天仅有按日考勤（无课次行）时套用按日状态；
+   * 否则视为无考勤（不计课时）。
+   */
+  private static SessionAttendanceMark attendanceMarkForSession(
+      ResolvedSession session, Map<String, DayBundle> days) {
     if (!StringUtils.hasText(session.date())) {
-      return false;
+      return SessionAttendanceMark.NONE;
     }
     DayBundle bundle = days.get(session.date());
     if (bundle == null) {
-      return false;
+      return SessionAttendanceMark.NONE;
     }
-    // 课次行优先：与考勤信息列表「一行一课次」口径一致
     if (!bundle.sessions.isEmpty()) {
       if (session.id() != null && bundle.sessions.containsKey(session.id())) {
-        return !isPresent(bundle.sessions.get(session.id()).status());
+        return isPresent(bundle.sessions.get(session.id()).status())
+            ? SessionAttendanceMark.PRESENT
+            : SessionAttendanceMark.ABSENT;
       }
-      return false;
+      return SessionAttendanceMark.NONE;
     }
     if (bundle.dayLevel != null) {
-      return !isPresent(bundle.dayLevel.status());
+      return isPresent(bundle.dayLevel.status())
+          ? SessionAttendanceMark.PRESENT
+          : SessionAttendanceMark.ABSENT;
     }
-    return false;
+    return SessionAttendanceMark.NONE;
+  }
+
+  /** 从「导入课次：08:30-11:30」类备注解析课时。 */
+  static BigDecimal hoursFromImportRemark(String remark) {
+    if (!StringUtils.hasText(remark)) {
+      return null;
+    }
+    java.util.regex.Matcher m = IMPORT_TIME_RANGE.matcher(remark);
+    if (!m.find()) {
+      return null;
+    }
+    return sessionHours(m.group(1), m.group(2), null);
   }
 
   static List<ResolvedSession> resolveSessions(List<SessionInput> sessions) {

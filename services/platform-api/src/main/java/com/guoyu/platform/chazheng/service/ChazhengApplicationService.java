@@ -470,8 +470,15 @@ public class ChazhengApplicationService {
 
     log.info("[certCheck] 开始查证 user={}, idCard={}", id, SensitiveMaskUtils.maskIdCard(user.getIdCard()));
 
-    CertQueryOutcome outcome = chazhengCertQueryService.queryByNameIdCard(
-        user.getUserName(), user.getIdCard(), tenantId);
+    CertQueryOutcome outcome;
+    try {
+      outcome = chazhengCertQueryService.queryByNameIdCard(
+          user.getUserName(), user.getIdCard(), tenantId);
+    } catch (CertQueryInterfaceDownException e) {
+      // 单人查证接口不走批次熔断；转为业务错误，避免前端只看到笼统 Internal server error
+      throw new BusinessException(ErrorCode.INTERNAL_ERROR,
+          e.getMessage() != null ? e.getMessage() : "查证接口不可达，请稍后重试");
+    }
 
     log.info("[certCheck] 查证完成 user={}, anyNormal={}, anyCertFound={}, certCount={}",
         id, outcome.anyNormal(), outcome.anyCertFound(), outcome.certs().size());

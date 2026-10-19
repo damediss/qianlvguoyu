@@ -96,7 +96,8 @@ public class TrainFollowClassHourApplicationService {
     }
     List<AttendanceInput> att = new ArrayList<>();
     for (TrainAttendanceEntity a : attendances) {
-      att.add(new AttendanceInput(a.getUserId(), a.getAttendanceDate(), a.getScheduleId(), a.getStatus()));
+      att.add(new AttendanceInput(
+          a.getUserId(), a.getAttendanceDate(), a.getScheduleId(), a.getStatus(), a.getRemark()));
     }
     List<StudentInput> students = new ArrayList<>();
     for (TrainPeopleListEntity p : people) {

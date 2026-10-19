@@ -19,6 +19,33 @@ function formatClassHours(value?: number | string | null): string {
   return n.toFixed(1);
 }
 
+const IMPORT_TIME_RANGE = /(\d{1,2}:\d{2})\s*[-~～—–]\s*(\d{1,2}:\d{2})/;
+
+function minutesOfClock(raw: string): number | null {
+  const [h, m] = raw.split(':').map((part) => Number(part));
+  if (!Number.isFinite(h) || !Number.isFinite(m) || h < 0 || h > 23 || m < 0 || m > 59) return null;
+  return h * 60 + m;
+}
+
+/** 导入备注第一行保留原文，折算课时另起一行。 */
+function renderRemarkWithHours(remark?: string | null) {
+  if (!remark) return '—';
+  const matched = remark.match(IMPORT_TIME_RANGE);
+  if (!matched) return remark;
+  const start = minutesOfClock(matched[1]);
+  const end = minutesOfClock(matched[2]);
+  if (start == null || end == null || end <= start) return remark;
+  const base = remark.replace(/[（(][\d.]+课时[）)]/g, '').trim();
+  const hours = (end - start) / 45;
+  const hoursText = Number.isInteger(hours) ? String(hours) : hours.toFixed(1);
+  return (
+    <div style={{ whiteSpace: 'normal', lineHeight: 1.45 }}>
+      <div>{base}</div>
+      <div>{hoursText}课时</div>
+    </div>
+  );
+}
+
 type Props = {
   open: boolean;
   classId: number | null;
@@ -110,8 +137,7 @@ export function StudentAttendanceDetailDrawer({ open, classId, student, hoursRow
     {
       title: '备注',
       dataIndex: 'remark',
-      ellipsis: true,
-      render: (v?: string) => v || '—',
+      render: (v?: string) => renderRemarkWithHours(v),
     },
   ];
 
@@ -164,7 +190,7 @@ export function StudentAttendanceDetailDrawer({ open, classId, student, hoursRow
             <div>
               <Typography.Text type="secondary">
                 课时完成率 {Number(hoursRow.completionRate).toFixed(1)}%
-                {hoursRow.hoursStatus === 'unrecorded' ? '（无考勤记录，按未旷课计）' : ''}
+                {hoursRow.hoursStatus === 'unrecorded' ? '（无考勤记录，不计已上课时）' : ''}
               </Typography.Text>
               <Progress percent={Number(hoursRow.completionRate)} size="small" showInfo={false} style={{ marginTop: 4 }} />
             </div>
