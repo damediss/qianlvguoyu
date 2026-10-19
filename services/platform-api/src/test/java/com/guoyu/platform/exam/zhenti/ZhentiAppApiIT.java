@@ -30,7 +30,10 @@ class ZhentiAppApiIT extends ZhentiApiTestSupport {
         .andExpect(jsonPath("$.data.records.length()").value(2))
         .andExpect(jsonPath("$.data.records[0].year").value("2024"))
         .andExpect(jsonPath("$.data.records[1].year").value("2023"))
-        .andExpect(jsonPath("$.data.records[0].id").isString());
+        .andExpect(jsonPath("$.data.records[0].id").isString())
+        // 过渡兼容：已发版旧 App 读 data.list，与 records 同引用；下版 App 发布后删别名并移除本断言
+        .andExpect(jsonPath("$.data.list.length()").value(2))
+        .andExpect(jsonPath("$.data.list[0].year").value("2024"));
   }
 
   @Test
