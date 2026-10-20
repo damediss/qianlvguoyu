@@ -6,6 +6,7 @@ param(
     [int]$ApiPort = 8080,
     [switch]$LocalTest,
     [switch]$CompetitionJudge,
+    [switch]$CompetitionTheory,
     [switch]$SkipBuild,
     [switch]$SkipInstall,
     [switch]$LogcatOnly
@@ -13,11 +14,13 @@ param(
 
 $ErrorActionPreference = "Stop"
 $Root = Split-Path -Parent $MyInvocation.MyCommand.Path
-if ($CompetitionJudge -and $LocalTest) {
-    throw "Use either -CompetitionJudge or -LocalTest, not both."
+if (([int]$CompetitionJudge + [int]$CompetitionTheory + [int]$LocalTest) -gt 1) {
+    throw "Choose only one of -CompetitionJudge, -CompetitionTheory, or -LocalTest."
 }
 $Flavor = if ($CompetitionJudge) {
     "competitionJudgeLocal"
+} elseif ($CompetitionTheory) {
+    "competitionTheoryLocal"
 } elseif ($LocalTest) {
     "localTest"
 } else {
@@ -26,6 +29,8 @@ $Flavor = if ($CompetitionJudge) {
 $ApkPath = Join-Path $Root "app\build\outputs\apk\$Flavor\debug\app-$Flavor-debug.apk"
 $PackageName = if ($CompetitionJudge) {
     "com.example.webviewshelldemo.competitionjudge.local"
+} elseif ($CompetitionTheory) {
+    "com.example.webviewshelldemo.competitiontheory.local"
 } elseif ($LocalTest) {
     "com.example.webviewshelldemo.localtest"
 } else {
@@ -33,6 +38,8 @@ $PackageName = if ($CompetitionJudge) {
 }
 $WebUrl = if ($CompetitionJudge) {
     "http://${LocalHost}:$WebPort/competition-practical-judge"
+} elseif ($CompetitionTheory) {
+    "http://${LocalHost}:$WebPort/formal-exam"
 } elseif ($LocalTest) {
     "http://${LocalHost}:$WebPort/practical-collection/workbench/$TaskId"
 } else {
@@ -83,6 +90,8 @@ if (-not $SkipBuild) {
     try {
         $gradleTask = if ($CompetitionJudge) {
             ":app:assembleCompetitionJudgeLocalDebug"
+        } elseif ($CompetitionTheory) {
+            ":app:assembleCompetitionTheoryLocalDebug"
         } elseif ($LocalTest) {
             ":app:assembleLocalTestDebug"
         } else {
@@ -120,6 +129,8 @@ Write-Host ""
 Write-Host "Logcat: .\wired-debug.ps1 -LogcatOnly"
 if ($CompetitionJudge) {
     Write-Host "Relaunch: .\wired-debug.ps1 -CompetitionJudge -SkipBuild -SkipInstall"
+} elseif ($CompetitionTheory) {
+    Write-Host "Relaunch: .\wired-debug.ps1 -CompetitionTheory -SkipBuild -SkipInstall"
 } else {
     Write-Host "Relaunch: .\wired-debug.ps1 -SkipBuild -SkipInstall -TaskId YOUR_TASK_ID"
 }

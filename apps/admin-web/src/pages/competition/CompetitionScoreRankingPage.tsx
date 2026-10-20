@@ -87,6 +87,7 @@ import {
   pageCompetitionScoreSources,
   pageCompetitionStages,
   pageCompetitionTotalScoreSnapshots,
+  publishCalculatedCompetitionRanking,
   publishCompetitionRankingSnapshot,
   retryCompetitionFormalScoringTask,
   uploadCompetitionSimulationScores,
@@ -103,6 +104,7 @@ import type {
   CompetitionPlayer,
   CompetitionRankingCandidate,
   CompetitionRankingEntry,
+  CompetitionCalculatedRankingPublishRequest,
   CompetitionRankingSnapshot,
   CompetitionScoreConfirmationStatus,
   CompetitionScoreRule,
@@ -659,6 +661,7 @@ export function CompetitionScoreRankingPage({
   );
   const canReviewRanking = permissions.includes('competition:score:review');
   const canPublishRanking = permissions.includes('competition:ranking:publish');
+  const canPublishCalculatedRanking = canReviewRanking && canPublishRanking;
   const canImportSimulation = permissions.includes('competition:score:import');
   const canRetryScoring = permissions.includes('competition:score-task:retry');
   const canViewPlayers = permissions.includes('competition:player:view');
@@ -921,13 +924,19 @@ export function CompetitionScoreRankingPage({
     enabled: canViewRanking && Boolean(selectedSnapshotId),
   });
   const playersQuery = useQuery({
-    queryKey: ['competition-score-players', eventId, eventWorkTypeId],
+    queryKey: [
+      'competition-score-players',
+      eventId,
+      eventWorkTypeId,
+      eventWorkTypeLevelId,
+    ],
     queryFn: () =>
       pageCompetitionPlayers({
         page: 1,
         pageSize: 500,
         eventId,
         eventWorkTypeId,
+        eventWorkTypeLevelId,
       }),
     enabled: canViewPlayers && Boolean(eventWorkTypeId),
   });
@@ -1039,20 +1048,19 @@ export function CompetitionScoreRankingPage({
     [requiredSourceTypes, scoringSources],
   );
   const players = useMemo(
-    () =>
-      (playersQuery.data?.items || []).filter(
-        (player) =>
-          !eventWorkTypeLevelId ||
-          idValue(player.eventWorkTypeLevelId) === eventWorkTypeLevelId,
-      ),
-    [eventWorkTypeLevelId, playersQuery.data?.items],
+    () => playersQuery.data?.items || [],
+    [playersQuery.data?.items],
   );
   const rankingSnapshots = rankingSnapshotsQuery.data?.items || [];
   const activeSnapshot = useMemo(
     () =>
-      rankingSnapshots.find((snapshot) => snapshot.status === 'published') ||
-      rankingSnapshots.find((snapshot) => snapshot.status === 'confirmed') ||
-      rankingSnapshots.find((snapshot) => snapshot.status === 'draft'),
+      [...rankingSnapshots]
+        .filter((snapshot) => snapshot.status !== 'superseded')
+        .sort(
+          (left, right) =>
+            Number(right.snapshotVersion || 0) -
+            Number(left.snapshotVersion || 0),
+        )[0],
     [rankingSnapshots],
   );
   useEffect(() => {
@@ -1220,6 +1228,23 @@ export function CompetitionScoreRankingPage({
     }) => publishCompetitionRankingSnapshot(snapshotId, correctionReason),
     onSuccess: () => {
       message.success('排名已发布，选手现在可以查看本人结果');
+      queryClient.invalidateQueries({
+        queryKey: ['competition-ranking-snapshots', eventId],
+      });
+    },
+  });
+  const publishCalculatedRankingMutation = useMutation({
+    mutationFn: (correctionReason?: string) => {
+      const payload: CompetitionCalculatedRankingPublishRequest = {
+        stageId: stageId!,
+        eventWorkTypeId: eventWorkTypeId!,
+        eventWorkTypeLevelId,
+        correctionReason,
+      };
+      return publishCalculatedCompetitionRanking(eventId, payload);
+    },
+    onSuccess: () => {
+      message.success('综合成绩已发布，选手现在可以查看本人结果');
       queryClient.invalidateQueries({
         queryKey: ['competition-ranking-snapshots', eventId],
       });
@@ -1575,6 +1600,44 @@ export function CompetitionScoreRankingPage({
           snapshotId,
           correctionReason: reason.trim(),
         });
+      },
+    });
+  };
+  const requestCalculatedRankingPublish = () => {
+    const hasPublishedSnapshot = rankingSnapshots.some(
+      (snapshot) => snapshot.status === 'published',
+    );
+    if (!hasPublishedSnapshot) {
+      Modal.confirm({
+        title: '确认复核并发布排名',
+        content:
+          '系统将按当前完整成绩生成排名快照，并立即向选手发布。确认当前成绩和排名范围无误后继续。',
+        okText: '确认复核并发布',
+        onOk: async () => {
+          await publishCalculatedRankingMutation.mutateAsync(undefined);
+        },
+      });
+      return;
+    }
+    let reason = '';
+    Modal.confirm({
+      title: '填写排名更正发布原因',
+      content: (
+        <Input.TextArea
+          rows={3}
+          maxLength={500}
+          onChange={(event) => {
+            reason = event.target.value;
+          }}
+        />
+      ),
+      okText: '发布并替代旧版本',
+      onOk: async () => {
+        if (!reason.trim()) {
+          message.error('更正发布必须填写原因');
+          return Promise.reject(new Error('correction reason required'));
+        }
+        await publishCalculatedRankingMutation.mutateAsync(reason.trim());
       },
     });
   };
@@ -2019,9 +2082,13 @@ export function CompetitionScoreRankingPage({
     )
     .filter(Boolean);
   const canPublish =
+    contextReady &&
     statistics.participantCount > 0 &&
+    statistics.eligibleCount > 0 &&
     statistics.complete >= statistics.eligibleCount &&
-    activeSnapshot?.status === 'confirmed';
+    statistics.abnormal === 0 &&
+    (usesStageContentFormula ||
+      ['draft', 'confirmed'].includes(activeSnapshot?.status || ''));
   const answerSheetQuestions = answerSheetQuery.data?.questions || [];
   const activeAnswerQuestion =
     answerSheetQuestions.find(
@@ -3020,7 +3087,7 @@ export function CompetitionScoreRankingPage({
                         汇总与发布中心
                       </Typography.Title>
                       <Typography.Text type="secondary">
-                        发布前完成成绩完整性、锁定状态和排名快照复核。
+                        综合成绩计算完成后，可将当前排名快照发布到选手 App。
                       </Typography.Text>
                     </div>
                     <Space>
@@ -3050,23 +3117,30 @@ export function CompetitionScoreRankingPage({
                         <Typography.Text strong>发布前检查</Typography.Text>
                         {[
                           statistics.complete >= statistics.eligibleCount
-                            ? '所有应排名选手均已有已确认总分'
-                            : `仍有 ${Math.max(0, statistics.eligibleCount - statistics.complete)} 名选手缺少已确认总分`,
+                            ? '所有应排名选手均已完成综合成绩计算'
+                            : `仍有 ${Math.max(0, statistics.eligibleCount - statistics.complete)} 名选手缺少已确认综合成绩`,
                           statistics.absent
                             ? `${statistics.absent} 名缺考选手将保留在榜单但不占名次`
                             : '没有缺考选手',
                           statistics.abnormal
                             ? `${statistics.abnormal} 名选手存在异常成绩，需要处理后再发布`
                             : '未发现异常成绩',
-                          activeSnapshot?.status === 'confirmed' ||
-                          activeSnapshot?.status === 'published'
-                            ? '当前排名快照已复核确认'
-                            : '尚未有已复核确认的排名快照',
+                          activeSnapshot?.status === 'draft' ||
+                          activeSnapshot?.status === 'confirmed'
+                            ? '已有可发布的排名快照'
+                            : activeSnapshot?.status === 'published'
+                              ? '当前排名快照已发布'
+                              : usesStageContentFormula && canPublish
+                                ? canPublishCalculatedRanking
+                                  ? '成绩已计算完成，确认复核后可生成并发布排名快照'
+                                  : '成绩已就绪，但当前账号缺少复核或发布权限'
+                                : '尚无可发布的排名快照',
                         ].map((text) => {
                           const warn =
                             text.includes('仍有') ||
                             text.includes('存在异常') ||
-                            text.includes('尚未');
+                            text.includes('没有发布权限') ||
+                            text.includes('尚无');
                           return (
                             <div
                               key={text}
@@ -3103,9 +3177,9 @@ export function CompetitionScoreRankingPage({
                         </div>
                         <Typography.Text type="secondary">
                           {theoryOnly
-                            ? '理论成绩来自题目快照分值和答案判定，判分完成后自动形成综合成绩与排名草稿。'
+                            ? '理论成绩来自题目快照分值和答案判定，综合成绩计算完成后可直接发布到选手 App。'
                             : usesStageContentFormula
-                              ? '综合成绩按赛段内容权重计算。已确认的科目分按编排权重合成后自动形成排名草稿。'
+                              ? '综合成绩按赛段内容权重计算。发布时按当前成绩和考试名单生成排名快照并推送到选手 App。'
                               : '最终综合成绩由服务端按已发布规则计算，前端只展示结果。'}
                         </Typography.Text>
                         <div className="competition-score-rule-card__scope">
@@ -3137,32 +3211,47 @@ export function CompetitionScoreRankingPage({
                         生成排名快照
                       </Button>
                     )}
-                    {activeSnapshot && (
-                      <Button
-                        type="primary"
-                        disabled={
-                          activeSnapshot.status === 'published' || !canPublish
+                    {(usesStageContentFormula
+                      ? canViewScores || canViewRanking
+                      : Boolean(activeSnapshot && canPublishRanking)) && (
+                      <Tooltip
+                        title={
+                          usesStageContentFormula && canPublishRanking && !canReviewRanking
+                            ? '直接发布计算结果需要竞赛成绩复核和竞赛排名发布权限，请联系管理员配置。'
+                            : canPublishRanking
+                              ? undefined
+                              : '当前账号缺少竞赛排名发布权限，请联系管理员配置。'
                         }
-                        onClick={() => {
-                          if (
-                            activeSnapshot.status === 'draft' &&
-                            canReviewRanking
-                          )
-                            confirmRankingMutation.mutate(activeSnapshot.id);
-                          else if (
-                            activeSnapshot.status === 'confirmed' &&
-                            canPublishRanking
-                          )
-                            requestRankingPublish(activeSnapshot.id);
-                        }}
                       >
-                        {activeSnapshot.status === 'published'
-                          ? '已发布'
-                          : activeSnapshot.status === 'confirmed'
-                            ? '发布排名'
-                            : '先复核排名'}
-                      </Button>
-                    )}
+                        <span>
+                          <Button
+                            type="primary"
+                            loading={
+                              publishRankingMutation.isPending ||
+                              publishCalculatedRankingMutation.isPending
+                            }
+                            disabled={
+                              !(usesStageContentFormula
+                                ? canPublishCalculatedRanking
+                                : canPublishRanking) ||
+                              activeSnapshot?.status === 'published' ||
+                              !canPublish
+                            }
+                            onClick={() => {
+                              if (usesStageContentFormula) {
+                                requestCalculatedRankingPublish();
+                              } else if (activeSnapshot) {
+                                requestRankingPublish(activeSnapshot.id);
+                              }
+                            }}
+                          >
+                            {activeSnapshot?.status === 'published'
+                              ? '已发布'
+                              : '发布成绩'}
+                          </Button>
+                        </span>
+                      </Tooltip>
+                      )}
                   </div>
                 </Card>
                 {canViewRanking && (

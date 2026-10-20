@@ -37,6 +37,11 @@ android {
             applicationIdSuffix = ".competitionjudge.local"
             versionNameSuffix = "-competitionJudgeLocal"
         }
+        create("competitionTheoryLocal") {
+            dimension = "env"
+            applicationIdSuffix = ".competitiontheory.local"
+            versionNameSuffix = "-competitionTheoryLocal"
+        }
     }
 
     buildTypes {

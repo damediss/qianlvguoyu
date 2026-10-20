@@ -3,6 +3,7 @@ package com.guoyu.platform.competition.player.sms;
 import com.aliyun.dysmsapi20170525.Client;
 import com.aliyun.dysmsapi20170525.models.SendSmsRequest;
 import com.aliyun.dysmsapi20170525.models.SendSmsResponse;
+import com.aliyun.tea.TeaException;
 import com.aliyun.teaopenapi.models.Config;
 import com.guoyu.platform.competition.player.config.CompetitionPlayerSmsProperties;
 import java.util.Objects;
@@ -47,10 +48,24 @@ public class AliyunCompetitionSmsSender implements CompetitionSmsSender {
       String providerMessageId = response.getBody().getBizId();
       return new CompetitionSmsSendResult(true, providerMessageId);
     } catch (Exception ex) {
-      log.warn("Aliyun SMS invocation failed, purpose={}, errorType={}",
-          message.purpose().getCode(), ex.getClass().getSimpleName());
+      TeaException providerError = findProviderError(ex);
+      log.warn("Aliyun SMS invocation failed, purpose={}, errorType={}, providerCode={}, httpStatus={}",
+          message.purpose().getCode(), ex.getClass().getSimpleName(),
+          providerError == null ? null : providerError.getCode(),
+          providerError == null ? null : providerError.getStatusCode());
       return new CompetitionSmsSendResult(false, null);
     }
+  }
+
+  private TeaException findProviderError(Throwable error) {
+    Throwable current = error;
+    while (current != null) {
+      if (current instanceof TeaException teaException) {
+        return teaException;
+      }
+      current = current.getCause();
+    }
+    return null;
   }
 
   private void validateConfiguration() {

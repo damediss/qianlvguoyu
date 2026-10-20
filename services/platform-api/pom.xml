@@ -210,6 +210,11 @@
           <groupId>com.squareup.okhttp</groupId>
           <artifactId>logging-interceptor</artifactId>
         </exclusion>
+        <!-- Tencent SDK pins Okio 1.x, which conflicts with the Okio 3.x required by Alibaba SMS OkHttp 4.12. -->
+        <exclusion>
+          <groupId>com.squareup.okio</groupId>
+          <artifactId>okio</artifactId>
+        </exclusion>
       </exclusions>
     </dependency>
 

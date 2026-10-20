@@ -91,6 +91,7 @@ class CompetitionPlayerManagementServiceTest {
         isNull(),
         isNull(),
         isNull(),
+        isNull(),
         isNull())).thenReturn(page);
 
     var query = new com.guoyu.platform.competition.dto.CompetitionPlayerQueryReq();

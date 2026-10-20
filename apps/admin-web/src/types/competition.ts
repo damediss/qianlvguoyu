@@ -255,6 +255,7 @@ export interface CompetitionPlayerQuery {
   eventId?: CompetitionId;
   orgId?: CompetitionId;
   eventWorkTypeId?: CompetitionId;
+  eventWorkTypeLevelId?: CompetitionId;
   keyword?: string;
   name?: string;
   status?: string;
@@ -1187,6 +1188,13 @@ export interface CompetitionRankingGenerateRequest {
   scoreRuleId: CompetitionId;
   generationReason?: string;
   candidates: CompetitionRankingCandidate[];
+}
+
+export interface CompetitionCalculatedRankingPublishRequest {
+  stageId: CompetitionId;
+  eventWorkTypeId: CompetitionId;
+  eventWorkTypeLevelId?: CompetitionId | null;
+  correctionReason?: string;
 }
 
 export interface CompetitionRankingGenerateResult {

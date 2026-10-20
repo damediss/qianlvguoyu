@@ -7,6 +7,7 @@ public class CompetitionPlayerQueryReq extends PageQuery {
   private Long eventId;
   private Long orgId;
   private Long eventWorkTypeId;
+  private Long eventWorkTypeLevelId;
   private String keyword;
   private String name;
   private String status;
@@ -17,6 +18,10 @@ public class CompetitionPlayerQueryReq extends PageQuery {
   public void setOrgId(Long orgId) { this.orgId = orgId; }
   public Long getEventWorkTypeId() { return eventWorkTypeId; }
   public void setEventWorkTypeId(Long eventWorkTypeId) { this.eventWorkTypeId = eventWorkTypeId; }
+  public Long getEventWorkTypeLevelId() { return eventWorkTypeLevelId; }
+  public void setEventWorkTypeLevelId(Long eventWorkTypeLevelId) {
+    this.eventWorkTypeLevelId = eventWorkTypeLevelId;
+  }
   public String getKeyword() { return keyword; }
   public void setKeyword(String keyword) { this.keyword = keyword; }
   public String getName() { return name; }

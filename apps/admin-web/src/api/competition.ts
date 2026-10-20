@@ -57,6 +57,7 @@ import type {
   CompetitionRankingEntry,
   CompetitionRankingGenerateRequest,
   CompetitionRankingGenerateResult,
+  CompetitionCalculatedRankingPublishRequest,
   CompetitionFormalScoringTask,
   CompetitionSimulationImportBatch,
   CompetitionSubjectScoreImportBatch,
@@ -1269,6 +1270,18 @@ export function confirmCompetitionRankingSnapshot(snapshotId: CompetitionId) {
 export function publishCompetitionRankingSnapshot(snapshotId: CompetitionId, correctionReason?: string) {
   return unwrap<CompetitionRankingSnapshot>(
     apiClient.post(`/competition/ranking-snapshots/${snapshotId}/publish`, { correctionReason }),
+  );
+}
+
+export function publishCalculatedCompetitionRanking(
+  eventId: CompetitionId,
+  payload: CompetitionCalculatedRankingPublishRequest,
+) {
+  return unwrap<CompetitionRankingSnapshot>(
+    apiClient.post(
+      `/competition/events/${eventId}/ranking-snapshots/publish-calculated`,
+      payload,
+    ),
   );
 }
 
