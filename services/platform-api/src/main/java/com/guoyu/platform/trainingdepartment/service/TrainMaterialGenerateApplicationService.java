@@ -17,7 +17,9 @@ import com.guoyu.platform.trainingdepartment.mapper.TrainInfoClassMapper;
 import com.guoyu.platform.trainingdepartment.mapper.TrainInfoListMapper;
 import com.guoyu.platform.trainingdepartment.mapper.TrainPeopleListMapper;
 import com.guoyu.platform.trainingdepartment.support.TrainClassMaterialPackService;
+import com.guoyu.platform.trainingdepartment.support.TrainWillingnessFormPackService;
 import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -40,6 +42,7 @@ public class TrainMaterialGenerateApplicationService {
   private final TrainFileListMapper trainFileListMapper;
   private final TrainFileDetailMapper trainFileDetailMapper;
   private final TrainClassMaterialPackService materialPackService;
+  private final TrainWillingnessFormPackService willingnessFormPackService;
 
   public TrainMaterialGenerateApplicationService(
       TrainInfoClassMapper classMapper,
@@ -48,7 +51,8 @@ public class TrainMaterialGenerateApplicationService {
       FileApplicationService fileApplicationService,
       TrainFileListMapper trainFileListMapper,
       TrainFileDetailMapper trainFileDetailMapper,
-      TrainClassMaterialPackService materialPackService) {
+      TrainClassMaterialPackService materialPackService,
+      TrainWillingnessFormPackService willingnessFormPackService) {
     this.classMapper = classMapper;
     this.infoListMapper = infoListMapper;
     this.peopleListMapper = peopleListMapper;
@@ -56,6 +60,7 @@ public class TrainMaterialGenerateApplicationService {
     this.trainFileListMapper = trainFileListMapper;
     this.trainFileDetailMapper = trainFileDetailMapper;
     this.materialPackService = materialPackService;
+    this.willingnessFormPackService = willingnessFormPackService;
   }
 
   /**
@@ -146,6 +151,140 @@ public class TrainMaterialGenerateApplicationService {
       log.error("保存申报材料文件失败", e);
       throw new BusinessException(ErrorCode.INTERNAL_ERROR, "保存申报材料文件失败: " + e.getMessage());
     }
+  }
+
+  /**
+   * 按班级花名册批量生成《培训意愿需求登记表》ZIP（官方模板填空，不改版式）。
+   */
+  @Transactional
+  public Map<String, Object> generateWillingnessForms(Long classId) {
+    Long tenantId = SecurityContext.currentUser().getTenantId();
+    Long userId = SecurityContext.currentUser().getUserId();
+
+    TrainInfoClassEntity classEntity = classMapper.selectOne(
+        new LambdaQueryWrapper<TrainInfoClassEntity>()
+            .eq(TrainInfoClassEntity::getId, classId)
+            .eq(TrainInfoClassEntity::getDeleted, 0));
+    if (classEntity == null) {
+      throw new BusinessException(ErrorCode.NOT_FOUND, "班级不存在");
+    }
+
+    TrainInfoListEntity infoEntity = null;
+    if (classEntity.getTrainInfoId() != null) {
+      infoEntity = infoListMapper.selectById(classEntity.getTrainInfoId());
+    }
+
+    List<TrainPeopleListEntity> students = peopleListMapper.selectList(
+        new LambdaQueryWrapper<TrainPeopleListEntity>()
+            .eq(TrainPeopleListEntity::getTrainClassId, classId)
+            .eq(TrainPeopleListEntity::getType, "student")
+            .eq(TrainPeopleListEntity::getDeleted, 0)
+            .orderByAsc(TrainPeopleListEntity::getSortNumber)
+            .orderByAsc(TrainPeopleListEntity::getId));
+    if (students.isEmpty()) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST, "该班级未添加任何学员");
+    }
+
+    TrainWillingnessFormPackService.PackResult pack;
+    try {
+      pack = willingnessFormPackService.buildZip(classEntity, infoEntity, students);
+    } catch (IllegalStateException ex) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST, ex.getMessage());
+    } catch (Exception e) {
+      log.error("生成培训意愿需求登记表失败 classId={}", classId, e);
+      throw new BusinessException(ErrorCode.INTERNAL_ERROR, "生成意愿登记表失败: " + e.getMessage());
+    }
+
+    String stamp = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMddHHmmss"));
+    // 班级名称+工种+等级+意愿登记表+时间戳
+    String safeName = buildWillingnessDownloadName(
+        classEntity.getTitle(), pack.workTypeTitle(), pack.classLevel(), stamp);
+    try {
+      FileVO stored = fileApplicationService.storeFromBytes(
+          pack.zipBytes(), safeName, "application/zip", "private");
+
+      TrainFileListEntity fileList = new TrainFileListEntity();
+      fileList.setTableName("train_info_class");
+      fileList.setPk(String.valueOf(classId));
+      fileList.setTitle(safeName.replace(".zip", ""));
+      fileList.setUserId(userId);
+      fileList.setStatus(1);
+      fileList.setSortNumber(0);
+      fileList.setTenantId(tenantId);
+      fileList.setCreateTime(LocalDateTime.now());
+      trainFileListMapper.insert(fileList);
+
+      TrainFileDetailEntity fileDetail = new TrainFileDetailEntity();
+      fileDetail.setFileId(fileList.getId());
+      fileDetail.setTitle(safeName);
+      fileDetail.setPath("/api/files/" + stored.id() + "/download");
+      fileDetail.setUserId(userId);
+      fileDetail.setStatus(1);
+      fileDetail.setSortNumber(0);
+      fileDetail.setTenantId(tenantId);
+      fileDetail.setCreateTime(LocalDateTime.now());
+      trainFileDetailMapper.insert(fileDetail);
+
+      Map<String, Object> result = new LinkedHashMap<>();
+      result.put("ok", true);
+      result.put("downUrl", "/api/files/" + stored.id() + "/download");
+      result.put("fileId", stored.id());
+      result.put("downloadFileName", safeName);
+      result.put("generated", pack.generated());
+      result.put("failed", pack.failed());
+      result.put("notes", pack.notes());
+      result.put(
+          "message",
+          "已为 "
+              + pack.generated()
+              + " 名学员生成培训意愿需求登记表"
+              + (pack.failed() > 0 ? "（失败 " + pack.failed() + "）" : ""));
+      return result;
+    } catch (BusinessException e) {
+      throw e;
+    } catch (Exception e) {
+      log.error("保存意愿登记表 ZIP 失败 classId={}", classId, e);
+      throw new BusinessException(ErrorCode.INTERNAL_ERROR, "保存意愿登记表失败: " + e.getMessage());
+    }
+  }
+
+  /** 班级名称_工种_等级_意愿登记表_时间戳.zip */
+  private String buildWillingnessDownloadName(
+      String classTitle, String workTypeTitle, Integer classLevel, String stamp) {
+    StringBuilder sb = new StringBuilder();
+    sb.append(sanitizeFileName(blankToDefault(classTitle, "班级")));
+    String wt = blankToDefault(workTypeTitle, "");
+    if (!wt.isEmpty()) {
+      sb.append('_').append(sanitizeFileName(wt));
+    }
+    String level = formatClassLevelLabel(classLevel);
+    if (!level.isEmpty()) {
+      sb.append('_').append(sanitizeFileName(level));
+    }
+    sb.append("_意愿登记表_").append(stamp).append(".zip");
+    return sb.toString();
+  }
+
+  /** 与开班申报页一致：5=五级/初级工 … 1=一级/高级技师 */
+  private static String formatClassLevelLabel(Integer level) {
+    if (level == null || level <= 0) {
+      return "";
+    }
+    return switch (level) {
+      case 5 -> "五级初级工";
+      case 4 -> "四级中级工";
+      case 3 -> "三级高级工";
+      case 2 -> "二级技师";
+      case 1 -> "一级高级技师";
+      default -> level + "级";
+    };
+  }
+
+  private static String blankToDefault(String value, String fallback) {
+    if (value == null || value.isBlank()) {
+      return fallback;
+    }
+    return value.trim();
   }
 
   private String sanitizeFileName(String name) {

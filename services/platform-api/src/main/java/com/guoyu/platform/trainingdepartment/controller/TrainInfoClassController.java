@@ -142,6 +142,17 @@ public class TrainInfoClassController {
     return ApiResponse.ok(trainMaterialGenerateApplicationService.generate(classId));
   }
 
+  /** 批量生成《培训意愿需求登记表》（开班材料，官方模板填空） */
+  @PostMapping("/info-classes/{classId}/materials/generate-willingness-forms")
+  @PreAuthorize(TrainingAuthorityExpressions.DECLARE_CLASS_MUTATE)
+  @AuditLog(
+      module = "training",
+      action = "info-class:generate-willingness-forms",
+      targetType = "train_info_class")
+  public ApiResponse<Map<String, Object>> generateWillingnessForms(@PathVariable Long classId) {
+    return ApiResponse.ok(trainMaterialGenerateApplicationService.generateWillingnessForms(classId));
+  }
+
   /** 企业确认分班 */
   @PostMapping("/info-classes/{id}/company-confirm")
   @PreAuthorize(TrainingAuthorityExpressions.INFO_CLASS_ENTERPRISE_CONFIRM)

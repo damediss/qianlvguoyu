@@ -1527,6 +1527,20 @@ export function generateMaterials(classId: number) {
   return unwrap<{ downUrl: string; fileId: number }>(apiClient.post(`${BASE}/info-classes/${classId}/materials/generate`));
 }
 
+/** 批量生成《培训意愿需求登记表》ZIP */
+export function generateWillingnessForms(classId: number) {
+  return unwrap<{
+    ok?: boolean;
+    downUrl: string;
+    fileId: number;
+    downloadFileName?: string;
+    generated?: number;
+    failed?: number;
+    message?: string;
+    notes?: string[];
+  }>(apiClient.post(`${BASE}/info-classes/${classId}/materials/generate-willingness-forms`));
+}
+
 // ==================== 毕业管理 / 毕业典礼（O3） ====================
 
 /** 可毕业班级列表 */
