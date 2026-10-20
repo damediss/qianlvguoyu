@@ -418,8 +418,19 @@ export function fetchUrlFileBlob(url: string, options?: { silentError?: boolean 
  */
 const PROXIED_DOWNLOAD_PATH = /^\/api\/files\/(\d+)\/download$/;
 
+function triggerBlobDownload(blob: Blob, fileName: string): void {
+  const objectUrl = URL.createObjectURL(blob);
+  const anchor = document.createElement('a');
+  anchor.href = objectUrl;
+  anchor.download = fileName;
+  anchor.click();
+  URL.revokeObjectURL(objectUrl);
+}
+
 export async function downloadUrlFile(url: string, fileName?: string): Promise<void> {
   // COS 大文件直链快路径：浏览器原生流式下载，不受 axios 120s 超时限制、不占内存。
+  // 注意：跨域直链时 a.download 会被浏览器忽略，保存名变成 objectKey（UUID）；
+  // 若调用方指定了 fileName，改为拉 blob 再另存，保证中文可读文件名生效。
   const match = PROXIED_DOWNLOAD_PATH.exec(url.split('?')[0]);
   if (match) {
     try {
@@ -428,10 +439,17 @@ export async function downloadUrlFile(url: string, fileName?: string): Promise<v
       );
       const direct = res.data.data?.url ?? '';
       if (/^https?:\/\//.test(direct)) {
+        if (fileName) {
+          const resp = await fetch(direct);
+          if (!resp.ok) {
+            throw new Error(`直链下载失败: ${resp.status}`);
+          }
+          triggerBlobDownload(await resp.blob(), fileName);
+          return;
+        }
         const anchor = document.createElement('a');
         anchor.href = direct;
         anchor.rel = 'noopener';
-        if (fileName) anchor.download = fileName;
         anchor.click();
         return;
       }
@@ -441,12 +459,7 @@ export async function downloadUrlFile(url: string, fileName?: string): Promise<v
   }
   const blob = await fetchUrlFileBlob(url);
   const name = fileName || fileNameFromUrl(url) || 'download';
-  const objectUrl = URL.createObjectURL(blob);
-  const anchor = document.createElement('a');
-  anchor.href = objectUrl;
-  anchor.download = name;
-  anchor.click();
-  URL.revokeObjectURL(objectUrl);
+  triggerBlobDownload(blob, name);
 }
 
 /**

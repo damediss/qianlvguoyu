@@ -121,6 +121,7 @@ export function TrainingClassDeclarePage() {
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize] = useState(20);
   const [generating, setGenerating] = useState(false);
+  const [generatingWillingness, setGeneratingWillingness] = useState(false);
 
   const [fileTempOpen, setFileTempOpen] = useState(false);
   const [fileTempImport, setFileTempImport] = useState(false);
@@ -335,6 +336,41 @@ export function TrainingClassDeclarePage() {
     }
   };
 
+  const createWillingnessForms = async (row: TrainInfoClassListItem) => {
+    setGeneratingWillingness(true);
+    try {
+      const res = await trainApi.generateWillingnessForms(Number(row.id));
+      if (res?.downUrl) {
+        const stamp = new Date()
+          .toISOString()
+          .replace(/\D/g, '')
+          .slice(0, 14);
+        const levelLabel = formatClassLevel(row.work_type_level).replace(/\//g, '');
+        const fallbackName = [
+          row.title || '班级',
+          row.work_type_title,
+          levelLabel !== '—' ? levelLabel : '',
+          '意愿登记表',
+          stamp,
+        ]
+          .filter(Boolean)
+          .join('_')
+          .replace(/[\\/:*?"<>|]/g, '_');
+        await downloadUrlFile(
+          res.downUrl,
+          res.downloadFileName || `${fallbackName}.zip`,
+        );
+        message.success(res.message || `已生成 ${res.generated ?? ''} 份意愿登记表`);
+      } else {
+        message.warning(res?.message || '未返回下载地址');
+      }
+    } catch (e) {
+      message.error(errMsg(e, '生成意愿登记表失败'));
+    } finally {
+      setGeneratingWillingness(false);
+    }
+  };
+
   const manageFile = (row: TrainInfoClassListItem) => {
     setClassId(Number(row.id));
     setClassTitle(row.title || '');
@@ -401,14 +437,22 @@ export function TrainingClassDeclarePage() {
     { title: '课时', dataIndex: 'course_num', align: 'center' },
     {
       title: '操作',
-      width: 220,
+      width: 340,
       align: 'center',
       render: (_, row) => {
         const attached = parseFileTempIds(row.file_temps).length;
         return (
-          <Space>
+          <Space wrap>
             <Button type="link" className="link-action" loading={generating} onClick={() => createFile(row)}>
               生成材料
+            </Button>
+            <Button
+              type="link"
+              className="link-action"
+              loading={generatingWillingness}
+              onClick={() => createWillingnessForms(row)}
+            >
+              意愿登记表
             </Button>
             <Button type="link" className="link-action" onClick={() => manageFile(row)}>
               材料管理{attached > 0 ? `(${attached})` : ''}
@@ -520,7 +564,9 @@ export function TrainingClassDeclarePage() {
     <div className="training-class-declare-page training-page training-table-container">
       <section className="page-heading">
         <Typography.Title level={4}>开班申报</Typography.Title>
-        <Typography.Text type="secondary">管理开班申报材料，配置模板并生成申报文件</Typography.Text>
+        <Typography.Text type="secondary">
+          管理开班申报材料，配置模板并生成申报文件；可按花名册批量生成《培训意愿需求登记表》
+        </Typography.Text>
       </section>
 
       <TrainingProcessSteps current={4} />
