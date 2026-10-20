@@ -116,6 +116,7 @@ private void processAsync(Long tenantId, Long userId) {
 3. **新迁移必须 `mvn compile` 后才生效**——Flyway 读 `target/classes/db/migration*/`，不是源码目录（踩坑 #16）
 4. Druid wall 过滤器约束：业务 SQL 禁 `INSERT ... AS new ON DUPLICATE KEY UPDATE`（被 wall 按注入拦截），upsert 统一旧式 `ON DUPLICATE KEY UPDATE c = VALUES(c)`；迁移脚本走独立直连（`spring.flyway.url/user/password`，**属性名是 `user` 不是 `username`**，写错静默回退 OS 用户名报 Access denied），不要给 wall 开 none-base-statement-allow（踩坑 #21/#25）
 5. 历史：PHP 第二数据源（`integration/php`、`integration/sync`）已于 2026-08-27 拆除，相关多数据源防御条款归档至 `docs/agent/踩坑库.md` #19/#20/#22/#23，当前代码不再适用
+6. **字段归属/否定性结论**：断言某字段或数据“不存在/只存在某处”前，按 `docs/agent/数据关系速查.md` 五步取证；单表 `SHOW COLUMNS` 只能说明“该表无此列”，不能升级为全库结论。页面字段名 ≠ 存储字段（“工种选择”提交的是 `course_id`，工种/等级在 `train_exam_work_type_list`）
 
 ## AI、Agent 与 MCP 规则
 

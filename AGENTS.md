@@ -138,7 +138,8 @@
 | `apps/admin-web/AGENTS.md` | 前端规则全量（命令 / 错误处理 / 登录态 / 多租户） | 改前端前 |
 | `services/platform-api/AGENTS.md` | 后端细则（分层 / 防御性编程 / 异步完整版 / DB 细则 / LLM 11 条） | 改后端前 |
 | `docs/agent/项目现状.md` | 模块清单、Flyway 迁移基线（含分叉双写对与版本号硬冲突）、apps/services 状态（脚本生成） | 需要现状快照时 / 新增迁移取号前 |
-| `docs/agent/踩坑库.md` | 26 条事故案例（含已失效归档） | 碰相关领域前 |
+| `docs/agent/踩坑库.md` | 事故案例库（现行 + 已失效归档） | 碰相关领域前 |
+| `docs/agent/数据关系速查.md` | 核心一对多关系、名不副实的表、字段归属取证 5 步 | 断言某字段/数据“在哪/不存在”前 |
 | `docs/agent/多Agent协作协议.md` | 角色 / 硬上限 / 交棒 / 并行约束 | Mavis / Team 阶段 |
 | `docs/agent/本地开发环境.md` | 环境路径 / 变量 / 命令 / Demo 账号 | 搭环境、起服务时 |
 | `AGENTS.local.md`（gitignore） | 本机工具路径、真实数据库连接 | 本机调试时 |
