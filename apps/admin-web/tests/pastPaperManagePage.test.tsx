@@ -12,6 +12,9 @@ const api = vi.hoisted(() => ({
   uploadZhenti: vi.fn(),
   batchImportZhentis: vi.fn(),
   getZhentiImportLog: vi.fn(),
+  fetchScopeInfo: vi.fn(),
+  fetchScopePlans: vi.fn(),
+  scopeBatchSave: vi.fn(),
 }));
 
 const trainingApi = vi.hoisted(() => ({
@@ -88,6 +91,13 @@ describe('PastPaperManagePage', () => {
     api.uploadZhenti.mockReset();
     api.batchImportZhentis.mockReset();
     api.getZhentiImportLog.mockReset();
+    api.fetchScopeInfo.mockReset().mockResolvedValue({
+      scopeEnabled: true,
+      unscoped: true,
+      scopes: [],
+    });
+    api.fetchScopePlans.mockReset();
+    api.scopeBatchSave.mockReset();
     trainingApi.pageExams.mockReset().mockResolvedValue({
       items: [{ id: 100, title: '铝电解工五级' }],
       total: 1,

@@ -94,6 +94,23 @@ export function zhentiStatusTag(item: Pick<ZhentiItem, 'status' | 'metaPending'>
     : { text: '下架', color: 'default' };
 }
 
+/** 共享范围提示条文案：单/多共享组拼接「；」；空或未归类返回 null。 */
+export function formatScopeLabel(
+  scopes: { label: string; planCount: number }[] | null | undefined,
+): string | null {
+  if (!scopes || scopes.length === 0) {
+    return null;
+  }
+  return scopes
+    .map((scope) => `${scope.label}（${scope.planCount} 个计划共用）`)
+    .join('；');
+}
+
+/** 是否共享真题（用于删除/下架影响面文案）。 */
+export function isSharedZhenti(item: Pick<ZhentiItem, 'scopeLabel'>): boolean {
+  return Boolean(item.scopeLabel) && item.scopeLabel !== '本计划私有';
+}
+
 /** 批量导入失败行是否可原地补录：已入库（有 id）才可补录；未入库需重新上传。 */
 export function canRetryImportRow(row: ZhentiImportFileResult): boolean {
   return !row.ok && Boolean(row.id);

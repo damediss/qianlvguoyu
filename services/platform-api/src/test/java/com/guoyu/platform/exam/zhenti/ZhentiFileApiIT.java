@@ -24,7 +24,7 @@ class ZhentiFileApiIT extends ZhentiApiTestSupport {
     content = pdfBytes("file-api-" + System.nanoTime() + "-" + "x".repeat(200));
     entity = ingestService.ingest(
         TENANT_ID, EXAM_ID, 1L, "铝电解工（铝及铝合金熔铸工）五级理论科目-2024.pdf",
-        content, null, null);
+        content, null, null, null);
   }
 
   private MvcResult fetch(String sign, Long expiresAt, String range) throws Exception {
@@ -118,7 +118,7 @@ class ZhentiFileApiIT extends ZhentiApiTestSupport {
   void signatureBoundToId() throws Exception {
     ExamZhentiEntity other = ingestService.ingest(
         TENANT_ID, EXAM_ID, 1L, "另一份-2023.pdf",
-        pdfBytes("other-" + System.nanoTime()), null, null);
+        pdfBytes("other-" + System.nanoTime()), null, null, null);
     var signed = signatureService.sign(entity.getId());
     mockMvc.perform(get("/api/appzhenti/file/" + other.getId()).contextPath("/api")
             .param("sign", signed.sign())

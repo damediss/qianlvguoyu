@@ -155,6 +155,8 @@ platform:
     viewer-origin: ${ZHENTI_VIEWER_ORIGIN:https://java.app.gjjd168.com}
     api-base: ${ZHENTI_API_BASE:/api}
     async-threshold: ${ZHENTI_ASYNC_THRESHOLD:50}
+    # 共享组开关（方案 v2.1 §9）：false 一键回退 exam_id 私有口径
+    scope-enabled: ${ZHENTI_SCOPE_ENABLED:true}
     # 软删满 90 天物理清理（每日 03:30）
     cleanup-enabled: ${ZHENTI_CLEANUP_ENABLED:true}
     cleanup-cron: "${ZHENTI_CLEANUP_CRON:0 30 3 * * ?}"

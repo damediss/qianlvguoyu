@@ -24,7 +24,13 @@ import {
 import type { ColumnsType } from 'antd/es/table';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useCallback, useMemo, useState } from 'react';
-import { deleteZhenti, pageZhentis, previewZhenti, updateZhenti } from '../../api/exam-zhenti';
+import {
+  deleteZhenti,
+  fetchScopeInfo,
+  pageZhentis,
+  previewZhenti,
+  updateZhenti,
+} from '../../api/exam-zhenti';
 import { pageExams } from '../../api/training';
 import { useAuthStore } from '../../stores/authStore';
 import type { ZhentiItem } from '../../types/examZhenti';
@@ -35,6 +41,8 @@ import {
   buildZhentiQuery,
   extractErrorMessage,
   formatFileSize,
+  formatScopeLabel,
+  isSharedZhenti,
   zhentiStatusTag,
   type StatusFilter,
 } from './pastPaperUtils';
@@ -64,6 +72,18 @@ export function PastPaperManagePage() {
   const examOptions = examOptionsQuery.data?.items ?? [];
   const selectedExam = examOptions.find((item) => String(item.id) === examId);
   const examName = selectedExam?.title;
+
+  const scopeInfoQuery = useQuery({
+    queryKey: ['zhenti-scope-info', examId],
+    queryFn: () => fetchScopeInfo(examId!),
+    enabled: Boolean(examId),
+  });
+  const scopeItems = scopeInfoQuery.data?.scopes ?? [];
+  const scopeBanner = scopeInfoQuery.data?.scopeEnabled
+    ? scopeInfoQuery.data.unscoped
+      ? { type: 'warning' as const, text: '该考试计划未设置有效工种/等级，真题不会与其他计划共享；可到「真题共享范围」页维护。' }
+      : { type: 'info' as const, text: `本页真题与以下范围共享（同工种同等级互通）：${formatScopeLabel(scopeItems)}` }
+    : null;
 
   const query = useMemo(
     () => buildZhentiQuery({ examId, page, pageSize, keyword, year, statusFilter }),
@@ -156,6 +176,17 @@ export function PastPaperManagePage() {
       },
     },
     {
+      title: '共享范围',
+      dataIndex: 'scopeLabel',
+      width: 200,
+      render: (value: string | null | undefined) =>
+        value ? (
+          <Tag color={value === '本计划私有' ? 'default' : 'blue'}>{value}</Tag>
+        ) : (
+          '-'
+        ),
+    },
+    {
       title: '上传人',
       dataIndex: 'createdBy',
       width: 110,
@@ -191,11 +222,28 @@ export function PastPaperManagePage() {
                   补录
                 </Button>
               )}
-              <Button type="link" size="small" onClick={() => handleToggleStatus(record)}>
-                {record.status === 1 ? '下架' : '上架'}
-              </Button>
+              {isSharedZhenti(record) && record.status === 1 ? (
+                <Popconfirm
+                  title="下架后，同工种同等级下的其他考试计划也将看不到这份真题"
+                  okText="下架"
+                  cancelText="取消"
+                  onConfirm={() => handleToggleStatus(record)}
+                >
+                  <Button type="link" size="small">
+                    下架
+                  </Button>
+                </Popconfirm>
+              ) : (
+                <Button type="link" size="small" onClick={() => handleToggleStatus(record)}>
+                  {record.status === 1 ? '下架' : '上架'}
+                </Button>
+              )}
               <Popconfirm
-                title="删除后学员端不可见，且不可恢复（软删保留 90 天）"
+                title={
+                  isSharedZhenti(record)
+                    ? '删除后学员端不可见，且不可恢复（软删保留 90 天）；同工种同等级下的其他考试计划也将看不到这份真题'
+                    : '删除后学员端不可见，且不可恢复（软删保留 90 天）'
+                }
                 okText="删除"
                 cancelText="取消"
                 okButtonProps={{ danger: true }}
@@ -297,6 +345,10 @@ export function PastPaperManagePage() {
           />
         </Space>
 
+        {scopeBanner && (
+          <Alert type={scopeBanner.type} showIcon message={scopeBanner.text} />
+        )}
+
         {listQuery.isError && (
           <Alert
             type="error"
@@ -345,16 +397,19 @@ export function PastPaperManagePage() {
         open={uploadOpen}
         examId={examId}
         examName={examName}
+        scopeItems={scopeItems}
         onCancel={() => setUploadOpen(false)}
         onSuccess={() => {
           setUploadOpen(false);
           reload();
+          void queryClient.invalidateQueries({ queryKey: ['zhenti-scope-info'] });
         }}
       />
       <ZhentiImportModal
         open={importOpen}
         examId={examId}
         examName={examName}
+        scopeItems={scopeItems}
         onCancel={() => setImportOpen(false)}
         onSuccess={reload}
       />

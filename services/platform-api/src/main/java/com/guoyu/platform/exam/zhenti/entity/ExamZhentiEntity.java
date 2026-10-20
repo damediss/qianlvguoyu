@@ -14,6 +14,9 @@ import com.guoyu.platform.common.domain.BaseEntity;
 public class ExamZhentiEntity extends BaseEntity {
 
   private Long examId;
+  private Long workTypeId;
+  private Integer levelCode;
+  private String scopeKey;
   private String title;
 
   /** 允许管理员清空年份（updateById 默认忽略 null，需显式 ALWAYS 才能写回 NULL）。 */
@@ -32,6 +35,30 @@ public class ExamZhentiEntity extends BaseEntity {
 
   public void setExamId(Long examId) {
     this.examId = examId;
+  }
+
+  public Long getWorkTypeId() {
+    return workTypeId;
+  }
+
+  public void setWorkTypeId(Long workTypeId) {
+    this.workTypeId = workTypeId;
+  }
+
+  public Integer getLevelCode() {
+    return levelCode;
+  }
+
+  public void setLevelCode(Integer levelCode) {
+    this.levelCode = levelCode;
+  }
+
+  public String getScopeKey() {
+    return scopeKey;
+  }
+
+  public void setScopeKey(String scopeKey) {
+    this.scopeKey = scopeKey;
   }
 
   public String getTitle() {

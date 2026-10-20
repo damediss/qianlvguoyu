@@ -7,6 +7,8 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.guoyu.platform.common.exception.BusinessException;
 import com.guoyu.platform.common.exception.ErrorCode;
+import com.guoyu.platform.exam.entity.ExamWorkTypeEntity;
+import com.guoyu.platform.exam.mapper.ExamWorkTypeMapper;
 import com.guoyu.platform.exam.zhenti.dto.ZhentiImportLogReq;
 import com.guoyu.platform.exam.zhenti.dto.ZhentiQueryReq;
 import com.guoyu.platform.exam.zhenti.dto.ZhentiUpdateReq;
@@ -32,6 +34,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
@@ -48,6 +51,8 @@ public class ZhentiAdminService {
   private final ZhentiIngestService ingestService;
   private final ZhentiViewerUrlBuilder viewerUrlBuilder;
   private final ObjectMapper objectMapper;
+  private final ZhentiScopeResolver scopeResolver;
+  private final ExamWorkTypeMapper examWorkTypeMapper;
 
   public ZhentiAdminService(
       ExamZhentiMapper mapper,
@@ -55,21 +60,25 @@ public class ZhentiAdminService {
       UserMapper userMapper,
       ZhentiIngestService ingestService,
       ZhentiViewerUrlBuilder viewerUrlBuilder,
-      ObjectMapper objectMapper) {
+      ObjectMapper objectMapper,
+      ZhentiScopeResolver scopeResolver,
+      ExamWorkTypeMapper examWorkTypeMapper) {
     this.mapper = mapper;
     this.importLogMapper = importLogMapper;
     this.userMapper = userMapper;
     this.ingestService = ingestService;
     this.viewerUrlBuilder = viewerUrlBuilder;
     this.objectMapper = objectMapper;
+    this.scopeResolver = scopeResolver;
+    this.examWorkTypeMapper = examWorkTypeMapper;
   }
 
   @Transactional(readOnly = true)
   public ZhentiAdminPageVO page(ZhentiQueryReq req) {
     Long tenantId = currentUser().getTenantId();
+    List<ZhentiScope> scopes = scopeResolver.resolve(req.examId());
     LambdaQueryWrapper<ExamZhentiEntity> wrapper = new LambdaQueryWrapper<ExamZhentiEntity>()
         .eq(ExamZhentiEntity::getTenantId, tenantId)
-        .eq(ExamZhentiEntity::getExamId, req.examId())
         .eq(StringUtils.hasText(req.year()), ExamZhentiEntity::getYear, req.year())
         .eq(req.status() != null, ExamZhentiEntity::getStatus, req.status())
         .eq(req.metaPending() != null, ExamZhentiEntity::getMetaPending, req.metaPending())
@@ -77,6 +86,7 @@ public class ZhentiAdminService {
         .orderByDesc(ExamZhentiEntity::getYear)
         .orderByAsc(ExamZhentiEntity::getSort)
         .orderByDesc(ExamZhentiEntity::getId);
+    ZhentiScopeFilter.apply(wrapper, req.examId(), scopes);
 
     Page<ExamZhentiEntity> page = mapper.selectPage(
         new Page<>(req.page(), req.pageSize()), wrapper);
@@ -88,13 +98,14 @@ public class ZhentiAdminService {
   @Transactional(readOnly = true)
   public List<String> years(Long examId) {
     Long tenantId = currentUser().getTenantId();
+    List<ZhentiScope> scopes = scopeResolver.resolve(examId);
     QueryWrapper<ExamZhentiEntity> wrapper = new QueryWrapper<ExamZhentiEntity>()
         .select("DISTINCT year")
         .eq("tenant_id", tenantId)
-        .eq("exam_id", examId)
         .isNotNull("year")
         .ne("year", "")
         .orderByDesc("year");
+    ZhentiScopeFilter.apply(wrapper, examId, scopes);
     return mapper.selectObjs(wrapper).stream()
         .filter(java.util.Objects::nonNull)
         .map(String::valueOf)
@@ -103,7 +114,8 @@ public class ZhentiAdminService {
   }
 
   @Transactional
-  public ZhentiUploadVO upload(MultipartFile file, Long examId, String title, String year) {
+  public ZhentiUploadVO upload(MultipartFile file, Long examId, String title, String year,
+      Long scopeWorkTypeId, Integer scopeLevel) {
     PlatformUserPrincipal user = currentUser();
     if (file == null || file.isEmpty()) {
       throw new BusinessException(ErrorCode.BAD_REQUEST, "文件为空，请重新选择");
@@ -118,9 +130,10 @@ public class ZhentiAdminService {
     } catch (IOException ex) {
       throw new BusinessException(ErrorCode.BAD_REQUEST, "读取上传文件失败，请重试");
     }
+    ZhentiScope scope = scopeResolver.resolveForUpload(examId, scopeWorkTypeId, scopeLevel);
     ExamZhentiEntity entity = ingestService.ingest(
         user.getTenantId(), examId, user.getUserId(),
-        file.getOriginalFilename(), content, title, year);
+        file.getOriginalFilename(), content, title, year, scope);
     return new ZhentiUploadVO(String.valueOf(entity.getId()), entity.getTitle(),
         entity.getYear(), entity.getMetaPending());
   }
@@ -158,7 +171,15 @@ public class ZhentiAdminService {
   @Transactional
   public void delete(Long id) {
     ExamZhentiEntity entity = findExisting(id);
-    mapper.deleteById(entity.getId());
+    try {
+      mapper.deleteById(entity.getId());
+    } catch (DuplicateKeyException dup) {
+      // uk_zhenti_scope_md5 含 deleted 列（保留“删除后可重传”旧语义）：同一文件重复
+      // “删除→重传→再删”时，软删 UPDATE 置 deleted=1 会与历史已删行撞键；
+      // 归档 scope_key（追加行 id 后缀）后重试，仍走 deleteById 真软删。
+      mapper.archiveScopeKeyForDelete(entity.getId());
+      mapper.deleteById(entity.getId());
+    }
     log.info("[Zhenti] 软删 id={} examId={}", entity.getId(), entity.getExamId());
   }
 
@@ -223,6 +244,15 @@ public class ZhentiAdminService {
         ? Collections.emptyMap()
         : userMapper.selectBatchIds(userIds).stream()
             .collect(Collectors.toMap(UserEntity::getId, this::displayName, (a, b) -> a));
+    Set<Long> workTypeIds = entities.stream()
+        .map(ExamZhentiEntity::getWorkTypeId)
+        .filter(java.util.Objects::nonNull)
+        .collect(Collectors.toSet());
+    Map<Long, String> workTypeTitles = workTypeIds.isEmpty()
+        ? Collections.emptyMap()
+        : examWorkTypeMapper.selectBatchIds(workTypeIds).stream()
+            .collect(Collectors.toMap(w -> w.getId().longValue(), ExamWorkTypeEntity::getTitle,
+                (a, b) -> a));
     return entities.stream()
         .map(e -> new ZhentiVO(
             String.valueOf(e.getId()),
@@ -235,8 +265,18 @@ public class ZhentiAdminService {
             e.getMetaPending(),
             e.getCreatedBy() == null ? null : names.getOrDefault(e.getCreatedBy(), "—"),
             e.getCreatedBy() == null ? null : String.valueOf(e.getCreatedBy()),
-            e.getCreatedAt()))
+            e.getCreatedAt(),
+            scopeLabel(e, workTypeTitles)))
         .toList();
+  }
+
+  private String scopeLabel(ExamZhentiEntity entity, Map<Long, String> workTypeTitles) {
+    if (entity.getWorkTypeId() == null || entity.getLevelCode() == null) {
+      return "本计划私有";
+    }
+    String title = workTypeTitles.getOrDefault(entity.getWorkTypeId(), "未知工种");
+    return ZhentiScopeKey.label(
+        new ZhentiScope(entity.getWorkTypeId(), entity.getLevelCode()), title);
   }
 
   private String displayName(UserEntity user) {

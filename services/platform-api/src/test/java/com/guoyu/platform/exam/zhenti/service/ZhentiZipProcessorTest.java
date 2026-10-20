@@ -112,11 +112,11 @@ class ZhentiZipProcessorTest {
     entity.setTitle("good");
     entity.setYear("2024");
     entity.setMetaPending(0);
-    when(ingestService.ingest(anyLong(), anyLong(), any(), anyString(), any(), any(), any()))
+    when(ingestService.ingest(anyLong(), anyLong(), any(), anyString(), any(), any(), any(), any()))
         .thenReturn(entity);
 
     List<ZhentiImportFileResult> results = processor.process(
-        path, 10159L, 100L, 1L, null);
+        path, 10159L, 100L, 1L, null, null);
 
     assertThat(results).hasSize(2);
     assertThat(results.get(0).ok()).isTrue();
@@ -134,10 +134,10 @@ class ZhentiZipProcessorTest {
     entity.setTitle("no-year-name");
     entity.setYear(null);
     entity.setMetaPending(1);
-    when(ingestService.ingest(anyLong(), anyLong(), any(), anyString(), any(), any(), any()))
+    when(ingestService.ingest(anyLong(), anyLong(), any(), anyString(), any(), any(), any(), any()))
         .thenReturn(entity);
 
-    List<ZhentiImportFileResult> results = processor.process(path, 10159L, 100L, 1L, null);
+    List<ZhentiImportFileResult> results = processor.process(path, 10159L, 100L, 1L, null, null);
     assertThat(results).hasSize(1);
     assertThat(results.get(0).ok()).isFalse();
     assertThat(results.get(0).pending()).isTrue();

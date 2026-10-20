@@ -68,6 +68,7 @@ public class ZhentiZipProcessor {
   /**
    * 逐条导入。
    *
+   * @param scope      共享组（null = 计划私有口径），整包统一，方案 v2.1 §3.4
    * @param onFinished 每处理完一个文件回调（用于异步进度落库）
    */
   public List<ZhentiImportFileResult> process(
@@ -75,6 +76,7 @@ public class ZhentiZipProcessor {
       Long tenantId,
       Long examId,
       Long operatorId,
+      ZhentiScope scope,
       IntConsumer onFinished) {
     List<ZhentiImportFileResult> results = new ArrayList<>();
     try (ZipFile zip = open(zipPath)) {
@@ -85,7 +87,7 @@ public class ZhentiZipProcessor {
           continue;
         }
         String displayName = displayName(entry.getName());
-        results.add(importOne(zip, entry, displayName, tenantId, examId, operatorId));
+        results.add(importOne(zip, entry, displayName, tenantId, examId, operatorId, scope));
         if (onFinished != null) {
           onFinished.accept(results.size());
         }
@@ -105,14 +107,15 @@ public class ZhentiZipProcessor {
       String displayName,
       Long tenantId,
       Long examId,
-      Long operatorId) {
+      Long operatorId,
+      ZhentiScope scope) {
     if (!displayName.toLowerCase().endsWith(".pdf")) {
       return ZhentiImportFileResult.failure(displayName, "文件类型非法，仅支持 PDF");
     }
     try (InputStream in = zip.getInputStream(entry)) {
       byte[] content = in.readAllBytes();
       var entity = ingestService.ingest(
-          tenantId, examId, operatorId, displayName, content, null, null);
+          tenantId, examId, operatorId, displayName, content, null, null, scope);
       if (entity.getMetaPending() != null && entity.getMetaPending() == 1) {
         return ZhentiImportFileResult.pending(
             displayName, entity.getId(), entity.getTitle(), entity.getYear(),

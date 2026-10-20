@@ -31,6 +31,20 @@ abstract class ZhentiApiTestSupport {
   protected static final long TENANT_ID = 10159L;
   protected static final long EXAM_ID = 990_018_001L;
 
+  // 共享组 IT 专用 fixture（方案 v2.1 §14.2）：考试计划 / 工种 / 课程均用 990_018_9xx 合成 id
+  protected static final long SCOPE_EXAM_A = 990_018_101L;
+  protected static final long SCOPE_EXAM_B = 990_018_102L;
+  protected static final long SCOPE_EXAM_C = 990_018_103L;
+  protected static final long SCOPE_EXAM_D = 990_018_104L;
+  protected static final long SCOPE_EXAM_E = 990_018_105L;
+  protected static final long SCOPE_WORK_TYPE = 990_018_901L;
+  protected static final long SCOPE_WORK_TYPE_2 = 990_018_902L;
+  protected static final long SCOPE_COURSE = 990_018_951L;
+  protected static final long SCOPE_MISSING_WORK_TYPE = 990_018_999L;
+  protected static final long SCOPE_EXAM_F = 990_018_106L;
+  protected static final List<Long> SCOPE_EXAM_IDS = List.of(
+      SCOPE_EXAM_A, SCOPE_EXAM_B, SCOPE_EXAM_C, SCOPE_EXAM_D, SCOPE_EXAM_E, SCOPE_EXAM_F);
+
   @Autowired
   protected MockMvc mockMvc;
 
@@ -60,8 +74,14 @@ abstract class ZhentiApiTestSupport {
   }
 
   protected void cleanUp() {
+    java.util.List<Long> allExamIds = new java.util.ArrayList<>(
+        java.util.List.of(EXAM_ID, EXAM_ID + 1));
+    allExamIds.addAll(SCOPE_EXAM_IDS);
+    String examPlaceholders = String.join(
+        ",", java.util.Collections.nCopies(allExamIds.size(), "?"));
     java.util.List<Long> ids = jdbcTemplate.queryForList(
-        "SELECT id FROM exam_zhenti WHERE exam_id IN (?, ?)", Long.class, EXAM_ID, EXAM_ID + 1);
+        "SELECT id FROM exam_zhenti WHERE exam_id IN (" + examPlaceholders + ")",
+        Long.class, allExamIds.toArray());
     if (!ids.isEmpty()) {
       String placeholders = String.join(",", java.util.Collections.nCopies(ids.size(), "?"));
       jdbcTemplate.update(
@@ -69,9 +89,47 @@ abstract class ZhentiApiTestSupport {
               + placeholders + ")", ids.toArray());
     }
     jdbcTemplate.update(
-        "DELETE FROM exam_zhenti WHERE exam_id IN (?, ?)", EXAM_ID, EXAM_ID + 1);
+        "DELETE FROM exam_zhenti WHERE exam_id IN (" + examPlaceholders + ")",
+        allExamIds.toArray());
     jdbcTemplate.update(
-        "DELETE FROM exam_zhenti_import_log WHERE exam_id IN (?, ?)", EXAM_ID, EXAM_ID + 1);
+        "DELETE FROM exam_zhenti_import_log WHERE exam_id IN (" + examPlaceholders + ")",
+        allExamIds.toArray());
+    // 共享组 fixture：绑定 → 计划 → 合成工种/课程（id 均为 990_018_9xx，不会触碰真实数据）
+    jdbcTemplate.update("DELETE FROM train_exam_work_type_list WHERE exam_id IN ("
+        + examPlaceholders + ")", allExamIds.toArray());
+    jdbcTemplate.update("DELETE FROM train_exam_list WHERE id IN (" + examPlaceholders
+        + ") AND title LIKE '真题IT-%'", allExamIds.toArray());
+    jdbcTemplate.update("DELETE FROM exam_work_type WHERE id IN (?, ?, ?)",
+        SCOPE_WORK_TYPE, SCOPE_WORK_TYPE_2, SCOPE_MISSING_WORK_TYPE);
+    jdbcTemplate.update("DELETE FROM exam_course WHERE id IN (?)", SCOPE_COURSE);
+  }
+
+  /** 共享组 fixture：合成工种（叶子节点）。 */
+  protected void insertScopeWorkType(long id, String title) {
+    jdbcTemplate.update("INSERT INTO exam_work_type (id, title) VALUES (?, ?)", id, title);
+  }
+
+  /** 共享组 fixture：合成课程（挂在指定工种+等级下）。 */
+  protected void insertScopeCourse(long id, long workTypeId, int level, String title) {
+    jdbcTemplate.update(
+        "INSERT INTO exam_course (id, work_type_id, level, title) VALUES (?, ?, ?, ?)",
+        id, workTypeId, level, title);
+  }
+
+  /** 共享组 fixture：考试计划（标题带 真题IT- 前缀，cleanUp 只删这类）。 */
+  protected void insertScopeExam(long examId, String title) {
+    jdbcTemplate.update(
+        "INSERT INTO train_exam_list (id, tenant_id, title, level, org_id, deleted, create_time)"
+            + " VALUES (?, ?, ?, '初/中/高/技师/高级技师', 0, 0, NOW())",
+        examId, TENANT_ID, "真题IT-" + title);
+  }
+
+  /** 共享组 fixture：计划绑定（workTypeId 传 null 可造空工种行）。 */
+  protected void insertScopeBinding(long examId, Long workTypeId, Integer level, Long courseId) {
+    jdbcTemplate.update(
+        "INSERT INTO train_exam_work_type_list (exam_id, work_type_id, level, course_id,"
+            + " tenant_id, deleted, sort_number, create_time) VALUES (?, ?, ?, ?, ?, 0, 1, NOW())",
+        examId, workTypeId, level, courseId, TENANT_ID);
   }
 
   protected static UserDetails principalWith(String... permissions) {

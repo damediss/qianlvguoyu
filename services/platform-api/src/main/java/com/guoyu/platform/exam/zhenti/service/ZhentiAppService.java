@@ -27,23 +27,27 @@ public class ZhentiAppService {
 
   private final ExamZhentiMapper mapper;
   private final ZhentiViewerUrlBuilder viewerUrlBuilder;
+  private final ZhentiScopeResolver scopeResolver;
 
-  public ZhentiAppService(ExamZhentiMapper mapper, ZhentiViewerUrlBuilder viewerUrlBuilder) {
+  public ZhentiAppService(ExamZhentiMapper mapper, ZhentiViewerUrlBuilder viewerUrlBuilder,
+      ZhentiScopeResolver scopeResolver) {
     this.mapper = mapper;
     this.viewerUrlBuilder = viewerUrlBuilder;
+    this.scopeResolver = scopeResolver;
   }
 
   @Transactional(readOnly = true)
   public ZhentiAppListVO list(Long examId) {
     Long tenantId = currentUser().getTenantId();
-    List<ExamZhentiEntity> entities = mapper.selectList(
-        new LambdaQueryWrapper<ExamZhentiEntity>()
-            .eq(ExamZhentiEntity::getTenantId, tenantId)
-            .eq(ExamZhentiEntity::getExamId, examId)
-            .eq(ExamZhentiEntity::getStatus, 1)
-            .orderByDesc(ExamZhentiEntity::getYear)
-            .orderByAsc(ExamZhentiEntity::getSort)
-            .orderByDesc(ExamZhentiEntity::getId));
+    List<ZhentiScope> scopes = scopeResolver.resolve(examId);
+    LambdaQueryWrapper<ExamZhentiEntity> wrapper = new LambdaQueryWrapper<ExamZhentiEntity>()
+        .eq(ExamZhentiEntity::getTenantId, tenantId)
+        .eq(ExamZhentiEntity::getStatus, 1)
+        .orderByDesc(ExamZhentiEntity::getYear)
+        .orderByAsc(ExamZhentiEntity::getSort)
+        .orderByDesc(ExamZhentiEntity::getId);
+    ZhentiScopeFilter.apply(wrapper, examId, scopes);
+    List<ExamZhentiEntity> entities = mapper.selectList(wrapper);
     List<ZhentiItemVO> records = entities.stream()
         .map(e -> new ZhentiItemVO(
             String.valueOf(e.getId()), e.getTitle(), e.getYear(), e.getFileSize()))

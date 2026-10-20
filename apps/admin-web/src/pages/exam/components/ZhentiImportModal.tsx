@@ -4,6 +4,7 @@ import {
   Input,
   Modal,
   Progress,
+  Select,
   Space,
   Table,
   Tag,
@@ -16,7 +17,7 @@ import type { ColumnsType } from 'antd/es/table';
 import type { UploadFile } from 'antd';
 import { useEffect, useRef, useState } from 'react';
 import { batchImportZhentis, getZhentiImportLog, updateZhenti } from '../../../api/exam-zhenti';
-import type { ZhentiImportFileResult, ZhentiImportLog } from '../../../types/examZhenti';
+import type { ZhentiImportFileResult, ZhentiImportLog, ZhentiScopeItem } from '../../../types/examZhenti';
 import {
   canRetryImportRow,
   extractErrorMessage,
@@ -27,6 +28,8 @@ interface Props {
   open: boolean;
   examId?: string;
   examName?: string;
+  /** 计划的全部共享组；>1 时必须显式选择（方案 v2.1 §3.4） */
+  scopeItems?: ZhentiScopeItem[];
   onCancel: () => void;
   onSuccess: () => void;
 }
@@ -41,8 +44,9 @@ interface Draft {
  * 解析失败（缺年份/工种等级）的文件已入库，可就地补录标题/年份后重试（D4）；
  * 未入库的硬失败（类型/超限/重复）提示重新上传。
  */
-export function ZhentiImportModal({ open, examId, examName, onCancel, onSuccess }: Props) {
+export function ZhentiImportModal({ open, examId, examName, scopeItems, onCancel, onSuccess }: Props) {
   const [file, setFile] = useState<File | null>(null);
+  const [scopeWorkTypeId, setScopeWorkTypeId] = useState<number | undefined>();
   const [fileList, setFileList] = useState<UploadFile[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [progress, setProgress] = useState<number | null>(null);
@@ -67,6 +71,7 @@ export function ZhentiImportModal({ open, examId, examName, onCancel, onSuccess 
       setAsyncStatus(undefined);
       setDrafts({});
       setRetrying(null);
+      setScopeWorkTypeId(undefined);
     }
   }, [open]);
 
@@ -122,11 +127,24 @@ export function ZhentiImportModal({ open, examId, examName, onCancel, onSuccess 
       setError('请选择 zip 压缩包');
       return;
     }
+    const needScope = (scopeItems?.length ?? 0) > 1;
+    if (needScope && scopeWorkTypeId == null) {
+      setError('该考试计划绑定了多个工种/等级，请选择共享范围');
+      return;
+    }
+    const selected = needScope
+      ? scopeItems!.find((item) => item.workTypeId === scopeWorkTypeId)
+      : undefined;
     setError(null);
     setResults(null);
     setProgress(0);
     try {
-      const res = await batchImportZhentis(file, examId, setProgress);
+      const res = await batchImportZhentis(
+        file,
+        examId,
+        selected ? { scopeWorkTypeId: selected.workTypeId, scopeLevel: selected.level } : undefined,
+        setProgress,
+      );
       if (res.mode === 'async' && res.importId) {
         setImportId(res.importId);
         setAsyncStatus('running');
@@ -287,6 +305,21 @@ export function ZhentiImportModal({ open, examId, examName, onCancel, onSuccess 
         <Typography.Text type="secondary">
           考试项目：<Typography.Text strong>{examName || '-'}</Typography.Text>
         </Typography.Text>
+        {(scopeItems?.length ?? 0) > 1 && !results && !asyncStatus && (
+          <div>
+            <Typography.Text type="secondary">共享范围：</Typography.Text>
+            <Select
+              style={{ width: 420 }}
+              placeholder="该考试计划绑定了多个工种/等级，请选择共享范围"
+              value={scopeWorkTypeId}
+              onChange={setScopeWorkTypeId}
+              options={scopeItems!.map((item) => ({
+                value: item.workTypeId,
+                label: `${item.label}（${item.planCount} 个计划共用）`,
+              }))}
+            />
+          </div>
+        )}
         {!results && !asyncStatus && (
           <>
             <Upload

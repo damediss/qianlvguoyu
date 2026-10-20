@@ -5,6 +5,9 @@ import type {
   ZhentiPage,
   ZhentiPreview,
   ZhentiQuery,
+  ZhentiScopeBatchItem,
+  ZhentiScopeInfo,
+  ZhentiScopePlans,
   ZhentiUploadResult,
 } from '../types/examZhenti';
 
@@ -15,9 +18,16 @@ export function pageZhentis(params: ZhentiQuery) {
   return unwrap<ZhentiPage>(apiClient.post(`${BASE}/list`, params));
 }
 
-/** D2 单个上传；409 冲突由调用方就地展示（silentError 关闭全局 toast）。 */
+/** D2 单个上传；多共享组计划必须显式选择 scope（后端 400 兜底）；409 冲突就地展示。 */
 export function uploadZhenti(
-  payload: { file: File; examId: string; title?: string; year?: string },
+  payload: {
+    file: File;
+    examId: string;
+    title?: string;
+    year?: string;
+    scopeWorkTypeId?: number;
+    scopeLevel?: number;
+  },
   onProgress?: (percent: number) => void,
 ) {
   const form = new FormData();
@@ -25,6 +35,12 @@ export function uploadZhenti(
   form.append('examId', payload.examId);
   if (payload.title) form.append('title', payload.title);
   if (payload.year) form.append('year', payload.year);
+  if (payload.scopeWorkTypeId != null) {
+    form.append('scopeWorkTypeId', String(payload.scopeWorkTypeId));
+  }
+  if (payload.scopeLevel != null) {
+    form.append('scopeLevel', String(payload.scopeLevel));
+  }
   return unwrap<ZhentiUploadResult>(
     apiClient.post(`${BASE}/upload`, form, {
       silentError: true,
@@ -37,15 +53,20 @@ export function uploadZhenti(
   );
 }
 
-/** D3 批量导入（zip）。 */
+/** D3 批量导入（zip）。多共享组计划必须显式选择 scope。 */
 export function batchImportZhentis(
   file: File,
   examId: string,
+  scope?: { scopeWorkTypeId: number; scopeLevel: number },
   onProgress?: (percent: number) => void,
 ) {
   const form = new FormData();
   form.append('file', file);
   form.append('examId', examId);
+  if (scope) {
+    form.append('scopeWorkTypeId', String(scope.scopeWorkTypeId));
+    form.append('scopeLevel', String(scope.scopeLevel));
+  }
   return unwrap<ZhentiImportResult>(
     apiClient.post(`${BASE}/batchImport`, form, {
       silentError: true,
@@ -89,4 +110,30 @@ export function getZhentiImportLog(params: {
 /** D7 管理端预览签名（与 App 同签名规则）。 */
 export function previewZhenti(id: string) {
   return unwrap<ZhentiPreview>(apiClient.post(`${BASE}/preview`, { id }));
+}
+
+/** 共享组信息：提示条与上传/导入弹窗的选择项。 */
+export function fetchScopeInfo(examId: string) {
+  return unwrap<ZhentiScopeInfo>(apiClient.post(`${BASE}/scopeInfo`, { examId }));
+}
+
+/** 「真题共享范围」页：计划绑定列表 + 课程选项。 */
+export function fetchScopePlans(params: {
+  page: number;
+  pageSize: number;
+  keyword?: string;
+  filter?: string;
+}) {
+  return unwrap<ZhentiScopePlans>(
+    apiClient.post(
+      `${BASE}/scopePlans?page=${params.page}&pageSize=${params.pageSize}`
+        + (params.keyword ? `&keyword=${encodeURIComponent(params.keyword)}` : '')
+        + (params.filter ? `&filter=${encodeURIComponent(params.filter)}` : ''),
+    ),
+  );
+}
+
+/** 「真题共享范围」页：批量保存课程绑定（后端重推导工种/等级）。 */
+export function scopeBatchSave(items: ZhentiScopeBatchItem[]) {
+  return unwrap<void>(apiClient.post(`${BASE}/scopeBatchSave`, { items }));
 }

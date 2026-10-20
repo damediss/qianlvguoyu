@@ -84,6 +84,7 @@ const MakeExamPlanPage = React.lazy(() => import('./pages/exam/MakeExamPlanPage'
 const KnowledgeRatePage = React.lazy(() => import('./pages/exam/KnowledgeRatePage').then((m) => ({ default: m.KnowledgeRatePage })));
 const KnowledgeStructurePage = React.lazy(() => import('./pages/exam/KnowledgeStructurePage').then((m) => ({ default: m.KnowledgeStructurePage })));
 const PastPaperManagePage = React.lazy(() => import('./pages/exam/PastPaperManagePage').then((m) => ({ default: m.PastPaperManagePage })));
+const PastPaperScopePage = React.lazy(() => import('./pages/exam/PastPaperScopePage').then((m) => ({ default: m.PastPaperScopePage })));
 const FaqConversionPage = React.lazy(() => import('./pages/exam/FaqConversionPage').then((m) => ({ default: m.FaqConversionPage })));
 const TrainExamListPage = React.lazy(() => import('./pages/training/TrainExamListPage').then((m) => ({ default: m.TrainExamListPage })));
 const StatsOverviewPage = React.lazy(() => import('./pages/exam/reviewSyncStats/StatsOverviewPage').then((m) => ({ default: m.StatsOverviewPage })));
@@ -253,6 +254,7 @@ const pageMap: Record<string, React.ReactNode> = {
   'train_exam-list': <TrainExamListPage />,
   kao_shi_ji_hua: <TrainExamListPage />,
   exam_past_papers: <PastPaperManagePage />,
+  exam_zhenti_scope: <PastPaperScopePage />,
   exam_knowledge_rate: <KnowledgeRatePage />,
   zhi_shi_jie_gou_xi_mu_biao_guan_li: <KnowledgeStructurePage />,
   exam_faq_conversion: <FaqConversionPage />,

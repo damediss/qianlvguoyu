@@ -4,6 +4,8 @@ import {
   canRetryImportRow,
   extractErrorMessage,
   formatFileSize,
+  formatScopeLabel,
+  isSharedZhenti,
   validatePdfFile,
   validateZipFile,
   zhentiStatusTag,
@@ -107,6 +109,32 @@ describe('pastPaperUtils', () => {
       expect(canRetryImportRow({ fileName: 'a.pdf', ok: false, id: '1' })).toBe(true);
       expect(canRetryImportRow({ fileName: 'a.exe', ok: false })).toBe(false);
       expect(canRetryImportRow({ fileName: 'a.pdf', ok: true, id: '1' })).toBe(false);
+    });
+  });
+
+  describe('formatScopeLabel / isSharedZhenti', () => {
+    it('多共享组用分号拼接并带计划数', () => {
+      expect(
+        formatScopeLabel([
+          { label: '铝及铝合金熔铸工 · 四级/中级工', planCount: 3 },
+          { label: '重冶火法冶炼工 · 五级/初级工', planCount: 1 },
+        ]),
+      ).toBe(
+        '铝及铝合金熔铸工 · 四级/中级工（3 个计划共用）；重冶火法冶炼工 · 五级/初级工（1 个计划共用）',
+      );
+    });
+
+    it('空与未归类返回 null', () => {
+      expect(formatScopeLabel([])).toBeNull();
+      expect(formatScopeLabel(null)).toBeNull();
+      expect(formatScopeLabel(undefined)).toBeNull();
+    });
+
+    it('isSharedZhenti：有共享组标签才算共享', () => {
+      expect(isSharedZhenti({ scopeLabel: '铝及铝合金熔铸工 · 四级/中级工' })).toBe(true);
+      expect(isSharedZhenti({ scopeLabel: '本计划私有' })).toBe(false);
+      expect(isSharedZhenti({ scopeLabel: null })).toBe(false);
+      expect(isSharedZhenti({})).toBe(false);
     });
   });
 

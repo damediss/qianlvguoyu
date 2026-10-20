@@ -7,6 +7,7 @@ import com.guoyu.platform.exam.zhenti.entity.ExamZhentiEntity;
 import com.guoyu.platform.exam.zhenti.mapper.ExamZhentiMapper;
 import java.util.Optional;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
@@ -47,6 +48,7 @@ public class ZhentiIngestService {
    * @param content       文件字节
    * @param titleOverride 管理员手填标题，空则按文件名解析
    * @param yearOverride  管理员手填年份，空则按文件名解析
+   * @param scope         共享组（null = 该计划无有效绑定，按 exam_id 私有着落，方案 v2.1 §3.4）
    */
   @Transactional
   public ExamZhentiEntity ingest(
@@ -56,13 +58,14 @@ public class ZhentiIngestService {
       String fileName,
       byte[] content,
       String titleOverride,
-      String yearOverride) {
+      String yearOverride,
+      ZhentiScope scope) {
     validator.validatePdf(fileName, content);
     String md5 = validator.md5(content);
-    Optional<ExamZhentiEntity> existing = findActiveByMd5(examId, md5);
+    String scopeKey = ZhentiScopeKey.ofScopeOrExam(scope, examId);
+    Optional<ExamZhentiEntity> existing = findActiveByMd5(tenantId, scopeKey, md5);
     if (existing.isPresent()) {
-      throw new BusinessException(ErrorCode.CONFLICT,
-          "已存在相同文件：" + existing.get().getTitle());
+      throw new BusinessException(ErrorCode.CONFLICT, conflictMessage(scope, existing.get()));
     }
 
     ZhentiFileNameParser.ParsedFileName parsed = fileNameParser.parse(fileName);
@@ -74,6 +77,11 @@ public class ZhentiIngestService {
     ExamZhentiEntity entity = new ExamZhentiEntity();
     entity.setTenantId(tenantId);
     entity.setExamId(examId);
+    if (scope != null) {
+      entity.setWorkTypeId(scope.workTypeId());
+      entity.setLevelCode(scope.level());
+    }
+    entity.setScopeKey(scopeKey);
     entity.setTitle(title);
     entity.setYear(year);
     entity.setFileKey(fileKey);
@@ -88,20 +96,35 @@ public class ZhentiIngestService {
     }
     try {
       mapper.insert(entity);
+    } catch (DuplicateKeyException dup) {
+      // 并发上传同一文件：唯一键 uk_zhenti_scope_md5 兜底，取回已提交行转 409（踩坑 #27 同手法）
+      storageService.delete(fileKey);
+      Optional<ExamZhentiEntity> raced = findActiveByMd5(tenantId, scopeKey, md5);
+      if (raced.isPresent()) {
+        throw new BusinessException(ErrorCode.CONFLICT, conflictMessage(scope, raced.get()));
+      }
+      throw dup;
     } catch (RuntimeException ex) {
       storageService.delete(fileKey);
       throw ex;
     }
-    log.info("[Zhenti] 入库成功 id={} examId={} size={} pending={}",
-        entity.getId(), examId, content.length, metaPending);
+    log.info("[Zhenti] 入库成功 id={} examId={} scope={} size={} pending={}",
+        entity.getId(), examId, scopeKey, content.length, metaPending);
     return entity;
   }
 
-  private Optional<ExamZhentiEntity> findActiveByMd5(Long examId, String md5) {
+  private Optional<ExamZhentiEntity> findActiveByMd5(Long tenantId, String scopeKey, String md5) {
     return Optional.ofNullable(mapper.selectOne(new LambdaQueryWrapper<ExamZhentiEntity>()
-        .eq(ExamZhentiEntity::getExamId, examId)
+        .eq(ExamZhentiEntity::getTenantId, tenantId)
+        .eq(ExamZhentiEntity::getScopeKey, scopeKey)
         .eq(ExamZhentiEntity::getFileMd5, md5)
         .last("LIMIT 1")));
+  }
+
+  private static String conflictMessage(ZhentiScope scope, ExamZhentiEntity existing) {
+    return scope == null
+        ? "该考试计划下已存在相同文件：" + existing.getTitle()
+        : "同工种同等级下已存在相同文件：" + existing.getTitle();
   }
 
   private static String resolveTitle(String override, String parsedTitle) {

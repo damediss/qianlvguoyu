@@ -14,6 +14,64 @@ export interface ZhentiItem {
   createdBy: string | null;
   createdById: string | null;
   createdAt: string;
+  /** 共享组展示（「工种 · 四级/中级工」）；私有真题为「本计划私有」 */
+  scopeLabel?: string | null;
+}
+
+/** 共享组信息（提示条 / 上传弹窗选择项）。 */
+export interface ZhentiScopeItem {
+  workTypeId: number;
+  level: number;
+  label: string;
+  planCount: number;
+}
+
+export interface ZhentiScopeInfo {
+  scopeEnabled: boolean;
+  /** 无有效共享组：真题仅本计划可见，上传走私有口径 */
+  unscoped: boolean;
+  scopes: ZhentiScopeItem[];
+}
+
+/** 「真题共享范围」页：一条工种绑定。 */
+export interface ZhentiScopeBinding {
+  workTypeId: number | null;
+  workTypeTitle: string | null;
+  level: number | null;
+  levelLabel: string | null;
+  courseId: number | null;
+  courseTitle: string | null;
+  /** false = 工种不存在或已删除，需改绑课程修复 */
+  valid: boolean;
+}
+
+export interface ZhentiScopePlanItem {
+  examId: string;
+  title: string;
+  bindings: ZhentiScopeBinding[];
+  noBinding: boolean;
+  multiBinding: boolean;
+  hasInvalid: boolean;
+}
+
+export interface ZhentiScopeCourseOption {
+  id: number;
+  title: string;
+  workTypeId: number | null;
+  level: number | null;
+}
+
+export interface ZhentiScopePlans {
+  records: ZhentiScopePlanItem[];
+  total: number;
+  page: number;
+  size: number;
+  courses: ZhentiScopeCourseOption[];
+}
+
+export interface ZhentiScopeBatchItem {
+  examId: string;
+  courseIdList: number[];
 }
 
 export interface ZhentiPage {

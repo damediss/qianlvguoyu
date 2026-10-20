@@ -34,6 +34,7 @@ public class ZhentiImportService {
   private final ZhentiImportWorker importWorker;
   private final ExamZhentiImportLogMapper importLogMapper;
   private final ZhentiUploadValidator validator;
+  private final ZhentiScopeResolver scopeResolver;
   private final int asyncThreshold;
 
   public ZhentiImportService(
@@ -42,17 +43,22 @@ public class ZhentiImportService {
       ZhentiImportWorker importWorker,
       ExamZhentiImportLogMapper importLogMapper,
       ZhentiUploadValidator validator,
+      ZhentiScopeResolver scopeResolver,
       @Value("${platform.zhenti.async-threshold:50}") int asyncThreshold) {
     this.zipProcessor = zipProcessor;
     this.storageService = storageService;
     this.importWorker = importWorker;
     this.importLogMapper = importLogMapper;
     this.validator = validator;
+    this.scopeResolver = scopeResolver;
     this.asyncThreshold = asyncThreshold > 0 ? asyncThreshold : 50;
   }
 
-  public ZhentiImportResultVO importZip(MultipartFile file, Long examId) {
+  public ZhentiImportResultVO importZip(
+      MultipartFile file, Long examId, Long scopeWorkTypeId, Integer scopeLevel) {
     PlatformUserPrincipal user = currentUser();
+    // 共享组在 HTTP 线程解析（resolver 依赖租户上下文），Worker 只收显式参数（异步红线）
+    ZhentiScope scope = scopeResolver.resolveForUpload(examId, scopeWorkTypeId, scopeLevel);
     String fileName = file.getOriginalFilename();
     if (!validator.isZipName(fileName)) {
       throw new BusinessException(ErrorCode.UNSUPPORTED_MEDIA_TYPE, "仅支持 zip 压缩包");
@@ -70,10 +76,10 @@ public class ZhentiImportService {
       file.transferTo(temp);
       ZhentiZipProcessor.ZipInspection inspection = zipProcessor.inspect(temp);
       if (inspection.total() > asyncThreshold) {
-        return submitAsync(user, examId, temp, inspection);
+        return submitAsync(user, examId, scope, temp, inspection);
       }
       List<ZhentiImportFileResult> results = zipProcessor.process(
-          temp, user.getTenantId(), examId, user.getUserId(), null);
+          temp, user.getTenantId(), examId, user.getUserId(), scope, null);
       long ok = results.stream().filter(ZhentiImportFileResult::ok).count();
       log.info("[ZhentiImport] 同步导入完成 examId={} total={} ok={} operator={}",
           examId, results.size(), ok, user.getUserId());
@@ -93,7 +99,8 @@ public class ZhentiImportService {
   }
 
   private ZhentiImportResultVO submitAsync(
-      PlatformUserPrincipal user, Long examId, Path temp, ZhentiZipProcessor.ZipInspection inspection) {
+      PlatformUserPrincipal user, Long examId, ZhentiScope scope, Path temp,
+      ZhentiZipProcessor.ZipInspection inspection) {
     Long importId = IdWorker.getId();
     String zipKey = storageService.putImportZip(user.getTenantId(), importId, temp);
 
@@ -111,7 +118,7 @@ public class ZhentiImportService {
 
     try {
       importWorker.run(user.getTenantId(), importId, examId, user.getUserId(), zipKey,
-          inspection.total());
+          inspection.total(), scope);
     } catch (RejectedExecutionException ex) {
       log.warn("[ZhentiImport] 导入线程池已满 importId={}", importId);
       importLogMapper.update(null,

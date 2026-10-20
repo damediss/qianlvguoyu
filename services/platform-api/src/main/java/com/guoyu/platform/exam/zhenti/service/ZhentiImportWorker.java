@@ -49,7 +49,8 @@ public class ZhentiImportWorker {
       Long examId,
       Long operatorId,
       String zipObjectKey,
-      int total) {
+      int total,
+      ZhentiScope scope) {
     TenantContextHolder.setTenantId(tenantId);
     Path temp = null;
     try {
@@ -58,7 +59,7 @@ public class ZhentiImportWorker {
         Files.copy(in, temp, StandardCopyOption.REPLACE_EXISTING);
       }
       List<ZhentiImportFileResult> results = zipProcessor.process(
-          temp, tenantId, examId, operatorId,
+          temp, tenantId, examId, operatorId, scope,
           finished -> updateProgress(tenantId, importId, finished));
       updateDone(tenantId, importId, total, results);
       log.info("[ZhentiImport] 异步导入完成 importId={} total={}", importId, total);

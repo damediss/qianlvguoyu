@@ -1,21 +1,24 @@
-import { Alert, Button, Form, Input, Modal, Progress, Space, Typography, Upload, message } from 'antd';
+import { Alert, Button, Form, Input, Modal, Progress, Select, Space, Typography, Upload, message } from 'antd';
 import { UploadOutlined } from '@ant-design/icons';
 import { useEffect, useState } from 'react';
 import type { UploadFile } from 'antd';
 import { uploadZhenti } from '../../../api/exam-zhenti';
+import type { ZhentiScopeItem } from '../../../types/examZhenti';
 import { extractErrorMessage, validatePdfFile } from '../pastPaperUtils';
 
 interface Props {
   open: boolean;
   examId?: string;
   examName?: string;
+  /** 计划的全部共享组；>1 时必须显式选择（方案 v2.1 §3.4） */
+  scopeItems?: ZhentiScopeItem[];
   onCancel: () => void;
   onSuccess: () => void;
 }
 
 /** D2 单个上传：前端预检扩展名与 50MB，超限/类型不符不发起请求。 */
-export function ZhentiUploadModal({ open, examId, examName, onCancel, onSuccess }: Props) {
-  const [form] = Form.useForm<{ title?: string; year?: string }>();
+export function ZhentiUploadModal({ open, examId, examName, scopeItems, onCancel, onSuccess }: Props) {
+  const [form] = Form.useForm<{ title?: string; year?: string; scope?: number }>();
   const [file, setFile] = useState<File | null>(null);
   const [fileList, setFileList] = useState<UploadFile[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -60,11 +63,26 @@ export function ZhentiUploadModal({ open, examId, examName, onCancel, onSuccess 
       return;
     }
     const values = await form.validateFields();
+    const needScope = (scopeItems?.length ?? 0) > 1;
+    if (needScope && values.scope == null) {
+      setError('该考试计划绑定了多个工种/等级，请选择共享范围');
+      return;
+    }
+    const selected = needScope
+      ? scopeItems!.find((item) => item.workTypeId === values.scope)
+      : undefined;
     setError(null);
     setProgress(0);
     try {
       await uploadZhenti(
-        { file, examId, title: values.title?.trim(), year: values.year?.trim() },
+        {
+          file,
+          examId,
+          title: values.title?.trim(),
+          year: values.year?.trim(),
+          scopeWorkTypeId: selected?.workTypeId,
+          scopeLevel: selected?.level,
+        },
         setProgress,
       );
       message.success('上传成功');
@@ -125,6 +143,22 @@ export function ZhentiUploadModal({ open, examId, examName, onCancel, onSuccess 
           >
             <Input placeholder="例如：2024" />
           </Form.Item>
+          {(scopeItems?.length ?? 0) > 1 && (
+            <Form.Item
+              label="共享范围"
+              name="scope"
+              rules={[{ required: true, message: '该考试计划绑定了多个工种/等级，请选择共享范围' }]}
+              extra="真题将与所选工种等级下的全部考试计划共用"
+            >
+              <Select
+                placeholder="选择共享范围"
+                options={scopeItems!.map((item) => ({
+                  value: item.workTypeId,
+                  label: `${item.label}（${item.planCount} 个计划共用）`,
+                }))}
+              />
+            </Form.Item>
+          )}
         </Form>
         {progress !== null && <Progress percent={progress} size="small" />}
         {error && <Alert type="error" showIcon message={error} />}
