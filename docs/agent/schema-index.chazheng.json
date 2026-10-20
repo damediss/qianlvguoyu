@@ -1,0 +1,497 @@
+{
+  "_meta": {
+    "generated": true,
+    "source": "information_schema",
+    "schema": "gjjddb2026",
+    "generatedAt": "2026-10-20T09:10:41.737Z",
+    "notice": "仅含结构元数据，禁止写入任何数据行；迁移版本/双写对基线见 docs/agent/项目现状.md",
+    "onCheckFail": "--check 失败一律以测试库为准重新 --generate 提交（结构变化只能来自迁移）",
+    "tablesCount": 4
+  },
+  "tables": {
+    "chazheng_cert": {
+      "columns": [
+        {
+          "name": "id",
+          "type": "int",
+          "nullable": false,
+          "key": "PRI",
+          "comment": "\r"
+        },
+        {
+          "name": "user_id",
+          "type": "int",
+          "nullable": true,
+          "key": "MUL",
+          "comment": "用户ID\r"
+        },
+        {
+          "name": "cert_no",
+          "type": "varchar(100)",
+          "nullable": true,
+          "key": "",
+          "comment": "证书编号\r"
+        },
+        {
+          "name": "cert_name",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "",
+          "comment": "证书名称\r"
+        },
+        {
+          "name": "cert_date",
+          "type": "varchar(20)",
+          "nullable": true,
+          "key": "",
+          "comment": "发证日期\r"
+        },
+        {
+          "name": "license_file_id",
+          "type": "varchar(64)",
+          "nullable": true,
+          "key": "",
+          "comment": "证书图片文件ID(FileApplicationService)\r"
+        },
+        {
+          "name": "tenant_id",
+          "type": "bigint",
+          "nullable": false,
+          "key": "MUL",
+          "comment": "租户id\r"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "idx_tenant_id",
+          "unique": false,
+          "columns": [
+            "tenant_id\r"
+          ]
+        },
+        {
+          "name": "idx_user_id",
+          "unique": false,
+          "columns": [
+            "user_id\r"
+          ]
+        },
+        {
+          "name": "PRIMARY",
+          "unique": true,
+          "columns": [
+            "id\r"
+          ]
+        },
+        {
+          "name": "uk_chazheng_cert_user_cert_no",
+          "unique": true,
+          "columns": [
+            "user_id\r",
+            "cert_no\r"
+          ]
+        }
+      ]
+    },
+    "chazheng_cert_batch": {
+      "columns": [
+        {
+          "name": "id",
+          "type": "bigint",
+          "nullable": false,
+          "key": "PRI",
+          "comment": "批次 ID（雪花 ID）\r"
+        },
+        {
+          "name": "tenant_id",
+          "type": "bigint",
+          "nullable": false,
+          "key": "MUL",
+          "comment": "租户 ID\r"
+        },
+        {
+          "name": "total_count",
+          "type": "int",
+          "nullable": false,
+          "key": "",
+          "comment": "总用户数\r"
+        },
+        {
+          "name": "completed_count",
+          "type": "int",
+          "nullable": false,
+          "key": "",
+          "comment": "已完成数(原子 UPDATE 递增)\r"
+        },
+        {
+          "name": "status",
+          "type": "varchar(32)",
+          "nullable": false,
+          "key": "",
+          "comment": "processing / completed / failed\r"
+        },
+        {
+          "name": "source_filename",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "",
+          "comment": "导入的原始文件名(Excel),手动触发的批次为 NULL\r"
+        },
+        {
+          "name": "trigger_by",
+          "type": "bigint",
+          "nullable": true,
+          "key": "",
+          "comment": "触发人用户 ID\r"
+        },
+        {
+          "name": "triggered_at",
+          "type": "datetime",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "completed_at",
+          "type": "datetime",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "error_message",
+          "type": "text",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "deleted",
+          "type": "tinyint",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "created_at",
+          "type": "datetime",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "updated_at",
+          "type": "datetime",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "created_by",
+          "type": "bigint",
+          "nullable": true,
+          "key": "",
+          "comment": "创建人\r"
+        },
+        {
+          "name": "updated_by",
+          "type": "bigint",
+          "nullable": true,
+          "key": "",
+          "comment": "更新人\r"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "idx_chazheng_cert_batch_tenant",
+          "unique": false,
+          "columns": [
+            "tenant_id\r",
+            "deleted\r",
+            "status\r"
+          ]
+        },
+        {
+          "name": "PRIMARY",
+          "unique": true,
+          "columns": [
+            "id\r"
+          ]
+        }
+      ]
+    },
+    "chazheng_cert_batch_item": {
+      "columns": [
+        {
+          "name": "id",
+          "type": "bigint",
+          "nullable": false,
+          "key": "PRI",
+          "comment": "明细 ID（雪花 ID）\r"
+        },
+        {
+          "name": "tenant_id",
+          "type": "bigint",
+          "nullable": false,
+          "key": "",
+          "comment": "租户 ID\r"
+        },
+        {
+          "name": "batch_id",
+          "type": "bigint",
+          "nullable": false,
+          "key": "MUL",
+          "comment": "批次 ID\r"
+        },
+        {
+          "name": "user_id",
+          "type": "bigint",
+          "nullable": false,
+          "key": "MUL",
+          "comment": "用户 ID\r"
+        },
+        {
+          "name": "user_name",
+          "type": "varchar(64)",
+          "nullable": true,
+          "key": "",
+          "comment": "用户姓名（冗余，便于排查）\r"
+        },
+        {
+          "name": "status",
+          "type": "varchar(32)",
+          "nullable": false,
+          "key": "",
+          "comment": "pending / processing / success / success_no_cert / failed\r"
+        },
+        {
+          "name": "retry_count",
+          "type": "int",
+          "nullable": false,
+          "key": "",
+          "comment": "已重试次数\r"
+        },
+        {
+          "name": "error_message",
+          "type": "varchar(500)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "started_at",
+          "type": "datetime",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "completed_at",
+          "type": "datetime",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "deleted",
+          "type": "tinyint",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "created_at",
+          "type": "datetime",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "updated_at",
+          "type": "datetime",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "created_by",
+          "type": "bigint",
+          "nullable": true,
+          "key": "",
+          "comment": "创建人\r"
+        },
+        {
+          "name": "updated_by",
+          "type": "bigint",
+          "nullable": true,
+          "key": "",
+          "comment": "更新人\r"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "idx_batch_item_batch",
+          "unique": false,
+          "columns": [
+            "batch_id\r",
+            "status\r"
+          ]
+        },
+        {
+          "name": "idx_batch_item_user",
+          "unique": false,
+          "columns": [
+            "user_id\r"
+          ]
+        },
+        {
+          "name": "PRIMARY",
+          "unique": true,
+          "columns": [
+            "id\r"
+          ]
+        }
+      ]
+    },
+    "chazheng_user": {
+      "columns": [
+        {
+          "name": "id",
+          "type": "int",
+          "nullable": false,
+          "key": "PRI",
+          "comment": "\r"
+        },
+        {
+          "name": "enterprise_id",
+          "type": "int",
+          "nullable": true,
+          "key": "",
+          "comment": "企业ID\r"
+        },
+        {
+          "name": "user_name",
+          "type": "varchar(10)",
+          "nullable": true,
+          "key": "",
+          "comment": "姓名\r"
+        },
+        {
+          "name": "id_card",
+          "type": "varchar(18)",
+          "nullable": true,
+          "key": "MUL",
+          "comment": "身份证号\r"
+        },
+        {
+          "name": "gender",
+          "type": "int",
+          "nullable": true,
+          "key": "",
+          "comment": "0男 1女\r"
+        },
+        {
+          "name": "datas",
+          "type": "json",
+          "nullable": true,
+          "key": "",
+          "comment": "花名册 JSON\r"
+        },
+        {
+          "name": "is_cert",
+          "type": "int",
+          "nullable": true,
+          "key": "",
+          "comment": "是否有证书 0/1\r"
+        },
+        {
+          "name": "is_checked",
+          "type": "int",
+          "nullable": true,
+          "key": "",
+          "comment": "是否已查证 0/1\r"
+        },
+        {
+          "name": "ymd",
+          "type": "varchar(20)",
+          "nullable": true,
+          "key": "MUL",
+          "comment": "批次时间戳\r"
+        },
+        {
+          "name": "status",
+          "type": "int",
+          "nullable": false,
+          "key": "",
+          "comment": "状态\r"
+        },
+        {
+          "name": "sort_number",
+          "type": "int",
+          "nullable": false,
+          "key": "",
+          "comment": "排序号\r"
+        },
+        {
+          "name": "tenant_id",
+          "type": "bigint",
+          "nullable": false,
+          "key": "MUL",
+          "comment": "租户id\r"
+        },
+        {
+          "name": "create_time",
+          "type": "timestamp",
+          "nullable": false,
+          "key": "",
+          "comment": "创建时间\r"
+        },
+        {
+          "name": "deleted",
+          "type": "int",
+          "nullable": false,
+          "key": "",
+          "comment": "是否删除 0否 1是\r"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "chazheng_user_id_card_IDX",
+          "unique": false,
+          "columns": [
+            "id_card\r",
+            "tenant_id\r"
+          ]
+        },
+        {
+          "name": "idx_id_card",
+          "unique": false,
+          "columns": [
+            "id_card\r"
+          ]
+        },
+        {
+          "name": "idx_tenant_id",
+          "unique": false,
+          "columns": [
+            "tenant_id\r"
+          ]
+        },
+        {
+          "name": "idx_ymd",
+          "unique": false,
+          "columns": [
+            "ymd\r"
+          ]
+        },
+        {
+          "name": "PRIMARY",
+          "unique": true,
+          "columns": [
+            "id\r"
+          ]
+        }
+      ]
+    }
+  }
+}

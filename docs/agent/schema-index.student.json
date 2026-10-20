@@ -1,0 +1,494 @@
+{
+  "_meta": {
+    "generated": true,
+    "source": "information_schema",
+    "schema": "gjjddb2026",
+    "generatedAt": "2026-10-20T09:10:41.737Z",
+    "notice": "仅含结构元数据，禁止写入任何数据行；迁移版本/双写对基线见 docs/agent/项目现状.md",
+    "onCheckFail": "--check 失败一律以测试库为准重新 --generate 提交（结构变化只能来自迁移）",
+    "tablesCount": 4
+  },
+  "tables": {
+    "student_answer": {
+      "columns": [
+        {
+          "name": "id",
+          "type": "bigint",
+          "nullable": false,
+          "key": "PRI",
+          "comment": "\r"
+        },
+        {
+          "name": "tenant_id",
+          "type": "bigint",
+          "nullable": false,
+          "key": "MUL",
+          "comment": "\r"
+        },
+        {
+          "name": "attempt_id",
+          "type": "bigint",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "question_id",
+          "type": "bigint",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "answer_text",
+          "type": "text",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "is_correct",
+          "type": "tinyint",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "score",
+          "type": "int",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "created_at",
+          "type": "datetime",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "updated_at",
+          "type": "datetime",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "created_by",
+          "type": "bigint",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "updated_by",
+          "type": "bigint",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "deleted",
+          "type": "tinyint",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "idx_student_answer_attempt",
+          "unique": false,
+          "columns": [
+            "tenant_id\r",
+            "attempt_id\r"
+          ]
+        },
+        {
+          "name": "PRIMARY",
+          "unique": true,
+          "columns": [
+            "id\r"
+          ]
+        },
+        {
+          "name": "uk_student_answer_question",
+          "unique": true,
+          "columns": [
+            "tenant_id\r",
+            "attempt_id\r",
+            "question_id\r",
+            "deleted\r"
+          ]
+        }
+      ]
+    },
+    "student_exam_attempt": {
+      "columns": [
+        {
+          "name": "id",
+          "type": "bigint",
+          "nullable": false,
+          "key": "PRI",
+          "comment": "\r"
+        },
+        {
+          "name": "tenant_id",
+          "type": "bigint",
+          "nullable": false,
+          "key": "MUL",
+          "comment": "\r"
+        },
+        {
+          "name": "user_id",
+          "type": "bigint",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "exam_session_id",
+          "type": "bigint",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "status",
+          "type": "varchar(32)",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "started_at",
+          "type": "datetime",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "submitted_at",
+          "type": "datetime",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "score",
+          "type": "int",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "passed",
+          "type": "tinyint",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "created_at",
+          "type": "datetime",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "updated_at",
+          "type": "datetime",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "created_by",
+          "type": "bigint",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "updated_by",
+          "type": "bigint",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "deleted",
+          "type": "tinyint",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "idx_student_exam_attempt_session",
+          "unique": false,
+          "columns": [
+            "tenant_id\r",
+            "exam_session_id\r"
+          ]
+        },
+        {
+          "name": "idx_student_exam_attempt_user",
+          "unique": false,
+          "columns": [
+            "tenant_id\r",
+            "user_id\r"
+          ]
+        },
+        {
+          "name": "PRIMARY",
+          "unique": true,
+          "columns": [
+            "id\r"
+          ]
+        }
+      ]
+    },
+    "student_learning_record": {
+      "columns": [
+        {
+          "name": "id",
+          "type": "bigint",
+          "nullable": false,
+          "key": "PRI",
+          "comment": "\r"
+        },
+        {
+          "name": "tenant_id",
+          "type": "bigint",
+          "nullable": false,
+          "key": "MUL",
+          "comment": "\r"
+        },
+        {
+          "name": "user_id",
+          "type": "bigint",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "course_id",
+          "type": "bigint",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "chapter_id",
+          "type": "bigint",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "progress_percent",
+          "type": "int",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "completed",
+          "type": "tinyint",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "completed_at",
+          "type": "datetime",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "created_at",
+          "type": "datetime",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "updated_at",
+          "type": "datetime",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "created_by",
+          "type": "bigint",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "updated_by",
+          "type": "bigint",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "deleted",
+          "type": "tinyint",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "idx_student_learning_course",
+          "unique": false,
+          "columns": [
+            "tenant_id\r",
+            "user_id\r",
+            "course_id\r"
+          ]
+        },
+        {
+          "name": "PRIMARY",
+          "unique": true,
+          "columns": [
+            "id\r"
+          ]
+        },
+        {
+          "name": "uk_student_learning_record",
+          "unique": true,
+          "columns": [
+            "tenant_id\r",
+            "user_id\r",
+            "chapter_id\r",
+            "deleted\r"
+          ]
+        }
+      ]
+    },
+    "student_wrong_question": {
+      "columns": [
+        {
+          "name": "id",
+          "type": "bigint",
+          "nullable": false,
+          "key": "PRI",
+          "comment": "\r"
+        },
+        {
+          "name": "tenant_id",
+          "type": "bigint",
+          "nullable": false,
+          "key": "MUL",
+          "comment": "\r"
+        },
+        {
+          "name": "user_id",
+          "type": "bigint",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "question_id",
+          "type": "bigint",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "source_attempt_id",
+          "type": "bigint",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "mastered",
+          "type": "tinyint",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "last_wrong_at",
+          "type": "datetime",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "created_at",
+          "type": "datetime",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "updated_at",
+          "type": "datetime",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "created_by",
+          "type": "bigint",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "updated_by",
+          "type": "bigint",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "deleted",
+          "type": "tinyint",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "idx_student_wrong_user",
+          "unique": false,
+          "columns": [
+            "tenant_id\r",
+            "user_id\r",
+            "mastered\r"
+          ]
+        },
+        {
+          "name": "PRIMARY",
+          "unique": true,
+          "columns": [
+            "id\r"
+          ]
+        },
+        {
+          "name": "uk_student_wrong_question",
+          "unique": true,
+          "columns": [
+            "tenant_id\r",
+            "user_id\r",
+            "question_id\r",
+            "deleted\r"
+          ]
+        }
+      ]
+    }
+  }
+}

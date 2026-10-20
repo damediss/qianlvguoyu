@@ -1,0 +1,5540 @@
+{
+  "_meta": {
+    "generated": true,
+    "source": "information_schema",
+    "schema": "gjjddb2026",
+    "generatedAt": "2026-10-20T09:10:41.737Z",
+    "notice": "仅含结构元数据，禁止写入任何数据行；迁移版本/双写对基线见 docs/agent/项目现状.md",
+    "onCheckFail": "--check 失败一律以测试库为准重新 --generate 提交（结构变化只能来自迁移）",
+    "tablesCount": 39
+  },
+  "tables": {
+    "ACT_EVT_LOG": {
+      "columns": [
+        {
+          "name": "LOG_NR_",
+          "type": "bigint",
+          "nullable": false,
+          "key": "PRI",
+          "comment": "\r"
+        },
+        {
+          "name": "TYPE_",
+          "type": "varchar(64)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "PROC_DEF_ID_",
+          "type": "varchar(64)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "PROC_INST_ID_",
+          "type": "varchar(64)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "EXECUTION_ID_",
+          "type": "varchar(64)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "TASK_ID_",
+          "type": "varchar(64)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "TIME_STAMP_",
+          "type": "timestamp(3)",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "USER_ID_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "DATA_",
+          "type": "longblob",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "LOCK_OWNER_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "LOCK_TIME_",
+          "type": "timestamp(3)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "IS_PROCESSED_",
+          "type": "tinyint",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "PRIMARY",
+          "unique": true,
+          "columns": [
+            "LOG_NR_\r"
+          ]
+        }
+      ]
+    },
+    "ACT_GE_BYTEARRAY": {
+      "columns": [
+        {
+          "name": "ID_",
+          "type": "varchar(64)",
+          "nullable": false,
+          "key": "PRI",
+          "comment": "\r"
+        },
+        {
+          "name": "REV_",
+          "type": "int",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "NAME_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "DEPLOYMENT_ID_",
+          "type": "varchar(64)",
+          "nullable": true,
+          "key": "MUL",
+          "comment": "\r"
+        },
+        {
+          "name": "BYTES_",
+          "type": "longblob",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "GENERATED_",
+          "type": "tinyint",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "ACT_IDX_BYTEAR_DEPL",
+          "unique": false,
+          "columns": [
+            "DEPLOYMENT_ID_\r"
+          ]
+        },
+        {
+          "name": "PRIMARY",
+          "unique": true,
+          "columns": [
+            "ID_\r"
+          ]
+        }
+      ]
+    },
+    "ACT_GE_PROPERTY": {
+      "columns": [
+        {
+          "name": "NAME_",
+          "type": "varchar(64)",
+          "nullable": false,
+          "key": "PRI",
+          "comment": "\r"
+        },
+        {
+          "name": "VALUE_",
+          "type": "varchar(300)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "REV_",
+          "type": "int",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "PRIMARY",
+          "unique": true,
+          "columns": [
+            "NAME_\r"
+          ]
+        }
+      ]
+    },
+    "ACT_HI_ACTINST": {
+      "columns": [
+        {
+          "name": "ID_",
+          "type": "varchar(64)",
+          "nullable": false,
+          "key": "PRI",
+          "comment": "\r"
+        },
+        {
+          "name": "REV_",
+          "type": "int",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "PROC_DEF_ID_",
+          "type": "varchar(64)",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "PROC_INST_ID_",
+          "type": "varchar(64)",
+          "nullable": false,
+          "key": "MUL",
+          "comment": "\r"
+        },
+        {
+          "name": "EXECUTION_ID_",
+          "type": "varchar(64)",
+          "nullable": false,
+          "key": "MUL",
+          "comment": "\r"
+        },
+        {
+          "name": "ACT_ID_",
+          "type": "varchar(255)",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "TASK_ID_",
+          "type": "varchar(64)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "CALL_PROC_INST_ID_",
+          "type": "varchar(64)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "ACT_NAME_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "ACT_TYPE_",
+          "type": "varchar(255)",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "ASSIGNEE_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "COMPLETED_BY_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "START_TIME_",
+          "type": "datetime(3)",
+          "nullable": false,
+          "key": "MUL",
+          "comment": "\r"
+        },
+        {
+          "name": "END_TIME_",
+          "type": "datetime(3)",
+          "nullable": true,
+          "key": "MUL",
+          "comment": "\r"
+        },
+        {
+          "name": "TRANSACTION_ORDER_",
+          "type": "int",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "DURATION_",
+          "type": "bigint",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "DELETE_REASON_",
+          "type": "varchar(4000)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "TENANT_ID_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "ACT_IDX_HI_ACT_INST_END",
+          "unique": false,
+          "columns": [
+            "END_TIME_\r"
+          ]
+        },
+        {
+          "name": "ACT_IDX_HI_ACT_INST_EXEC",
+          "unique": false,
+          "columns": [
+            "EXECUTION_ID_\r",
+            "ACT_ID_\r"
+          ]
+        },
+        {
+          "name": "ACT_IDX_HI_ACT_INST_PROCINST",
+          "unique": false,
+          "columns": [
+            "PROC_INST_ID_\r",
+            "ACT_ID_\r"
+          ]
+        },
+        {
+          "name": "ACT_IDX_HI_ACT_INST_START",
+          "unique": false,
+          "columns": [
+            "START_TIME_\r"
+          ]
+        },
+        {
+          "name": "PRIMARY",
+          "unique": true,
+          "columns": [
+            "ID_\r"
+          ]
+        }
+      ]
+    },
+    "ACT_HI_ATTACHMENT": {
+      "columns": [
+        {
+          "name": "ID_",
+          "type": "varchar(64)",
+          "nullable": false,
+          "key": "PRI",
+          "comment": "\r"
+        },
+        {
+          "name": "REV_",
+          "type": "int",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "USER_ID_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "NAME_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "DESCRIPTION_",
+          "type": "varchar(4000)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "TYPE_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "TASK_ID_",
+          "type": "varchar(64)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "PROC_INST_ID_",
+          "type": "varchar(64)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "URL_",
+          "type": "varchar(4000)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "CONTENT_ID_",
+          "type": "varchar(64)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "TIME_",
+          "type": "datetime(3)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "PRIMARY",
+          "unique": true,
+          "columns": [
+            "ID_\r"
+          ]
+        }
+      ]
+    },
+    "ACT_HI_COMMENT": {
+      "columns": [
+        {
+          "name": "ID_",
+          "type": "varchar(64)",
+          "nullable": false,
+          "key": "PRI",
+          "comment": "\r"
+        },
+        {
+          "name": "TYPE_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "TIME_",
+          "type": "datetime(3)",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "USER_ID_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "TASK_ID_",
+          "type": "varchar(64)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "PROC_INST_ID_",
+          "type": "varchar(64)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "ACTION_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "MESSAGE_",
+          "type": "varchar(4000)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "FULL_MSG_",
+          "type": "longblob",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "PRIMARY",
+          "unique": true,
+          "columns": [
+            "ID_\r"
+          ]
+        }
+      ]
+    },
+    "ACT_HI_DETAIL": {
+      "columns": [
+        {
+          "name": "ID_",
+          "type": "varchar(64)",
+          "nullable": false,
+          "key": "PRI",
+          "comment": "\r"
+        },
+        {
+          "name": "TYPE_",
+          "type": "varchar(255)",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "PROC_INST_ID_",
+          "type": "varchar(64)",
+          "nullable": true,
+          "key": "MUL",
+          "comment": "\r"
+        },
+        {
+          "name": "EXECUTION_ID_",
+          "type": "varchar(64)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "TASK_ID_",
+          "type": "varchar(64)",
+          "nullable": true,
+          "key": "MUL",
+          "comment": "\r"
+        },
+        {
+          "name": "ACT_INST_ID_",
+          "type": "varchar(64)",
+          "nullable": true,
+          "key": "MUL",
+          "comment": "\r"
+        },
+        {
+          "name": "NAME_",
+          "type": "varchar(255)",
+          "nullable": false,
+          "key": "MUL",
+          "comment": "\r"
+        },
+        {
+          "name": "VAR_TYPE_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "REV_",
+          "type": "int",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "TIME_",
+          "type": "datetime(3)",
+          "nullable": false,
+          "key": "MUL",
+          "comment": "\r"
+        },
+        {
+          "name": "BYTEARRAY_ID_",
+          "type": "varchar(64)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "DOUBLE_",
+          "type": "double",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "LONG_",
+          "type": "bigint",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "TEXT_",
+          "type": "varchar(4000)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "TEXT2_",
+          "type": "varchar(4000)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "ACT_IDX_HI_DETAIL_ACT_INST",
+          "unique": false,
+          "columns": [
+            "ACT_INST_ID_\r"
+          ]
+        },
+        {
+          "name": "ACT_IDX_HI_DETAIL_NAME",
+          "unique": false,
+          "columns": [
+            "NAME_\r"
+          ]
+        },
+        {
+          "name": "ACT_IDX_HI_DETAIL_PROC_INST",
+          "unique": false,
+          "columns": [
+            "PROC_INST_ID_\r"
+          ]
+        },
+        {
+          "name": "ACT_IDX_HI_DETAIL_TASK_ID",
+          "unique": false,
+          "columns": [
+            "TASK_ID_\r"
+          ]
+        },
+        {
+          "name": "ACT_IDX_HI_DETAIL_TIME",
+          "unique": false,
+          "columns": [
+            "TIME_\r"
+          ]
+        },
+        {
+          "name": "PRIMARY",
+          "unique": true,
+          "columns": [
+            "ID_\r"
+          ]
+        }
+      ]
+    },
+    "ACT_HI_ENTITYLINK": {
+      "columns": [
+        {
+          "name": "ID_",
+          "type": "varchar(64)",
+          "nullable": false,
+          "key": "PRI",
+          "comment": "\r"
+        },
+        {
+          "name": "LINK_TYPE_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "CREATE_TIME_",
+          "type": "datetime(3)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "SCOPE_ID_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "MUL",
+          "comment": "\r"
+        },
+        {
+          "name": "SUB_SCOPE_ID_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "SCOPE_TYPE_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "SCOPE_DEFINITION_ID_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "MUL",
+          "comment": "\r"
+        },
+        {
+          "name": "PARENT_ELEMENT_ID_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "REF_SCOPE_ID_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "MUL",
+          "comment": "\r"
+        },
+        {
+          "name": "REF_SCOPE_TYPE_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "REF_SCOPE_DEFINITION_ID_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "ROOT_SCOPE_ID_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "MUL",
+          "comment": "\r"
+        },
+        {
+          "name": "ROOT_SCOPE_TYPE_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "HIERARCHY_TYPE_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "ACT_IDX_HI_ENT_LNK_REF_SCOPE",
+          "unique": false,
+          "columns": [
+            "REF_SCOPE_ID_\r",
+            "REF_SCOPE_TYPE_\r",
+            "LINK_TYPE_\r"
+          ]
+        },
+        {
+          "name": "ACT_IDX_HI_ENT_LNK_ROOT_SCOPE",
+          "unique": false,
+          "columns": [
+            "ROOT_SCOPE_ID_\r",
+            "ROOT_SCOPE_TYPE_\r",
+            "LINK_TYPE_\r"
+          ]
+        },
+        {
+          "name": "ACT_IDX_HI_ENT_LNK_SCOPE",
+          "unique": false,
+          "columns": [
+            "SCOPE_ID_\r",
+            "SCOPE_TYPE_\r",
+            "LINK_TYPE_\r"
+          ]
+        },
+        {
+          "name": "ACT_IDX_HI_ENT_LNK_SCOPE_DEF",
+          "unique": false,
+          "columns": [
+            "SCOPE_DEFINITION_ID_\r",
+            "SCOPE_TYPE_\r",
+            "LINK_TYPE_\r"
+          ]
+        },
+        {
+          "name": "PRIMARY",
+          "unique": true,
+          "columns": [
+            "ID_\r"
+          ]
+        }
+      ]
+    },
+    "ACT_HI_IDENTITYLINK": {
+      "columns": [
+        {
+          "name": "ID_",
+          "type": "varchar(64)",
+          "nullable": false,
+          "key": "PRI",
+          "comment": "\r"
+        },
+        {
+          "name": "GROUP_ID_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "TYPE_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "USER_ID_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "MUL",
+          "comment": "\r"
+        },
+        {
+          "name": "TASK_ID_",
+          "type": "varchar(64)",
+          "nullable": true,
+          "key": "MUL",
+          "comment": "\r"
+        },
+        {
+          "name": "CREATE_TIME_",
+          "type": "datetime(3)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "PROC_INST_ID_",
+          "type": "varchar(64)",
+          "nullable": true,
+          "key": "MUL",
+          "comment": "\r"
+        },
+        {
+          "name": "SCOPE_ID_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "MUL",
+          "comment": "\r"
+        },
+        {
+          "name": "SUB_SCOPE_ID_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "MUL",
+          "comment": "\r"
+        },
+        {
+          "name": "SCOPE_TYPE_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "SCOPE_DEFINITION_ID_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "MUL",
+          "comment": "\r"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "ACT_IDX_HI_IDENT_LNK_PROCINST",
+          "unique": false,
+          "columns": [
+            "PROC_INST_ID_\r"
+          ]
+        },
+        {
+          "name": "ACT_IDX_HI_IDENT_LNK_SCOPE",
+          "unique": false,
+          "columns": [
+            "SCOPE_ID_\r",
+            "SCOPE_TYPE_\r"
+          ]
+        },
+        {
+          "name": "ACT_IDX_HI_IDENT_LNK_SCOPE_DEF",
+          "unique": false,
+          "columns": [
+            "SCOPE_DEFINITION_ID_\r",
+            "SCOPE_TYPE_\r"
+          ]
+        },
+        {
+          "name": "ACT_IDX_HI_IDENT_LNK_SUB_SCOPE",
+          "unique": false,
+          "columns": [
+            "SUB_SCOPE_ID_\r",
+            "SCOPE_TYPE_\r"
+          ]
+        },
+        {
+          "name": "ACT_IDX_HI_IDENT_LNK_TASK",
+          "unique": false,
+          "columns": [
+            "TASK_ID_\r"
+          ]
+        },
+        {
+          "name": "ACT_IDX_HI_IDENT_LNK_USER",
+          "unique": false,
+          "columns": [
+            "USER_ID_\r"
+          ]
+        },
+        {
+          "name": "PRIMARY",
+          "unique": true,
+          "columns": [
+            "ID_\r"
+          ]
+        }
+      ]
+    },
+    "ACT_HI_PROCINST": {
+      "columns": [
+        {
+          "name": "ID_",
+          "type": "varchar(64)",
+          "nullable": false,
+          "key": "PRI",
+          "comment": "\r"
+        },
+        {
+          "name": "REV_",
+          "type": "int",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "PROC_INST_ID_",
+          "type": "varchar(64)",
+          "nullable": false,
+          "key": "UNI",
+          "comment": "\r"
+        },
+        {
+          "name": "BUSINESS_KEY_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "MUL",
+          "comment": "\r"
+        },
+        {
+          "name": "PROC_DEF_ID_",
+          "type": "varchar(64)",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "START_TIME_",
+          "type": "datetime(3)",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "END_TIME_",
+          "type": "datetime(3)",
+          "nullable": true,
+          "key": "MUL",
+          "comment": "\r"
+        },
+        {
+          "name": "DURATION_",
+          "type": "bigint",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "START_USER_ID_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "START_ACT_ID_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "END_ACT_ID_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "SUPER_PROCESS_INSTANCE_ID_",
+          "type": "varchar(64)",
+          "nullable": true,
+          "key": "MUL",
+          "comment": "\r"
+        },
+        {
+          "name": "DELETE_REASON_",
+          "type": "varchar(4000)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "TENANT_ID_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "NAME_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "CALLBACK_ID_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "CALLBACK_TYPE_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "REFERENCE_ID_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "REFERENCE_TYPE_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "PROPAGATED_STAGE_INST_ID_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "BUSINESS_STATUS_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "ACT_IDX_HI_PRO_I_BUSKEY",
+          "unique": false,
+          "columns": [
+            "BUSINESS_KEY_\r"
+          ]
+        },
+        {
+          "name": "ACT_IDX_HI_PRO_INST_END",
+          "unique": false,
+          "columns": [
+            "END_TIME_\r"
+          ]
+        },
+        {
+          "name": "ACT_IDX_HI_PRO_SUPER_PROCINST",
+          "unique": false,
+          "columns": [
+            "SUPER_PROCESS_INSTANCE_ID_\r"
+          ]
+        },
+        {
+          "name": "PRIMARY",
+          "unique": true,
+          "columns": [
+            "ID_\r"
+          ]
+        },
+        {
+          "name": "PROC_INST_ID_",
+          "unique": true,
+          "columns": [
+            "PROC_INST_ID_\r"
+          ]
+        }
+      ]
+    },
+    "ACT_HI_TASKINST": {
+      "columns": [
+        {
+          "name": "ID_",
+          "type": "varchar(64)",
+          "nullable": false,
+          "key": "PRI",
+          "comment": "\r"
+        },
+        {
+          "name": "REV_",
+          "type": "int",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "PROC_DEF_ID_",
+          "type": "varchar(64)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "TASK_DEF_ID_",
+          "type": "varchar(64)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "TASK_DEF_KEY_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "PROC_INST_ID_",
+          "type": "varchar(64)",
+          "nullable": true,
+          "key": "MUL",
+          "comment": "\r"
+        },
+        {
+          "name": "EXECUTION_ID_",
+          "type": "varchar(64)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "SCOPE_ID_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "MUL",
+          "comment": "\r"
+        },
+        {
+          "name": "SUB_SCOPE_ID_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "MUL",
+          "comment": "\r"
+        },
+        {
+          "name": "SCOPE_TYPE_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "SCOPE_DEFINITION_ID_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "MUL",
+          "comment": "\r"
+        },
+        {
+          "name": "PROPAGATED_STAGE_INST_ID_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "STATE_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "NAME_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "PARENT_TASK_ID_",
+          "type": "varchar(64)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "DESCRIPTION_",
+          "type": "varchar(4000)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "OWNER_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "ASSIGNEE_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "START_TIME_",
+          "type": "datetime(3)",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "IN_PROGRESS_TIME_",
+          "type": "datetime(3)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "IN_PROGRESS_STARTED_BY_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "CLAIM_TIME_",
+          "type": "datetime(3)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "CLAIMED_BY_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "SUSPENDED_TIME_",
+          "type": "datetime(3)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "SUSPENDED_BY_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "END_TIME_",
+          "type": "datetime(3)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "COMPLETED_BY_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "DURATION_",
+          "type": "bigint",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "DELETE_REASON_",
+          "type": "varchar(4000)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "PRIORITY_",
+          "type": "int",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "IN_PROGRESS_DUE_DATE_",
+          "type": "datetime(3)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "DUE_DATE_",
+          "type": "datetime(3)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "FORM_KEY_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "CATEGORY_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "TENANT_ID_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "LAST_UPDATED_TIME_",
+          "type": "datetime(3)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "ACT_IDX_HI_TASK_INST_PROCINST",
+          "unique": false,
+          "columns": [
+            "PROC_INST_ID_\r"
+          ]
+        },
+        {
+          "name": "ACT_IDX_HI_TASK_SCOPE",
+          "unique": false,
+          "columns": [
+            "SCOPE_ID_\r",
+            "SCOPE_TYPE_\r"
+          ]
+        },
+        {
+          "name": "ACT_IDX_HI_TASK_SCOPE_DEF",
+          "unique": false,
+          "columns": [
+            "SCOPE_DEFINITION_ID_\r",
+            "SCOPE_TYPE_\r"
+          ]
+        },
+        {
+          "name": "ACT_IDX_HI_TASK_SUB_SCOPE",
+          "unique": false,
+          "columns": [
+            "SUB_SCOPE_ID_\r",
+            "SCOPE_TYPE_\r"
+          ]
+        },
+        {
+          "name": "PRIMARY",
+          "unique": true,
+          "columns": [
+            "ID_\r"
+          ]
+        }
+      ]
+    },
+    "ACT_HI_TSK_LOG": {
+      "columns": [
+        {
+          "name": "ID_",
+          "type": "bigint",
+          "nullable": false,
+          "key": "PRI",
+          "comment": "\r"
+        },
+        {
+          "name": "TYPE_",
+          "type": "varchar(64)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "TASK_ID_",
+          "type": "varchar(64)",
+          "nullable": false,
+          "key": "MUL",
+          "comment": "\r"
+        },
+        {
+          "name": "TIME_STAMP_",
+          "type": "timestamp(3)",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "USER_ID_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "DATA_",
+          "type": "varchar(4000)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "EXECUTION_ID_",
+          "type": "varchar(64)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "PROC_INST_ID_",
+          "type": "varchar(64)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "PROC_DEF_ID_",
+          "type": "varchar(64)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "SCOPE_ID_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "SCOPE_DEFINITION_ID_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "SUB_SCOPE_ID_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "SCOPE_TYPE_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "TENANT_ID_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "ACT_IDX_ACT_HI_TSK_LOG_TASK",
+          "unique": false,
+          "columns": [
+            "TASK_ID_\r"
+          ]
+        },
+        {
+          "name": "PRIMARY",
+          "unique": true,
+          "columns": [
+            "ID_\r"
+          ]
+        }
+      ]
+    },
+    "ACT_HI_VARINST": {
+      "columns": [
+        {
+          "name": "ID_",
+          "type": "varchar(64)",
+          "nullable": false,
+          "key": "PRI",
+          "comment": "\r"
+        },
+        {
+          "name": "REV_",
+          "type": "int",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "PROC_INST_ID_",
+          "type": "varchar(64)",
+          "nullable": true,
+          "key": "MUL",
+          "comment": "\r"
+        },
+        {
+          "name": "EXECUTION_ID_",
+          "type": "varchar(64)",
+          "nullable": true,
+          "key": "MUL",
+          "comment": "\r"
+        },
+        {
+          "name": "TASK_ID_",
+          "type": "varchar(64)",
+          "nullable": true,
+          "key": "MUL",
+          "comment": "\r"
+        },
+        {
+          "name": "NAME_",
+          "type": "varchar(255)",
+          "nullable": false,
+          "key": "MUL",
+          "comment": "\r"
+        },
+        {
+          "name": "VAR_TYPE_",
+          "type": "varchar(100)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "SCOPE_ID_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "MUL",
+          "comment": "\r"
+        },
+        {
+          "name": "SUB_SCOPE_ID_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "MUL",
+          "comment": "\r"
+        },
+        {
+          "name": "SCOPE_TYPE_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "BYTEARRAY_ID_",
+          "type": "varchar(64)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "DOUBLE_",
+          "type": "double",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "LONG_",
+          "type": "bigint",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "TEXT_",
+          "type": "varchar(4000)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "TEXT2_",
+          "type": "varchar(4000)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "META_INFO_",
+          "type": "varchar(4000)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "CREATE_TIME_",
+          "type": "datetime(3)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "LAST_UPDATED_TIME_",
+          "type": "datetime(3)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "ACT_IDX_HI_PROCVAR_EXE",
+          "unique": false,
+          "columns": [
+            "EXECUTION_ID_\r"
+          ]
+        },
+        {
+          "name": "ACT_IDX_HI_PROCVAR_NAME_TYPE",
+          "unique": false,
+          "columns": [
+            "NAME_\r",
+            "VAR_TYPE_\r"
+          ]
+        },
+        {
+          "name": "ACT_IDX_HI_PROCVAR_PROC_INST",
+          "unique": false,
+          "columns": [
+            "PROC_INST_ID_\r"
+          ]
+        },
+        {
+          "name": "ACT_IDX_HI_PROCVAR_TASK_ID",
+          "unique": false,
+          "columns": [
+            "TASK_ID_\r"
+          ]
+        },
+        {
+          "name": "ACT_IDX_HI_VAR_SCOPE_ID_TYPE",
+          "unique": false,
+          "columns": [
+            "SCOPE_ID_\r",
+            "SCOPE_TYPE_\r"
+          ]
+        },
+        {
+          "name": "ACT_IDX_HI_VAR_SUB_ID_TYPE",
+          "unique": false,
+          "columns": [
+            "SUB_SCOPE_ID_\r",
+            "SCOPE_TYPE_\r"
+          ]
+        },
+        {
+          "name": "PRIMARY",
+          "unique": true,
+          "columns": [
+            "ID_\r"
+          ]
+        }
+      ]
+    },
+    "ACT_ID_BYTEARRAY": {
+      "columns": [
+        {
+          "name": "ID_",
+          "type": "varchar(64)",
+          "nullable": false,
+          "key": "PRI",
+          "comment": "\r"
+        },
+        {
+          "name": "REV_",
+          "type": "int",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "NAME_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "BYTES_",
+          "type": "longblob",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "PRIMARY",
+          "unique": true,
+          "columns": [
+            "ID_\r"
+          ]
+        }
+      ]
+    },
+    "ACT_ID_GROUP": {
+      "columns": [
+        {
+          "name": "ID_",
+          "type": "varchar(64)",
+          "nullable": false,
+          "key": "PRI",
+          "comment": "\r"
+        },
+        {
+          "name": "REV_",
+          "type": "int",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "NAME_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "TYPE_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "PRIMARY",
+          "unique": true,
+          "columns": [
+            "ID_\r"
+          ]
+        }
+      ]
+    },
+    "ACT_ID_INFO": {
+      "columns": [
+        {
+          "name": "ID_",
+          "type": "varchar(64)",
+          "nullable": false,
+          "key": "PRI",
+          "comment": "\r"
+        },
+        {
+          "name": "REV_",
+          "type": "int",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "USER_ID_",
+          "type": "varchar(64)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "TYPE_",
+          "type": "varchar(64)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "KEY_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "VALUE_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "PASSWORD_",
+          "type": "longblob",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "PARENT_ID_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "PRIMARY",
+          "unique": true,
+          "columns": [
+            "ID_\r"
+          ]
+        }
+      ]
+    },
+    "ACT_ID_MEMBERSHIP": {
+      "columns": [
+        {
+          "name": "USER_ID_",
+          "type": "varchar(64)",
+          "nullable": false,
+          "key": "PRI",
+          "comment": "\r"
+        },
+        {
+          "name": "GROUP_ID_",
+          "type": "varchar(64)",
+          "nullable": false,
+          "key": "PRI",
+          "comment": "\r"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "ACT_FK_MEMB_GROUP",
+          "unique": false,
+          "columns": [
+            "GROUP_ID_\r"
+          ]
+        },
+        {
+          "name": "PRIMARY",
+          "unique": true,
+          "columns": [
+            "USER_ID_\r",
+            "GROUP_ID_\r"
+          ]
+        }
+      ]
+    },
+    "ACT_ID_PRIV": {
+      "columns": [
+        {
+          "name": "ID_",
+          "type": "varchar(64)",
+          "nullable": false,
+          "key": "PRI",
+          "comment": "\r"
+        },
+        {
+          "name": "NAME_",
+          "type": "varchar(255)",
+          "nullable": false,
+          "key": "UNI",
+          "comment": "\r"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "ACT_UNIQ_PRIV_NAME",
+          "unique": true,
+          "columns": [
+            "NAME_\r"
+          ]
+        },
+        {
+          "name": "PRIMARY",
+          "unique": true,
+          "columns": [
+            "ID_\r"
+          ]
+        }
+      ]
+    },
+    "ACT_ID_PRIV_MAPPING": {
+      "columns": [
+        {
+          "name": "ID_",
+          "type": "varchar(64)",
+          "nullable": false,
+          "key": "PRI",
+          "comment": "\r"
+        },
+        {
+          "name": "PRIV_ID_",
+          "type": "varchar(64)",
+          "nullable": false,
+          "key": "MUL",
+          "comment": "\r"
+        },
+        {
+          "name": "USER_ID_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "MUL",
+          "comment": "\r"
+        },
+        {
+          "name": "GROUP_ID_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "MUL",
+          "comment": "\r"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "ACT_FK_PRIV_MAPPING",
+          "unique": false,
+          "columns": [
+            "PRIV_ID_\r"
+          ]
+        },
+        {
+          "name": "ACT_IDX_PRIV_GROUP",
+          "unique": false,
+          "columns": [
+            "GROUP_ID_\r"
+          ]
+        },
+        {
+          "name": "ACT_IDX_PRIV_USER",
+          "unique": false,
+          "columns": [
+            "USER_ID_\r"
+          ]
+        },
+        {
+          "name": "PRIMARY",
+          "unique": true,
+          "columns": [
+            "ID_\r"
+          ]
+        }
+      ]
+    },
+    "ACT_ID_PROPERTY": {
+      "columns": [
+        {
+          "name": "NAME_",
+          "type": "varchar(64)",
+          "nullable": false,
+          "key": "PRI",
+          "comment": "\r"
+        },
+        {
+          "name": "VALUE_",
+          "type": "varchar(300)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "REV_",
+          "type": "int",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "PRIMARY",
+          "unique": true,
+          "columns": [
+            "NAME_\r"
+          ]
+        }
+      ]
+    },
+    "ACT_ID_TOKEN": {
+      "columns": [
+        {
+          "name": "ID_",
+          "type": "varchar(64)",
+          "nullable": false,
+          "key": "PRI",
+          "comment": "\r"
+        },
+        {
+          "name": "REV_",
+          "type": "int",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "TOKEN_VALUE_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "TOKEN_DATE_",
+          "type": "timestamp(3)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "IP_ADDRESS_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "USER_AGENT_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "USER_ID_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "TOKEN_DATA_",
+          "type": "varchar(2000)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "PRIMARY",
+          "unique": true,
+          "columns": [
+            "ID_\r"
+          ]
+        }
+      ]
+    },
+    "ACT_ID_USER": {
+      "columns": [
+        {
+          "name": "ID_",
+          "type": "varchar(64)",
+          "nullable": false,
+          "key": "PRI",
+          "comment": "\r"
+        },
+        {
+          "name": "REV_",
+          "type": "int",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "FIRST_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "LAST_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "DISPLAY_NAME_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "EMAIL_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "PWD_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "PICTURE_ID_",
+          "type": "varchar(64)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "TENANT_ID_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "PRIMARY",
+          "unique": true,
+          "columns": [
+            "ID_\r"
+          ]
+        }
+      ]
+    },
+    "ACT_PROCDEF_INFO": {
+      "columns": [
+        {
+          "name": "ID_",
+          "type": "varchar(64)",
+          "nullable": false,
+          "key": "PRI",
+          "comment": "\r"
+        },
+        {
+          "name": "PROC_DEF_ID_",
+          "type": "varchar(64)",
+          "nullable": false,
+          "key": "UNI",
+          "comment": "\r"
+        },
+        {
+          "name": "REV_",
+          "type": "int",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "INFO_JSON_ID_",
+          "type": "varchar(64)",
+          "nullable": true,
+          "key": "MUL",
+          "comment": "\r"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "ACT_FK_INFO_JSON_BA",
+          "unique": false,
+          "columns": [
+            "INFO_JSON_ID_\r"
+          ]
+        },
+        {
+          "name": "ACT_IDX_INFO_PROCDEF",
+          "unique": false,
+          "columns": [
+            "PROC_DEF_ID_\r"
+          ]
+        },
+        {
+          "name": "ACT_UNIQ_INFO_PROCDEF",
+          "unique": true,
+          "columns": [
+            "PROC_DEF_ID_\r"
+          ]
+        },
+        {
+          "name": "PRIMARY",
+          "unique": true,
+          "columns": [
+            "ID_\r"
+          ]
+        }
+      ]
+    },
+    "ACT_RE_DEPLOYMENT": {
+      "columns": [
+        {
+          "name": "ID_",
+          "type": "varchar(64)",
+          "nullable": false,
+          "key": "PRI",
+          "comment": "\r"
+        },
+        {
+          "name": "NAME_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "CATEGORY_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "KEY_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "TENANT_ID_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "DEPLOY_TIME_",
+          "type": "timestamp(3)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "DERIVED_FROM_",
+          "type": "varchar(64)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "DERIVED_FROM_ROOT_",
+          "type": "varchar(64)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "PARENT_DEPLOYMENT_ID_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "ENGINE_VERSION_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "PRIMARY",
+          "unique": true,
+          "columns": [
+            "ID_\r"
+          ]
+        }
+      ]
+    },
+    "ACT_RE_MODEL": {
+      "columns": [
+        {
+          "name": "ID_",
+          "type": "varchar(64)",
+          "nullable": false,
+          "key": "PRI",
+          "comment": "\r"
+        },
+        {
+          "name": "REV_",
+          "type": "int",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "NAME_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "KEY_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "CATEGORY_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "CREATE_TIME_",
+          "type": "timestamp(3)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "LAST_UPDATE_TIME_",
+          "type": "timestamp(3)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "VERSION_",
+          "type": "int",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "META_INFO_",
+          "type": "varchar(4000)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "DEPLOYMENT_ID_",
+          "type": "varchar(64)",
+          "nullable": true,
+          "key": "MUL",
+          "comment": "\r"
+        },
+        {
+          "name": "EDITOR_SOURCE_VALUE_ID_",
+          "type": "varchar(64)",
+          "nullable": true,
+          "key": "MUL",
+          "comment": "\r"
+        },
+        {
+          "name": "EDITOR_SOURCE_EXTRA_VALUE_ID_",
+          "type": "varchar(64)",
+          "nullable": true,
+          "key": "MUL",
+          "comment": "\r"
+        },
+        {
+          "name": "TENANT_ID_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "ACT_FK_MODEL_DEPLOYMENT",
+          "unique": false,
+          "columns": [
+            "DEPLOYMENT_ID_\r"
+          ]
+        },
+        {
+          "name": "ACT_FK_MODEL_SOURCE",
+          "unique": false,
+          "columns": [
+            "EDITOR_SOURCE_VALUE_ID_\r"
+          ]
+        },
+        {
+          "name": "ACT_FK_MODEL_SOURCE_EXTRA",
+          "unique": false,
+          "columns": [
+            "EDITOR_SOURCE_EXTRA_VALUE_ID_\r"
+          ]
+        },
+        {
+          "name": "PRIMARY",
+          "unique": true,
+          "columns": [
+            "ID_\r"
+          ]
+        }
+      ]
+    },
+    "ACT_RE_PROCDEF": {
+      "columns": [
+        {
+          "name": "ID_",
+          "type": "varchar(64)",
+          "nullable": false,
+          "key": "PRI",
+          "comment": "\r"
+        },
+        {
+          "name": "REV_",
+          "type": "int",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "CATEGORY_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "NAME_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "KEY_",
+          "type": "varchar(255)",
+          "nullable": false,
+          "key": "MUL",
+          "comment": "\r"
+        },
+        {
+          "name": "VERSION_",
+          "type": "int",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "DEPLOYMENT_ID_",
+          "type": "varchar(64)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "RESOURCE_NAME_",
+          "type": "varchar(4000)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "DGRM_RESOURCE_NAME_",
+          "type": "varchar(4000)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "DESCRIPTION_",
+          "type": "varchar(4000)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "HAS_START_FORM_KEY_",
+          "type": "tinyint",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "HAS_GRAPHICAL_NOTATION_",
+          "type": "tinyint",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "SUSPENSION_STATE_",
+          "type": "int",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "TENANT_ID_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "ENGINE_VERSION_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "DERIVED_FROM_",
+          "type": "varchar(64)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "DERIVED_FROM_ROOT_",
+          "type": "varchar(64)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "DERIVED_VERSION_",
+          "type": "int",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "ACT_UNIQ_PROCDEF",
+          "unique": true,
+          "columns": [
+            "KEY_\r",
+            "VERSION_\r",
+            "DERIVED_VERSION_\r",
+            "TENANT_ID_\r"
+          ]
+        },
+        {
+          "name": "PRIMARY",
+          "unique": true,
+          "columns": [
+            "ID_\r"
+          ]
+        }
+      ]
+    },
+    "ACT_RU_ACTINST": {
+      "columns": [
+        {
+          "name": "ID_",
+          "type": "varchar(64)",
+          "nullable": false,
+          "key": "PRI",
+          "comment": "\r"
+        },
+        {
+          "name": "REV_",
+          "type": "int",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "PROC_DEF_ID_",
+          "type": "varchar(64)",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "PROC_INST_ID_",
+          "type": "varchar(64)",
+          "nullable": false,
+          "key": "MUL",
+          "comment": "\r"
+        },
+        {
+          "name": "EXECUTION_ID_",
+          "type": "varchar(64)",
+          "nullable": false,
+          "key": "MUL",
+          "comment": "\r"
+        },
+        {
+          "name": "ACT_ID_",
+          "type": "varchar(255)",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "TASK_ID_",
+          "type": "varchar(64)",
+          "nullable": true,
+          "key": "MUL",
+          "comment": "\r"
+        },
+        {
+          "name": "CALL_PROC_INST_ID_",
+          "type": "varchar(64)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "ACT_NAME_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "ACT_TYPE_",
+          "type": "varchar(255)",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "ASSIGNEE_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "COMPLETED_BY_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "START_TIME_",
+          "type": "datetime(3)",
+          "nullable": false,
+          "key": "MUL",
+          "comment": "\r"
+        },
+        {
+          "name": "END_TIME_",
+          "type": "datetime(3)",
+          "nullable": true,
+          "key": "MUL",
+          "comment": "\r"
+        },
+        {
+          "name": "DURATION_",
+          "type": "bigint",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "TRANSACTION_ORDER_",
+          "type": "int",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "DELETE_REASON_",
+          "type": "varchar(4000)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "TENANT_ID_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "ACT_IDX_RU_ACTI_END",
+          "unique": false,
+          "columns": [
+            "END_TIME_\r"
+          ]
+        },
+        {
+          "name": "ACT_IDX_RU_ACTI_EXEC",
+          "unique": false,
+          "columns": [
+            "EXECUTION_ID_\r"
+          ]
+        },
+        {
+          "name": "ACT_IDX_RU_ACTI_EXEC_ACT",
+          "unique": false,
+          "columns": [
+            "EXECUTION_ID_\r",
+            "ACT_ID_\r"
+          ]
+        },
+        {
+          "name": "ACT_IDX_RU_ACTI_PROC",
+          "unique": false,
+          "columns": [
+            "PROC_INST_ID_\r"
+          ]
+        },
+        {
+          "name": "ACT_IDX_RU_ACTI_PROC_ACT",
+          "unique": false,
+          "columns": [
+            "PROC_INST_ID_\r",
+            "ACT_ID_\r"
+          ]
+        },
+        {
+          "name": "ACT_IDX_RU_ACTI_START",
+          "unique": false,
+          "columns": [
+            "START_TIME_\r"
+          ]
+        },
+        {
+          "name": "ACT_IDX_RU_ACTI_TASK",
+          "unique": false,
+          "columns": [
+            "TASK_ID_\r"
+          ]
+        },
+        {
+          "name": "PRIMARY",
+          "unique": true,
+          "columns": [
+            "ID_\r"
+          ]
+        }
+      ]
+    },
+    "ACT_RU_DEADLETTER_JOB": {
+      "columns": [
+        {
+          "name": "ID_",
+          "type": "varchar(64)",
+          "nullable": false,
+          "key": "PRI",
+          "comment": "\r"
+        },
+        {
+          "name": "REV_",
+          "type": "int",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "CATEGORY_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "TYPE_",
+          "type": "varchar(255)",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "EXCLUSIVE_",
+          "type": "tinyint(1)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "EXECUTION_ID_",
+          "type": "varchar(64)",
+          "nullable": true,
+          "key": "MUL",
+          "comment": "\r"
+        },
+        {
+          "name": "PROCESS_INSTANCE_ID_",
+          "type": "varchar(64)",
+          "nullable": true,
+          "key": "MUL",
+          "comment": "\r"
+        },
+        {
+          "name": "PROC_DEF_ID_",
+          "type": "varchar(64)",
+          "nullable": true,
+          "key": "MUL",
+          "comment": "\r"
+        },
+        {
+          "name": "ELEMENT_ID_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "ELEMENT_NAME_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "SCOPE_ID_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "MUL",
+          "comment": "\r"
+        },
+        {
+          "name": "SUB_SCOPE_ID_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "MUL",
+          "comment": "\r"
+        },
+        {
+          "name": "SCOPE_TYPE_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "SCOPE_DEFINITION_ID_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "MUL",
+          "comment": "\r"
+        },
+        {
+          "name": "CORRELATION_ID_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "MUL",
+          "comment": "\r"
+        },
+        {
+          "name": "EXCEPTION_STACK_ID_",
+          "type": "varchar(64)",
+          "nullable": true,
+          "key": "MUL",
+          "comment": "\r"
+        },
+        {
+          "name": "EXCEPTION_MSG_",
+          "type": "varchar(4000)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "DUEDATE_",
+          "type": "timestamp(3)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "REPEAT_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "HANDLER_TYPE_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "HANDLER_CFG_",
+          "type": "varchar(4000)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "CUSTOM_VALUES_ID_",
+          "type": "varchar(64)",
+          "nullable": true,
+          "key": "MUL",
+          "comment": "\r"
+        },
+        {
+          "name": "CREATE_TIME_",
+          "type": "timestamp(3)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "TENANT_ID_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "ACT_FK_DEADLETTER_JOB_EXECUTION",
+          "unique": false,
+          "columns": [
+            "EXECUTION_ID_\r"
+          ]
+        },
+        {
+          "name": "ACT_FK_DEADLETTER_JOB_PROC_DEF",
+          "unique": false,
+          "columns": [
+            "PROC_DEF_ID_\r"
+          ]
+        },
+        {
+          "name": "ACT_FK_DEADLETTER_JOB_PROCESS_INSTANCE",
+          "unique": false,
+          "columns": [
+            "PROCESS_INSTANCE_ID_\r"
+          ]
+        },
+        {
+          "name": "ACT_IDX_DEADLETTER_JOB_CORRELATION_ID",
+          "unique": false,
+          "columns": [
+            "CORRELATION_ID_\r"
+          ]
+        },
+        {
+          "name": "ACT_IDX_DEADLETTER_JOB_CUSTOM_VALUES_ID",
+          "unique": false,
+          "columns": [
+            "CUSTOM_VALUES_ID_\r"
+          ]
+        },
+        {
+          "name": "ACT_IDX_DEADLETTER_JOB_EXCEPTION_STACK_ID",
+          "unique": false,
+          "columns": [
+            "EXCEPTION_STACK_ID_\r"
+          ]
+        },
+        {
+          "name": "ACT_IDX_DJOB_SCOPE",
+          "unique": false,
+          "columns": [
+            "SCOPE_ID_\r",
+            "SCOPE_TYPE_\r"
+          ]
+        },
+        {
+          "name": "ACT_IDX_DJOB_SCOPE_DEF",
+          "unique": false,
+          "columns": [
+            "SCOPE_DEFINITION_ID_\r",
+            "SCOPE_TYPE_\r"
+          ]
+        },
+        {
+          "name": "ACT_IDX_DJOB_SUB_SCOPE",
+          "unique": false,
+          "columns": [
+            "SUB_SCOPE_ID_\r",
+            "SCOPE_TYPE_\r"
+          ]
+        },
+        {
+          "name": "PRIMARY",
+          "unique": true,
+          "columns": [
+            "ID_\r"
+          ]
+        }
+      ]
+    },
+    "ACT_RU_ENTITYLINK": {
+      "columns": [
+        {
+          "name": "ID_",
+          "type": "varchar(64)",
+          "nullable": false,
+          "key": "PRI",
+          "comment": "\r"
+        },
+        {
+          "name": "REV_",
+          "type": "int",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "CREATE_TIME_",
+          "type": "datetime(3)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "LINK_TYPE_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "SCOPE_ID_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "MUL",
+          "comment": "\r"
+        },
+        {
+          "name": "SUB_SCOPE_ID_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "SCOPE_TYPE_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "SCOPE_DEFINITION_ID_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "MUL",
+          "comment": "\r"
+        },
+        {
+          "name": "PARENT_ELEMENT_ID_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "REF_SCOPE_ID_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "MUL",
+          "comment": "\r"
+        },
+        {
+          "name": "REF_SCOPE_TYPE_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "REF_SCOPE_DEFINITION_ID_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "ROOT_SCOPE_ID_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "MUL",
+          "comment": "\r"
+        },
+        {
+          "name": "ROOT_SCOPE_TYPE_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "HIERARCHY_TYPE_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "ACT_IDX_ENT_LNK_REF_SCOPE",
+          "unique": false,
+          "columns": [
+            "REF_SCOPE_ID_\r",
+            "REF_SCOPE_TYPE_\r",
+            "LINK_TYPE_\r"
+          ]
+        },
+        {
+          "name": "ACT_IDX_ENT_LNK_ROOT_SCOPE",
+          "unique": false,
+          "columns": [
+            "ROOT_SCOPE_ID_\r",
+            "ROOT_SCOPE_TYPE_\r",
+            "LINK_TYPE_\r"
+          ]
+        },
+        {
+          "name": "ACT_IDX_ENT_LNK_SCOPE",
+          "unique": false,
+          "columns": [
+            "SCOPE_ID_\r",
+            "SCOPE_TYPE_\r",
+            "LINK_TYPE_\r"
+          ]
+        },
+        {
+          "name": "ACT_IDX_ENT_LNK_SCOPE_DEF",
+          "unique": false,
+          "columns": [
+            "SCOPE_DEFINITION_ID_\r",
+            "SCOPE_TYPE_\r",
+            "LINK_TYPE_\r"
+          ]
+        },
+        {
+          "name": "PRIMARY",
+          "unique": true,
+          "columns": [
+            "ID_\r"
+          ]
+        }
+      ]
+    },
+    "ACT_RU_EVENT_SUBSCR": {
+      "columns": [
+        {
+          "name": "ID_",
+          "type": "varchar(64)",
+          "nullable": false,
+          "key": "PRI",
+          "comment": "\r"
+        },
+        {
+          "name": "REV_",
+          "type": "int",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "EVENT_TYPE_",
+          "type": "varchar(255)",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "EVENT_NAME_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "EXECUTION_ID_",
+          "type": "varchar(64)",
+          "nullable": true,
+          "key": "MUL",
+          "comment": "\r"
+        },
+        {
+          "name": "PROC_INST_ID_",
+          "type": "varchar(64)",
+          "nullable": true,
+          "key": "MUL",
+          "comment": "\r"
+        },
+        {
+          "name": "ACTIVITY_ID_",
+          "type": "varchar(64)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "CONFIGURATION_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "MUL",
+          "comment": "\r"
+        },
+        {
+          "name": "CREATED_",
+          "type": "timestamp(3)",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "PROC_DEF_ID_",
+          "type": "varchar(64)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "SUB_SCOPE_ID_",
+          "type": "varchar(64)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "SCOPE_ID_",
+          "type": "varchar(64)",
+          "nullable": true,
+          "key": "MUL",
+          "comment": "\r"
+        },
+        {
+          "name": "SCOPE_DEFINITION_ID_",
+          "type": "varchar(64)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "SCOPE_DEFINITION_KEY_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "SCOPE_TYPE_",
+          "type": "varchar(64)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "LOCK_TIME_",
+          "type": "timestamp(3)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "LOCK_OWNER_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "TENANT_ID_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "ACT_IDX_EVENT_SUBSCR_CONFIG_",
+          "unique": false,
+          "columns": [
+            "CONFIGURATION_\r"
+          ]
+        },
+        {
+          "name": "ACT_IDX_EVENT_SUBSCR_EXEC_ID",
+          "unique": false,
+          "columns": [
+            "EXECUTION_ID_\r"
+          ]
+        },
+        {
+          "name": "ACT_IDX_EVENT_SUBSCR_PROC_ID",
+          "unique": false,
+          "columns": [
+            "PROC_INST_ID_\r"
+          ]
+        },
+        {
+          "name": "ACT_IDX_EVENT_SUBSCR_SCOPEREF_",
+          "unique": false,
+          "columns": [
+            "SCOPE_ID_\r",
+            "SCOPE_TYPE_\r"
+          ]
+        },
+        {
+          "name": "PRIMARY",
+          "unique": true,
+          "columns": [
+            "ID_\r"
+          ]
+        }
+      ]
+    },
+    "ACT_RU_EXECUTION": {
+      "columns": [
+        {
+          "name": "ID_",
+          "type": "varchar(64)",
+          "nullable": false,
+          "key": "PRI",
+          "comment": "\r"
+        },
+        {
+          "name": "REV_",
+          "type": "int",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "PROC_INST_ID_",
+          "type": "varchar(64)",
+          "nullable": true,
+          "key": "MUL",
+          "comment": "\r"
+        },
+        {
+          "name": "BUSINESS_KEY_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "MUL",
+          "comment": "\r"
+        },
+        {
+          "name": "PARENT_ID_",
+          "type": "varchar(64)",
+          "nullable": true,
+          "key": "MUL",
+          "comment": "\r"
+        },
+        {
+          "name": "PROC_DEF_ID_",
+          "type": "varchar(64)",
+          "nullable": true,
+          "key": "MUL",
+          "comment": "\r"
+        },
+        {
+          "name": "SUPER_EXEC_",
+          "type": "varchar(64)",
+          "nullable": true,
+          "key": "MUL",
+          "comment": "\r"
+        },
+        {
+          "name": "ROOT_PROC_INST_ID_",
+          "type": "varchar(64)",
+          "nullable": true,
+          "key": "MUL",
+          "comment": "\r"
+        },
+        {
+          "name": "ACT_ID_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "IS_ACTIVE_",
+          "type": "tinyint",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "IS_CONCURRENT_",
+          "type": "tinyint",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "IS_SCOPE_",
+          "type": "tinyint",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "IS_EVENT_SCOPE_",
+          "type": "tinyint",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "IS_MI_ROOT_",
+          "type": "tinyint",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "SUSPENSION_STATE_",
+          "type": "int",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "CACHED_ENT_STATE_",
+          "type": "int",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "TENANT_ID_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "NAME_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "START_ACT_ID_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "START_TIME_",
+          "type": "datetime(3)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "START_USER_ID_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "LOCK_TIME_",
+          "type": "timestamp(3)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "LOCK_OWNER_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "IS_COUNT_ENABLED_",
+          "type": "tinyint",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "EVT_SUBSCR_COUNT_",
+          "type": "int",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "TASK_COUNT_",
+          "type": "int",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "JOB_COUNT_",
+          "type": "int",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "TIMER_JOB_COUNT_",
+          "type": "int",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "SUSP_JOB_COUNT_",
+          "type": "int",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "DEADLETTER_JOB_COUNT_",
+          "type": "int",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "EXTERNAL_WORKER_JOB_COUNT_",
+          "type": "int",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "VAR_COUNT_",
+          "type": "int",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "ID_LINK_COUNT_",
+          "type": "int",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "CALLBACK_ID_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "CALLBACK_TYPE_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "REFERENCE_ID_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "MUL",
+          "comment": "\r"
+        },
+        {
+          "name": "REFERENCE_TYPE_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "PROPAGATED_STAGE_INST_ID_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "BUSINESS_STATUS_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "ACT_FK_EXE_PARENT",
+          "unique": false,
+          "columns": [
+            "PARENT_ID_\r"
+          ]
+        },
+        {
+          "name": "ACT_FK_EXE_PROCDEF",
+          "unique": false,
+          "columns": [
+            "PROC_DEF_ID_\r"
+          ]
+        },
+        {
+          "name": "ACT_FK_EXE_PROCINST",
+          "unique": false,
+          "columns": [
+            "PROC_INST_ID_\r"
+          ]
+        },
+        {
+          "name": "ACT_FK_EXE_SUPER",
+          "unique": false,
+          "columns": [
+            "SUPER_EXEC_\r"
+          ]
+        },
+        {
+          "name": "ACT_IDC_EXEC_ROOT",
+          "unique": false,
+          "columns": [
+            "ROOT_PROC_INST_ID_\r"
+          ]
+        },
+        {
+          "name": "ACT_IDX_EXEC_BUSKEY",
+          "unique": false,
+          "columns": [
+            "BUSINESS_KEY_\r"
+          ]
+        },
+        {
+          "name": "ACT_IDX_EXEC_REF_ID_",
+          "unique": false,
+          "columns": [
+            "REFERENCE_ID_\r"
+          ]
+        },
+        {
+          "name": "PRIMARY",
+          "unique": true,
+          "columns": [
+            "ID_\r"
+          ]
+        }
+      ]
+    },
+    "ACT_RU_EXTERNAL_JOB": {
+      "columns": [
+        {
+          "name": "ID_",
+          "type": "varchar(64)",
+          "nullable": false,
+          "key": "PRI",
+          "comment": "\r"
+        },
+        {
+          "name": "REV_",
+          "type": "int",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "CATEGORY_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "TYPE_",
+          "type": "varchar(255)",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "LOCK_EXP_TIME_",
+          "type": "timestamp(3)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "LOCK_OWNER_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "EXCLUSIVE_",
+          "type": "tinyint(1)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "EXECUTION_ID_",
+          "type": "varchar(64)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "PROCESS_INSTANCE_ID_",
+          "type": "varchar(64)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "PROC_DEF_ID_",
+          "type": "varchar(64)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "ELEMENT_ID_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "ELEMENT_NAME_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "SCOPE_ID_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "MUL",
+          "comment": "\r"
+        },
+        {
+          "name": "SUB_SCOPE_ID_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "MUL",
+          "comment": "\r"
+        },
+        {
+          "name": "SCOPE_TYPE_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "SCOPE_DEFINITION_ID_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "MUL",
+          "comment": "\r"
+        },
+        {
+          "name": "CORRELATION_ID_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "MUL",
+          "comment": "\r"
+        },
+        {
+          "name": "RETRIES_",
+          "type": "int",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "EXCEPTION_STACK_ID_",
+          "type": "varchar(64)",
+          "nullable": true,
+          "key": "MUL",
+          "comment": "\r"
+        },
+        {
+          "name": "EXCEPTION_MSG_",
+          "type": "varchar(4000)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "DUEDATE_",
+          "type": "timestamp(3)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "REPEAT_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "HANDLER_TYPE_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "HANDLER_CFG_",
+          "type": "varchar(4000)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "CUSTOM_VALUES_ID_",
+          "type": "varchar(64)",
+          "nullable": true,
+          "key": "MUL",
+          "comment": "\r"
+        },
+        {
+          "name": "CREATE_TIME_",
+          "type": "timestamp(3)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "TENANT_ID_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "ACT_IDX_EJOB_SCOPE",
+          "unique": false,
+          "columns": [
+            "SCOPE_ID_\r",
+            "SCOPE_TYPE_\r"
+          ]
+        },
+        {
+          "name": "ACT_IDX_EJOB_SCOPE_DEF",
+          "unique": false,
+          "columns": [
+            "SCOPE_DEFINITION_ID_\r",
+            "SCOPE_TYPE_\r"
+          ]
+        },
+        {
+          "name": "ACT_IDX_EJOB_SUB_SCOPE",
+          "unique": false,
+          "columns": [
+            "SUB_SCOPE_ID_\r",
+            "SCOPE_TYPE_\r"
+          ]
+        },
+        {
+          "name": "ACT_IDX_EXTERNAL_JOB_CORRELATION_ID",
+          "unique": false,
+          "columns": [
+            "CORRELATION_ID_\r"
+          ]
+        },
+        {
+          "name": "ACT_IDX_EXTERNAL_JOB_CUSTOM_VALUES_ID",
+          "unique": false,
+          "columns": [
+            "CUSTOM_VALUES_ID_\r"
+          ]
+        },
+        {
+          "name": "ACT_IDX_EXTERNAL_JOB_EXCEPTION_STACK_ID",
+          "unique": false,
+          "columns": [
+            "EXCEPTION_STACK_ID_\r"
+          ]
+        },
+        {
+          "name": "PRIMARY",
+          "unique": true,
+          "columns": [
+            "ID_\r"
+          ]
+        }
+      ]
+    },
+    "ACT_RU_HISTORY_JOB": {
+      "columns": [
+        {
+          "name": "ID_",
+          "type": "varchar(64)",
+          "nullable": false,
+          "key": "PRI",
+          "comment": "\r"
+        },
+        {
+          "name": "REV_",
+          "type": "int",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "LOCK_EXP_TIME_",
+          "type": "timestamp(3)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "LOCK_OWNER_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "RETRIES_",
+          "type": "int",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "EXCEPTION_STACK_ID_",
+          "type": "varchar(64)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "EXCEPTION_MSG_",
+          "type": "varchar(4000)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "HANDLER_TYPE_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "HANDLER_CFG_",
+          "type": "varchar(4000)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "CUSTOM_VALUES_ID_",
+          "type": "varchar(64)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "ADV_HANDLER_CFG_ID_",
+          "type": "varchar(64)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "CREATE_TIME_",
+          "type": "timestamp(3)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "SCOPE_TYPE_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "TENANT_ID_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "PRIMARY",
+          "unique": true,
+          "columns": [
+            "ID_\r"
+          ]
+        }
+      ]
+    },
+    "ACT_RU_IDENTITYLINK": {
+      "columns": [
+        {
+          "name": "ID_",
+          "type": "varchar(64)",
+          "nullable": false,
+          "key": "PRI",
+          "comment": "\r"
+        },
+        {
+          "name": "REV_",
+          "type": "int",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "GROUP_ID_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "MUL",
+          "comment": "\r"
+        },
+        {
+          "name": "TYPE_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "USER_ID_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "MUL",
+          "comment": "\r"
+        },
+        {
+          "name": "TASK_ID_",
+          "type": "varchar(64)",
+          "nullable": true,
+          "key": "MUL",
+          "comment": "\r"
+        },
+        {
+          "name": "PROC_INST_ID_",
+          "type": "varchar(64)",
+          "nullable": true,
+          "key": "MUL",
+          "comment": "\r"
+        },
+        {
+          "name": "PROC_DEF_ID_",
+          "type": "varchar(64)",
+          "nullable": true,
+          "key": "MUL",
+          "comment": "\r"
+        },
+        {
+          "name": "SCOPE_ID_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "MUL",
+          "comment": "\r"
+        },
+        {
+          "name": "SUB_SCOPE_ID_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "MUL",
+          "comment": "\r"
+        },
+        {
+          "name": "SCOPE_TYPE_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "SCOPE_DEFINITION_ID_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "MUL",
+          "comment": "\r"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "ACT_FK_IDL_PROCINST",
+          "unique": false,
+          "columns": [
+            "PROC_INST_ID_\r"
+          ]
+        },
+        {
+          "name": "ACT_FK_TSKASS_TASK",
+          "unique": false,
+          "columns": [
+            "TASK_ID_\r"
+          ]
+        },
+        {
+          "name": "ACT_IDX_ATHRZ_PROCEDEF",
+          "unique": false,
+          "columns": [
+            "PROC_DEF_ID_\r"
+          ]
+        },
+        {
+          "name": "ACT_IDX_IDENT_LNK_GROUP",
+          "unique": false,
+          "columns": [
+            "GROUP_ID_\r"
+          ]
+        },
+        {
+          "name": "ACT_IDX_IDENT_LNK_SCOPE",
+          "unique": false,
+          "columns": [
+            "SCOPE_ID_\r",
+            "SCOPE_TYPE_\r"
+          ]
+        },
+        {
+          "name": "ACT_IDX_IDENT_LNK_SCOPE_DEF",
+          "unique": false,
+          "columns": [
+            "SCOPE_DEFINITION_ID_\r",
+            "SCOPE_TYPE_\r"
+          ]
+        },
+        {
+          "name": "ACT_IDX_IDENT_LNK_SUB_SCOPE",
+          "unique": false,
+          "columns": [
+            "SUB_SCOPE_ID_\r",
+            "SCOPE_TYPE_\r"
+          ]
+        },
+        {
+          "name": "ACT_IDX_IDENT_LNK_USER",
+          "unique": false,
+          "columns": [
+            "USER_ID_\r"
+          ]
+        },
+        {
+          "name": "PRIMARY",
+          "unique": true,
+          "columns": [
+            "ID_\r"
+          ]
+        }
+      ]
+    },
+    "ACT_RU_JOB": {
+      "columns": [
+        {
+          "name": "ID_",
+          "type": "varchar(64)",
+          "nullable": false,
+          "key": "PRI",
+          "comment": "\r"
+        },
+        {
+          "name": "REV_",
+          "type": "int",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "CATEGORY_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "TYPE_",
+          "type": "varchar(255)",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "LOCK_EXP_TIME_",
+          "type": "timestamp(3)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "LOCK_OWNER_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "EXCLUSIVE_",
+          "type": "tinyint(1)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "EXECUTION_ID_",
+          "type": "varchar(64)",
+          "nullable": true,
+          "key": "MUL",
+          "comment": "\r"
+        },
+        {
+          "name": "PROCESS_INSTANCE_ID_",
+          "type": "varchar(64)",
+          "nullable": true,
+          "key": "MUL",
+          "comment": "\r"
+        },
+        {
+          "name": "PROC_DEF_ID_",
+          "type": "varchar(64)",
+          "nullable": true,
+          "key": "MUL",
+          "comment": "\r"
+        },
+        {
+          "name": "ELEMENT_ID_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "ELEMENT_NAME_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "SCOPE_ID_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "MUL",
+          "comment": "\r"
+        },
+        {
+          "name": "SUB_SCOPE_ID_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "MUL",
+          "comment": "\r"
+        },
+        {
+          "name": "SCOPE_TYPE_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "SCOPE_DEFINITION_ID_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "MUL",
+          "comment": "\r"
+        },
+        {
+          "name": "CORRELATION_ID_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "MUL",
+          "comment": "\r"
+        },
+        {
+          "name": "RETRIES_",
+          "type": "int",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "EXCEPTION_STACK_ID_",
+          "type": "varchar(64)",
+          "nullable": true,
+          "key": "MUL",
+          "comment": "\r"
+        },
+        {
+          "name": "EXCEPTION_MSG_",
+          "type": "varchar(4000)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "DUEDATE_",
+          "type": "timestamp(3)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "REPEAT_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "HANDLER_TYPE_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "HANDLER_CFG_",
+          "type": "varchar(4000)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "CUSTOM_VALUES_ID_",
+          "type": "varchar(64)",
+          "nullable": true,
+          "key": "MUL",
+          "comment": "\r"
+        },
+        {
+          "name": "CREATE_TIME_",
+          "type": "timestamp(3)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "TENANT_ID_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "ACT_FK_JOB_EXECUTION",
+          "unique": false,
+          "columns": [
+            "EXECUTION_ID_\r"
+          ]
+        },
+        {
+          "name": "ACT_FK_JOB_PROC_DEF",
+          "unique": false,
+          "columns": [
+            "PROC_DEF_ID_\r"
+          ]
+        },
+        {
+          "name": "ACT_FK_JOB_PROCESS_INSTANCE",
+          "unique": false,
+          "columns": [
+            "PROCESS_INSTANCE_ID_\r"
+          ]
+        },
+        {
+          "name": "ACT_IDX_JOB_CORRELATION_ID",
+          "unique": false,
+          "columns": [
+            "CORRELATION_ID_\r"
+          ]
+        },
+        {
+          "name": "ACT_IDX_JOB_CUSTOM_VALUES_ID",
+          "unique": false,
+          "columns": [
+            "CUSTOM_VALUES_ID_\r"
+          ]
+        },
+        {
+          "name": "ACT_IDX_JOB_EXCEPTION_STACK_ID",
+          "unique": false,
+          "columns": [
+            "EXCEPTION_STACK_ID_\r"
+          ]
+        },
+        {
+          "name": "ACT_IDX_JOB_SCOPE",
+          "unique": false,
+          "columns": [
+            "SCOPE_ID_\r",
+            "SCOPE_TYPE_\r"
+          ]
+        },
+        {
+          "name": "ACT_IDX_JOB_SCOPE_DEF",
+          "unique": false,
+          "columns": [
+            "SCOPE_DEFINITION_ID_\r",
+            "SCOPE_TYPE_\r"
+          ]
+        },
+        {
+          "name": "ACT_IDX_JOB_SUB_SCOPE",
+          "unique": false,
+          "columns": [
+            "SUB_SCOPE_ID_\r",
+            "SCOPE_TYPE_\r"
+          ]
+        },
+        {
+          "name": "PRIMARY",
+          "unique": true,
+          "columns": [
+            "ID_\r"
+          ]
+        }
+      ]
+    },
+    "ACT_RU_SUSPENDED_JOB": {
+      "columns": [
+        {
+          "name": "ID_",
+          "type": "varchar(64)",
+          "nullable": false,
+          "key": "PRI",
+          "comment": "\r"
+        },
+        {
+          "name": "REV_",
+          "type": "int",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "CATEGORY_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "TYPE_",
+          "type": "varchar(255)",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "EXCLUSIVE_",
+          "type": "tinyint(1)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "EXECUTION_ID_",
+          "type": "varchar(64)",
+          "nullable": true,
+          "key": "MUL",
+          "comment": "\r"
+        },
+        {
+          "name": "PROCESS_INSTANCE_ID_",
+          "type": "varchar(64)",
+          "nullable": true,
+          "key": "MUL",
+          "comment": "\r"
+        },
+        {
+          "name": "PROC_DEF_ID_",
+          "type": "varchar(64)",
+          "nullable": true,
+          "key": "MUL",
+          "comment": "\r"
+        },
+        {
+          "name": "ELEMENT_ID_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "ELEMENT_NAME_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "SCOPE_ID_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "MUL",
+          "comment": "\r"
+        },
+        {
+          "name": "SUB_SCOPE_ID_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "MUL",
+          "comment": "\r"
+        },
+        {
+          "name": "SCOPE_TYPE_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "SCOPE_DEFINITION_ID_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "MUL",
+          "comment": "\r"
+        },
+        {
+          "name": "CORRELATION_ID_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "MUL",
+          "comment": "\r"
+        },
+        {
+          "name": "RETRIES_",
+          "type": "int",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "EXCEPTION_STACK_ID_",
+          "type": "varchar(64)",
+          "nullable": true,
+          "key": "MUL",
+          "comment": "\r"
+        },
+        {
+          "name": "EXCEPTION_MSG_",
+          "type": "varchar(4000)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "DUEDATE_",
+          "type": "timestamp(3)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "REPEAT_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "HANDLER_TYPE_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "HANDLER_CFG_",
+          "type": "varchar(4000)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "CUSTOM_VALUES_ID_",
+          "type": "varchar(64)",
+          "nullable": true,
+          "key": "MUL",
+          "comment": "\r"
+        },
+        {
+          "name": "CREATE_TIME_",
+          "type": "timestamp(3)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "TENANT_ID_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "ACT_FK_SUSPENDED_JOB_EXECUTION",
+          "unique": false,
+          "columns": [
+            "EXECUTION_ID_\r"
+          ]
+        },
+        {
+          "name": "ACT_FK_SUSPENDED_JOB_PROC_DEF",
+          "unique": false,
+          "columns": [
+            "PROC_DEF_ID_\r"
+          ]
+        },
+        {
+          "name": "ACT_FK_SUSPENDED_JOB_PROCESS_INSTANCE",
+          "unique": false,
+          "columns": [
+            "PROCESS_INSTANCE_ID_\r"
+          ]
+        },
+        {
+          "name": "ACT_IDX_SJOB_SCOPE",
+          "unique": false,
+          "columns": [
+            "SCOPE_ID_\r",
+            "SCOPE_TYPE_\r"
+          ]
+        },
+        {
+          "name": "ACT_IDX_SJOB_SCOPE_DEF",
+          "unique": false,
+          "columns": [
+            "SCOPE_DEFINITION_ID_\r",
+            "SCOPE_TYPE_\r"
+          ]
+        },
+        {
+          "name": "ACT_IDX_SJOB_SUB_SCOPE",
+          "unique": false,
+          "columns": [
+            "SUB_SCOPE_ID_\r",
+            "SCOPE_TYPE_\r"
+          ]
+        },
+        {
+          "name": "ACT_IDX_SUSPENDED_JOB_CORRELATION_ID",
+          "unique": false,
+          "columns": [
+            "CORRELATION_ID_\r"
+          ]
+        },
+        {
+          "name": "ACT_IDX_SUSPENDED_JOB_CUSTOM_VALUES_ID",
+          "unique": false,
+          "columns": [
+            "CUSTOM_VALUES_ID_\r"
+          ]
+        },
+        {
+          "name": "ACT_IDX_SUSPENDED_JOB_EXCEPTION_STACK_ID",
+          "unique": false,
+          "columns": [
+            "EXCEPTION_STACK_ID_\r"
+          ]
+        },
+        {
+          "name": "PRIMARY",
+          "unique": true,
+          "columns": [
+            "ID_\r"
+          ]
+        }
+      ]
+    },
+    "ACT_RU_TASK": {
+      "columns": [
+        {
+          "name": "ID_",
+          "type": "varchar(64)",
+          "nullable": false,
+          "key": "PRI",
+          "comment": "\r"
+        },
+        {
+          "name": "REV_",
+          "type": "int",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "EXECUTION_ID_",
+          "type": "varchar(64)",
+          "nullable": true,
+          "key": "MUL",
+          "comment": "\r"
+        },
+        {
+          "name": "PROC_INST_ID_",
+          "type": "varchar(64)",
+          "nullable": true,
+          "key": "MUL",
+          "comment": "\r"
+        },
+        {
+          "name": "PROC_DEF_ID_",
+          "type": "varchar(64)",
+          "nullable": true,
+          "key": "MUL",
+          "comment": "\r"
+        },
+        {
+          "name": "TASK_DEF_ID_",
+          "type": "varchar(64)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "SCOPE_ID_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "MUL",
+          "comment": "\r"
+        },
+        {
+          "name": "SUB_SCOPE_ID_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "MUL",
+          "comment": "\r"
+        },
+        {
+          "name": "SCOPE_TYPE_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "SCOPE_DEFINITION_ID_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "MUL",
+          "comment": "\r"
+        },
+        {
+          "name": "PROPAGATED_STAGE_INST_ID_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "STATE_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "NAME_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "PARENT_TASK_ID_",
+          "type": "varchar(64)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "DESCRIPTION_",
+          "type": "varchar(4000)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "TASK_DEF_KEY_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "OWNER_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "ASSIGNEE_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "DELEGATION_",
+          "type": "varchar(64)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "PRIORITY_",
+          "type": "int",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "CREATE_TIME_",
+          "type": "timestamp(3)",
+          "nullable": true,
+          "key": "MUL",
+          "comment": "\r"
+        },
+        {
+          "name": "IN_PROGRESS_TIME_",
+          "type": "datetime(3)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "IN_PROGRESS_STARTED_BY_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "CLAIM_TIME_",
+          "type": "datetime(3)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "CLAIMED_BY_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "SUSPENDED_TIME_",
+          "type": "datetime(3)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "SUSPENDED_BY_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "IN_PROGRESS_DUE_DATE_",
+          "type": "datetime(3)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "DUE_DATE_",
+          "type": "datetime(3)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "CATEGORY_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "SUSPENSION_STATE_",
+          "type": "int",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "TENANT_ID_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "FORM_KEY_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "IS_COUNT_ENABLED_",
+          "type": "tinyint",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "VAR_COUNT_",
+          "type": "int",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "ID_LINK_COUNT_",
+          "type": "int",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "SUB_TASK_COUNT_",
+          "type": "int",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "ACT_FK_TASK_EXE",
+          "unique": false,
+          "columns": [
+            "EXECUTION_ID_\r"
+          ]
+        },
+        {
+          "name": "ACT_FK_TASK_PROCDEF",
+          "unique": false,
+          "columns": [
+            "PROC_DEF_ID_\r"
+          ]
+        },
+        {
+          "name": "ACT_FK_TASK_PROCINST",
+          "unique": false,
+          "columns": [
+            "PROC_INST_ID_\r"
+          ]
+        },
+        {
+          "name": "ACT_IDX_TASK_CREATE",
+          "unique": false,
+          "columns": [
+            "CREATE_TIME_\r"
+          ]
+        },
+        {
+          "name": "ACT_IDX_TASK_SCOPE",
+          "unique": false,
+          "columns": [
+            "SCOPE_ID_\r",
+            "SCOPE_TYPE_\r"
+          ]
+        },
+        {
+          "name": "ACT_IDX_TASK_SCOPE_DEF",
+          "unique": false,
+          "columns": [
+            "SCOPE_DEFINITION_ID_\r",
+            "SCOPE_TYPE_\r"
+          ]
+        },
+        {
+          "name": "ACT_IDX_TASK_SUB_SCOPE",
+          "unique": false,
+          "columns": [
+            "SUB_SCOPE_ID_\r",
+            "SCOPE_TYPE_\r"
+          ]
+        },
+        {
+          "name": "PRIMARY",
+          "unique": true,
+          "columns": [
+            "ID_\r"
+          ]
+        }
+      ]
+    },
+    "ACT_RU_TIMER_JOB": {
+      "columns": [
+        {
+          "name": "ID_",
+          "type": "varchar(64)",
+          "nullable": false,
+          "key": "PRI",
+          "comment": "\r"
+        },
+        {
+          "name": "REV_",
+          "type": "int",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "CATEGORY_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "TYPE_",
+          "type": "varchar(255)",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "LOCK_EXP_TIME_",
+          "type": "timestamp(3)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "LOCK_OWNER_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "EXCLUSIVE_",
+          "type": "tinyint(1)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "EXECUTION_ID_",
+          "type": "varchar(64)",
+          "nullable": true,
+          "key": "MUL",
+          "comment": "\r"
+        },
+        {
+          "name": "PROCESS_INSTANCE_ID_",
+          "type": "varchar(64)",
+          "nullable": true,
+          "key": "MUL",
+          "comment": "\r"
+        },
+        {
+          "name": "PROC_DEF_ID_",
+          "type": "varchar(64)",
+          "nullable": true,
+          "key": "MUL",
+          "comment": "\r"
+        },
+        {
+          "name": "ELEMENT_ID_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "ELEMENT_NAME_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "SCOPE_ID_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "MUL",
+          "comment": "\r"
+        },
+        {
+          "name": "SUB_SCOPE_ID_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "MUL",
+          "comment": "\r"
+        },
+        {
+          "name": "SCOPE_TYPE_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "SCOPE_DEFINITION_ID_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "MUL",
+          "comment": "\r"
+        },
+        {
+          "name": "CORRELATION_ID_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "MUL",
+          "comment": "\r"
+        },
+        {
+          "name": "RETRIES_",
+          "type": "int",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "EXCEPTION_STACK_ID_",
+          "type": "varchar(64)",
+          "nullable": true,
+          "key": "MUL",
+          "comment": "\r"
+        },
+        {
+          "name": "EXCEPTION_MSG_",
+          "type": "varchar(4000)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "DUEDATE_",
+          "type": "timestamp(3)",
+          "nullable": true,
+          "key": "MUL",
+          "comment": "\r"
+        },
+        {
+          "name": "REPEAT_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "HANDLER_TYPE_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "HANDLER_CFG_",
+          "type": "varchar(4000)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "CUSTOM_VALUES_ID_",
+          "type": "varchar(64)",
+          "nullable": true,
+          "key": "MUL",
+          "comment": "\r"
+        },
+        {
+          "name": "CREATE_TIME_",
+          "type": "timestamp(3)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "TENANT_ID_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "ACT_FK_TIMER_JOB_EXECUTION",
+          "unique": false,
+          "columns": [
+            "EXECUTION_ID_\r"
+          ]
+        },
+        {
+          "name": "ACT_FK_TIMER_JOB_PROC_DEF",
+          "unique": false,
+          "columns": [
+            "PROC_DEF_ID_\r"
+          ]
+        },
+        {
+          "name": "ACT_FK_TIMER_JOB_PROCESS_INSTANCE",
+          "unique": false,
+          "columns": [
+            "PROCESS_INSTANCE_ID_\r"
+          ]
+        },
+        {
+          "name": "ACT_IDX_TIMER_JOB_CORRELATION_ID",
+          "unique": false,
+          "columns": [
+            "CORRELATION_ID_\r"
+          ]
+        },
+        {
+          "name": "ACT_IDX_TIMER_JOB_CUSTOM_VALUES_ID",
+          "unique": false,
+          "columns": [
+            "CUSTOM_VALUES_ID_\r"
+          ]
+        },
+        {
+          "name": "ACT_IDX_TIMER_JOB_DUEDATE",
+          "unique": false,
+          "columns": [
+            "DUEDATE_\r"
+          ]
+        },
+        {
+          "name": "ACT_IDX_TIMER_JOB_EXCEPTION_STACK_ID",
+          "unique": false,
+          "columns": [
+            "EXCEPTION_STACK_ID_\r"
+          ]
+        },
+        {
+          "name": "ACT_IDX_TJOB_SCOPE",
+          "unique": false,
+          "columns": [
+            "SCOPE_ID_\r",
+            "SCOPE_TYPE_\r"
+          ]
+        },
+        {
+          "name": "ACT_IDX_TJOB_SCOPE_DEF",
+          "unique": false,
+          "columns": [
+            "SCOPE_DEFINITION_ID_\r",
+            "SCOPE_TYPE_\r"
+          ]
+        },
+        {
+          "name": "ACT_IDX_TJOB_SUB_SCOPE",
+          "unique": false,
+          "columns": [
+            "SUB_SCOPE_ID_\r",
+            "SCOPE_TYPE_\r"
+          ]
+        },
+        {
+          "name": "PRIMARY",
+          "unique": true,
+          "columns": [
+            "ID_\r"
+          ]
+        }
+      ]
+    },
+    "ACT_RU_VARIABLE": {
+      "columns": [
+        {
+          "name": "ID_",
+          "type": "varchar(64)",
+          "nullable": false,
+          "key": "PRI",
+          "comment": "\r"
+        },
+        {
+          "name": "REV_",
+          "type": "int",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "TYPE_",
+          "type": "varchar(255)",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "NAME_",
+          "type": "varchar(255)",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "EXECUTION_ID_",
+          "type": "varchar(64)",
+          "nullable": true,
+          "key": "MUL",
+          "comment": "\r"
+        },
+        {
+          "name": "PROC_INST_ID_",
+          "type": "varchar(64)",
+          "nullable": true,
+          "key": "MUL",
+          "comment": "\r"
+        },
+        {
+          "name": "TASK_ID_",
+          "type": "varchar(64)",
+          "nullable": true,
+          "key": "MUL",
+          "comment": "\r"
+        },
+        {
+          "name": "SCOPE_ID_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "MUL",
+          "comment": "\r"
+        },
+        {
+          "name": "SUB_SCOPE_ID_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "MUL",
+          "comment": "\r"
+        },
+        {
+          "name": "SCOPE_TYPE_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "BYTEARRAY_ID_",
+          "type": "varchar(64)",
+          "nullable": true,
+          "key": "MUL",
+          "comment": "\r"
+        },
+        {
+          "name": "DOUBLE_",
+          "type": "double",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "LONG_",
+          "type": "bigint",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "TEXT_",
+          "type": "varchar(4000)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "TEXT2_",
+          "type": "varchar(4000)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "META_INFO_",
+          "type": "varchar(4000)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "ACT_FK_VAR_BYTEARRAY",
+          "unique": false,
+          "columns": [
+            "BYTEARRAY_ID_\r"
+          ]
+        },
+        {
+          "name": "ACT_FK_VAR_EXE",
+          "unique": false,
+          "columns": [
+            "EXECUTION_ID_\r"
+          ]
+        },
+        {
+          "name": "ACT_FK_VAR_PROCINST",
+          "unique": false,
+          "columns": [
+            "PROC_INST_ID_\r"
+          ]
+        },
+        {
+          "name": "ACT_IDX_RU_VAR_SCOPE_ID_TYPE",
+          "unique": false,
+          "columns": [
+            "SCOPE_ID_\r",
+            "SCOPE_TYPE_\r"
+          ]
+        },
+        {
+          "name": "ACT_IDX_RU_VAR_SUB_ID_TYPE",
+          "unique": false,
+          "columns": [
+            "SUB_SCOPE_ID_\r",
+            "SCOPE_TYPE_\r"
+          ]
+        },
+        {
+          "name": "ACT_IDX_VARIABLE_TASK_ID",
+          "unique": false,
+          "columns": [
+            "TASK_ID_\r"
+          ]
+        },
+        {
+          "name": "PRIMARY",
+          "unique": true,
+          "columns": [
+            "ID_\r"
+          ]
+        }
+      ]
+    }
+  }
+}

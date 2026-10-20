@@ -127,6 +127,7 @@ const md = `# 项目现状（脚本生成，勿手改）
 > 生成时间：${stamp}
 > 生成命令：\`node scripts/gen-agents-context.mjs\`
 > 用途：AGENTS.md 不承载快照类信息；模块清单、迁移基线、服务状态以本文件为准。
+> 表/列/索引结构：见 \`docs/agent/schema-index.<前缀>.json\`（\`node scripts/agent/schema-index.mjs --generate\` 生成，\`--check\` 查漂移）。
 
 ## 后端包清单（services/platform-api，共 ${packages.length} 个包 / ${totalJava} 个 Java 文件）
 

@@ -1,0 +1,330 @@
+{
+  "_meta": {
+    "generated": true,
+    "source": "information_schema",
+    "schema": "gjjddb2026",
+    "generatedAt": "2026-10-20T09:10:41.737Z",
+    "notice": "仅含结构元数据，禁止写入任何数据行；迁移版本/双写对基线见 docs/agent/项目现状.md",
+    "onCheckFail": "--check 失败一律以测试库为准重新 --generate 提交（结构变化只能来自迁移）",
+    "tablesCount": 3
+  },
+  "tables": {
+    "demand_employee": {
+      "columns": [
+        {
+          "name": "id",
+          "type": "bigint",
+          "nullable": false,
+          "key": "PRI",
+          "comment": "\r"
+        },
+        {
+          "name": "tenant_id",
+          "type": "bigint",
+          "nullable": false,
+          "key": "MUL",
+          "comment": "\r"
+        },
+        {
+          "name": "create_time",
+          "type": "datetime",
+          "nullable": true,
+          "key": "",
+          "comment": "创建时间\r"
+        },
+        {
+          "name": "update_time",
+          "type": "datetime",
+          "nullable": true,
+          "key": "",
+          "comment": "更新时间\r"
+        },
+        {
+          "name": "org_id",
+          "type": "bigint",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "work",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "education",
+          "type": "varchar(64)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "major",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "addtime",
+          "type": "int",
+          "nullable": true,
+          "key": "",
+          "comment": "添加时间戳\r"
+        },
+        {
+          "name": "created_by",
+          "type": "bigint",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "updated_by",
+          "type": "bigint",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "deleted",
+          "type": "tinyint",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "idx_demand_employee_tenant_org",
+          "unique": false,
+          "columns": [
+            "tenant_id\r",
+            "org_id\r"
+          ]
+        },
+        {
+          "name": "PRIMARY",
+          "unique": true,
+          "columns": [
+            "id\r"
+          ]
+        }
+      ]
+    },
+    "demand_science": {
+      "columns": [
+        {
+          "name": "id",
+          "type": "bigint",
+          "nullable": false,
+          "key": "PRI",
+          "comment": "\r"
+        },
+        {
+          "name": "tenant_id",
+          "type": "bigint",
+          "nullable": false,
+          "key": "MUL",
+          "comment": "\r"
+        },
+        {
+          "name": "org_id",
+          "type": "bigint",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "content",
+          "type": "text",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "status",
+          "type": "int",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "created_at",
+          "type": "datetime",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "updated_at",
+          "type": "datetime",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "created_by",
+          "type": "bigint",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "updated_by",
+          "type": "bigint",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "deleted",
+          "type": "tinyint",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "idx_demand_science_status",
+          "unique": false,
+          "columns": [
+            "tenant_id\r",
+            "status\r"
+          ]
+        },
+        {
+          "name": "idx_demand_science_tenant_org",
+          "unique": false,
+          "columns": [
+            "tenant_id\r",
+            "org_id\r"
+          ]
+        },
+        {
+          "name": "PRIMARY",
+          "unique": true,
+          "columns": [
+            "id\r"
+          ]
+        }
+      ]
+    },
+    "demand_train": {
+      "columns": [
+        {
+          "name": "id",
+          "type": "bigint",
+          "nullable": false,
+          "key": "PRI",
+          "comment": "\r"
+        },
+        {
+          "name": "tenant_id",
+          "type": "bigint",
+          "nullable": false,
+          "key": "MUL",
+          "comment": "\r"
+        },
+        {
+          "name": "org_id",
+          "type": "bigint",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "content",
+          "type": "text",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "nums",
+          "type": "int",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "status",
+          "type": "int",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "addtime",
+          "type": "int",
+          "nullable": true,
+          "key": "",
+          "comment": "添加时间戳\r"
+        },
+        {
+          "name": "create_time",
+          "type": "datetime",
+          "nullable": true,
+          "key": "",
+          "comment": "创建时间\r"
+        },
+        {
+          "name": "update_time",
+          "type": "datetime",
+          "nullable": true,
+          "key": "",
+          "comment": "更新时间\r"
+        },
+        {
+          "name": "created_by",
+          "type": "bigint",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "updated_by",
+          "type": "bigint",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "deleted",
+          "type": "tinyint",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "idx_demand_train_status",
+          "unique": false,
+          "columns": [
+            "tenant_id\r",
+            "status\r"
+          ]
+        },
+        {
+          "name": "idx_demand_train_tenant_org",
+          "unique": false,
+          "columns": [
+            "tenant_id\r",
+            "org_id\r"
+          ]
+        },
+        {
+          "name": "PRIMARY",
+          "unique": true,
+          "columns": [
+            "id\r"
+          ]
+        }
+      ]
+    }
+  }
+}

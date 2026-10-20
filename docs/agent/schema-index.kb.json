@@ -1,0 +1,847 @@
+{
+  "_meta": {
+    "generated": true,
+    "source": "information_schema",
+    "schema": "gjjddb2026",
+    "generatedAt": "2026-10-20T09:10:41.737Z",
+    "notice": "仅含结构元数据，禁止写入任何数据行；迁移版本/双写对基线见 docs/agent/项目现状.md",
+    "onCheckFail": "--check 失败一律以测试库为准重新 --generate 提交（结构变化只能来自迁移）",
+    "tablesCount": 6
+  },
+  "tables": {
+    "kb_chunk": {
+      "columns": [
+        {
+          "name": "id",
+          "type": "bigint",
+          "nullable": false,
+          "key": "PRI",
+          "comment": "\r"
+        },
+        {
+          "name": "tenant_id",
+          "type": "bigint",
+          "nullable": false,
+          "key": "MUL",
+          "comment": "\r"
+        },
+        {
+          "name": "space_id",
+          "type": "bigint",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "document_id",
+          "type": "bigint",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "chunk_no",
+          "type": "int",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "heading",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "page_no",
+          "type": "int",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "content",
+          "type": "text",
+          "nullable": false,
+          "key": "MUL",
+          "comment": "\r"
+        },
+        {
+          "name": "token_count",
+          "type": "int",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "embedding_provider",
+          "type": "varchar(64)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "embedding_model",
+          "type": "varchar(128)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "vector_status",
+          "type": "varchar(32)",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "vector_id",
+          "type": "varchar(128)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "metadata_json",
+          "type": "text",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "created_at",
+          "type": "datetime",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "updated_at",
+          "type": "datetime",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "created_by",
+          "type": "bigint",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "updated_by",
+          "type": "bigint",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "deleted",
+          "type": "tinyint",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "ft_kb_chunk_content",
+          "unique": false,
+          "columns": [
+            "content\r"
+          ]
+        },
+        {
+          "name": "idx_kb_chunk_document",
+          "unique": false,
+          "columns": [
+            "tenant_id\r",
+            "document_id\r"
+          ]
+        },
+        {
+          "name": "idx_kb_chunk_space",
+          "unique": false,
+          "columns": [
+            "tenant_id\r",
+            "space_id\r"
+          ]
+        },
+        {
+          "name": "PRIMARY",
+          "unique": true,
+          "columns": [
+            "id\r"
+          ]
+        },
+        {
+          "name": "uk_kb_chunk_no",
+          "unique": true,
+          "columns": [
+            "tenant_id\r",
+            "document_id\r",
+            "chunk_no\r",
+            "deleted\r"
+          ]
+        }
+      ]
+    },
+    "kb_document": {
+      "columns": [
+        {
+          "name": "id",
+          "type": "bigint",
+          "nullable": false,
+          "key": "PRI",
+          "comment": "\r"
+        },
+        {
+          "name": "tenant_id",
+          "type": "bigint",
+          "nullable": false,
+          "key": "MUL",
+          "comment": "\r"
+        },
+        {
+          "name": "space_id",
+          "type": "bigint",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "file_id",
+          "type": "bigint",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "title",
+          "type": "varchar(255)",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "category_code",
+          "type": "varchar(64)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "source_type",
+          "type": "varchar(32)",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "access_scope",
+          "type": "varchar(32)",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "sensitive_level",
+          "type": "varchar(32)",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "parser_status",
+          "type": "varchar(32)",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "index_status",
+          "type": "varchar(32)",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "chunk_count",
+          "type": "int",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "text_sha256",
+          "type": "varchar(128)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "error_message",
+          "type": "varchar(512)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "status",
+          "type": "varchar(32)",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "created_at",
+          "type": "datetime",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "updated_at",
+          "type": "datetime",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "created_by",
+          "type": "bigint",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "updated_by",
+          "type": "bigint",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "deleted",
+          "type": "tinyint",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "idx_kb_document_category",
+          "unique": false,
+          "columns": [
+            "tenant_id\r",
+            "category_code\r"
+          ]
+        },
+        {
+          "name": "idx_kb_document_file",
+          "unique": false,
+          "columns": [
+            "tenant_id\r",
+            "file_id\r"
+          ]
+        },
+        {
+          "name": "idx_kb_document_space",
+          "unique": false,
+          "columns": [
+            "tenant_id\r",
+            "space_id\r",
+            "status\r"
+          ]
+        },
+        {
+          "name": "PRIMARY",
+          "unique": true,
+          "columns": [
+            "id\r"
+          ]
+        }
+      ]
+    },
+    "kb_document_acl": {
+      "columns": [
+        {
+          "name": "id",
+          "type": "bigint",
+          "nullable": false,
+          "key": "PRI",
+          "comment": "\r"
+        },
+        {
+          "name": "tenant_id",
+          "type": "bigint",
+          "nullable": false,
+          "key": "MUL",
+          "comment": "\r"
+        },
+        {
+          "name": "document_id",
+          "type": "bigint",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "principal_type",
+          "type": "varchar(32)",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "principal_value",
+          "type": "varchar(128)",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "created_at",
+          "type": "datetime",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "updated_at",
+          "type": "datetime",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "created_by",
+          "type": "bigint",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "updated_by",
+          "type": "bigint",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "deleted",
+          "type": "tinyint",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "idx_kb_document_acl_document",
+          "unique": false,
+          "columns": [
+            "tenant_id\r",
+            "document_id\r"
+          ]
+        },
+        {
+          "name": "idx_kb_document_acl_principal",
+          "unique": false,
+          "columns": [
+            "tenant_id\r",
+            "principal_type\r",
+            "principal_value\r"
+          ]
+        },
+        {
+          "name": "PRIMARY",
+          "unique": true,
+          "columns": [
+            "id\r"
+          ]
+        },
+        {
+          "name": "uk_kb_document_acl",
+          "unique": true,
+          "columns": [
+            "tenant_id\r",
+            "document_id\r",
+            "principal_type\r",
+            "principal_value\r",
+            "deleted\r"
+          ]
+        }
+      ]
+    },
+    "kb_index_task": {
+      "columns": [
+        {
+          "name": "id",
+          "type": "bigint",
+          "nullable": false,
+          "key": "PRI",
+          "comment": "\r"
+        },
+        {
+          "name": "tenant_id",
+          "type": "bigint",
+          "nullable": false,
+          "key": "MUL",
+          "comment": "\r"
+        },
+        {
+          "name": "space_id",
+          "type": "bigint",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "document_id",
+          "type": "bigint",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "task_type",
+          "type": "varchar(32)",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "status",
+          "type": "varchar(32)",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "retry_count",
+          "type": "int",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "error_message",
+          "type": "varchar(512)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "started_at",
+          "type": "datetime",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "finished_at",
+          "type": "datetime",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "created_at",
+          "type": "datetime",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "updated_at",
+          "type": "datetime",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "created_by",
+          "type": "bigint",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "updated_by",
+          "type": "bigint",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "deleted",
+          "type": "tinyint",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "idx_kb_index_task_document",
+          "unique": false,
+          "columns": [
+            "tenant_id\r",
+            "document_id\r"
+          ]
+        },
+        {
+          "name": "idx_kb_index_task_status",
+          "unique": false,
+          "columns": [
+            "tenant_id\r",
+            "status\r",
+            "created_at\r"
+          ]
+        },
+        {
+          "name": "PRIMARY",
+          "unique": true,
+          "columns": [
+            "id\r"
+          ]
+        }
+      ]
+    },
+    "kb_space": {
+      "columns": [
+        {
+          "name": "id",
+          "type": "bigint",
+          "nullable": false,
+          "key": "PRI",
+          "comment": "\r"
+        },
+        {
+          "name": "tenant_id",
+          "type": "bigint",
+          "nullable": false,
+          "key": "MUL",
+          "comment": "\r"
+        },
+        {
+          "name": "code",
+          "type": "varchar(64)",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "name",
+          "type": "varchar(128)",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "scope_type",
+          "type": "varchar(32)",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "owner_user_id",
+          "type": "bigint",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "category_code",
+          "type": "varchar(64)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "description",
+          "type": "varchar(512)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "status",
+          "type": "varchar(32)",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "created_at",
+          "type": "datetime",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "updated_at",
+          "type": "datetime",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "created_by",
+          "type": "bigint",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "updated_by",
+          "type": "bigint",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "deleted",
+          "type": "tinyint",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "idx_kb_space_owner",
+          "unique": false,
+          "columns": [
+            "tenant_id\r",
+            "owner_user_id\r"
+          ]
+        },
+        {
+          "name": "idx_kb_space_scope_status",
+          "unique": false,
+          "columns": [
+            "tenant_id\r",
+            "scope_type\r",
+            "status\r"
+          ]
+        },
+        {
+          "name": "PRIMARY",
+          "unique": true,
+          "columns": [
+            "id\r"
+          ]
+        },
+        {
+          "name": "uk_kb_space_tenant_code",
+          "unique": true,
+          "columns": [
+            "tenant_id\r",
+            "code\r",
+            "deleted\r"
+          ]
+        }
+      ]
+    },
+    "kb_space_role": {
+      "columns": [
+        {
+          "name": "id",
+          "type": "bigint",
+          "nullable": false,
+          "key": "PRI",
+          "comment": "\r"
+        },
+        {
+          "name": "tenant_id",
+          "type": "bigint",
+          "nullable": false,
+          "key": "MUL",
+          "comment": "\r"
+        },
+        {
+          "name": "space_id",
+          "type": "bigint",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "role_code",
+          "type": "varchar(64)",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "created_at",
+          "type": "datetime",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "updated_at",
+          "type": "datetime",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "created_by",
+          "type": "bigint",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "updated_by",
+          "type": "bigint",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "deleted",
+          "type": "tinyint",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "idx_kb_space_role_space",
+          "unique": false,
+          "columns": [
+            "tenant_id\r",
+            "space_id\r"
+          ]
+        },
+        {
+          "name": "PRIMARY",
+          "unique": true,
+          "columns": [
+            "id\r"
+          ]
+        },
+        {
+          "name": "uk_kb_space_role",
+          "unique": true,
+          "columns": [
+            "tenant_id\r",
+            "space_id\r",
+            "role_code\r",
+            "deleted\r"
+          ]
+        }
+      ]
+    }
+  }
+}

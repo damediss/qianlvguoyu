@@ -1,0 +1,508 @@
+{
+  "_meta": {
+    "generated": true,
+    "source": "information_schema",
+    "schema": "gjjddb2026",
+    "generatedAt": "2026-10-20T09:10:41.737Z",
+    "notice": "仅含结构元数据，禁止写入任何数据行；迁移版本/双写对基线见 docs/agent/项目现状.md",
+    "onCheckFail": "--check 失败一律以测试库为准重新 --generate 提交（结构变化只能来自迁移）",
+    "tablesCount": 6
+  },
+  "tables": {
+    "FLW_CHANNEL_DEFINITION": {
+      "columns": [
+        {
+          "name": "ID_",
+          "type": "varchar(255)",
+          "nullable": false,
+          "key": "PRI",
+          "comment": "\r"
+        },
+        {
+          "name": "NAME_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "VERSION_",
+          "type": "int",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "KEY_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "MUL",
+          "comment": "\r"
+        },
+        {
+          "name": "CATEGORY_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "TYPE_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "IMPLEMENTATION_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "DEPLOYMENT_ID_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "CREATE_TIME_",
+          "type": "datetime(3)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "TENANT_ID_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "RESOURCE_NAME_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "DESCRIPTION_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "ACT_IDX_CHANNEL_DEF_UNIQ",
+          "unique": true,
+          "columns": [
+            "KEY_\r",
+            "VERSION_\r",
+            "TENANT_ID_\r"
+          ]
+        },
+        {
+          "name": "PRIMARY",
+          "unique": true,
+          "columns": [
+            "ID_\r"
+          ]
+        }
+      ]
+    },
+    "FLW_EVENT_DEFINITION": {
+      "columns": [
+        {
+          "name": "ID_",
+          "type": "varchar(255)",
+          "nullable": false,
+          "key": "PRI",
+          "comment": "\r"
+        },
+        {
+          "name": "NAME_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "VERSION_",
+          "type": "int",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "KEY_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "MUL",
+          "comment": "\r"
+        },
+        {
+          "name": "CATEGORY_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "DEPLOYMENT_ID_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "TENANT_ID_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "RESOURCE_NAME_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "DESCRIPTION_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "ACT_IDX_EVENT_DEF_UNIQ",
+          "unique": true,
+          "columns": [
+            "KEY_\r",
+            "VERSION_\r",
+            "TENANT_ID_\r"
+          ]
+        },
+        {
+          "name": "PRIMARY",
+          "unique": true,
+          "columns": [
+            "ID_\r"
+          ]
+        }
+      ]
+    },
+    "FLW_EVENT_DEPLOYMENT": {
+      "columns": [
+        {
+          "name": "ID_",
+          "type": "varchar(255)",
+          "nullable": false,
+          "key": "PRI",
+          "comment": "\r"
+        },
+        {
+          "name": "NAME_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "CATEGORY_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "DEPLOY_TIME_",
+          "type": "datetime(3)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "TENANT_ID_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "PARENT_DEPLOYMENT_ID_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "PRIMARY",
+          "unique": true,
+          "columns": [
+            "ID_\r"
+          ]
+        }
+      ]
+    },
+    "FLW_EVENT_RESOURCE": {
+      "columns": [
+        {
+          "name": "ID_",
+          "type": "varchar(255)",
+          "nullable": false,
+          "key": "PRI",
+          "comment": "\r"
+        },
+        {
+          "name": "NAME_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "DEPLOYMENT_ID_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "MUL",
+          "comment": "\r"
+        },
+        {
+          "name": "RESOURCE_BYTES_",
+          "type": "longblob",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "FLW_IDX_EVENT_RSRC_DPL",
+          "unique": false,
+          "columns": [
+            "DEPLOYMENT_ID_\r"
+          ]
+        },
+        {
+          "name": "PRIMARY",
+          "unique": true,
+          "columns": [
+            "ID_\r"
+          ]
+        }
+      ]
+    },
+    "FLW_RU_BATCH": {
+      "columns": [
+        {
+          "name": "ID_",
+          "type": "varchar(64)",
+          "nullable": false,
+          "key": "PRI",
+          "comment": "\r"
+        },
+        {
+          "name": "REV_",
+          "type": "int",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "TYPE_",
+          "type": "varchar(64)",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "SEARCH_KEY_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "SEARCH_KEY2_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "CREATE_TIME_",
+          "type": "datetime(3)",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "COMPLETE_TIME_",
+          "type": "datetime(3)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "STATUS_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "BATCH_DOC_ID_",
+          "type": "varchar(64)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "TENANT_ID_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "PRIMARY",
+          "unique": true,
+          "columns": [
+            "ID_\r"
+          ]
+        }
+      ]
+    },
+    "FLW_RU_BATCH_PART": {
+      "columns": [
+        {
+          "name": "ID_",
+          "type": "varchar(64)",
+          "nullable": false,
+          "key": "PRI",
+          "comment": "\r"
+        },
+        {
+          "name": "REV_",
+          "type": "int",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "BATCH_ID_",
+          "type": "varchar(64)",
+          "nullable": true,
+          "key": "MUL",
+          "comment": "\r"
+        },
+        {
+          "name": "TYPE_",
+          "type": "varchar(64)",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "SCOPE_ID_",
+          "type": "varchar(64)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "SUB_SCOPE_ID_",
+          "type": "varchar(64)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "SCOPE_TYPE_",
+          "type": "varchar(64)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "SEARCH_KEY_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "SEARCH_KEY2_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "CREATE_TIME_",
+          "type": "datetime(3)",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "COMPLETE_TIME_",
+          "type": "datetime(3)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "STATUS_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "RESULT_DOC_ID_",
+          "type": "varchar(64)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "TENANT_ID_",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "FLW_IDX_BATCH_PART",
+          "unique": false,
+          "columns": [
+            "BATCH_ID_\r"
+          ]
+        },
+        {
+          "name": "PRIMARY",
+          "unique": true,
+          "columns": [
+            "ID_\r"
+          ]
+        }
+      ]
+    }
+  }
+}

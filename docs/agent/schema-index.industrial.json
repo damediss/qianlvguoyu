@@ -1,0 +1,529 @@
+{
+  "_meta": {
+    "generated": true,
+    "source": "information_schema",
+    "schema": "gjjddb2026",
+    "generatedAt": "2026-10-20T09:10:41.737Z",
+    "notice": "仅含结构元数据，禁止写入任何数据行；迁移版本/双写对基线见 docs/agent/项目现状.md",
+    "onCheckFail": "--check 失败一律以测试库为准重新 --generate 提交（结构变化只能来自迁移）",
+    "tablesCount": 4
+  },
+  "tables": {
+    "industrial_college": {
+      "columns": [
+        {
+          "name": "id",
+          "type": "bigint",
+          "nullable": false,
+          "key": "PRI",
+          "comment": "\r"
+        },
+        {
+          "name": "tenant_id",
+          "type": "bigint",
+          "nullable": false,
+          "key": "MUL",
+          "comment": "租户id\r"
+        },
+        {
+          "name": "name",
+          "type": "varchar(200)",
+          "nullable": false,
+          "key": "",
+          "comment": "机构名称\r"
+        },
+        {
+          "name": "tag",
+          "type": "varchar(80)",
+          "nullable": true,
+          "key": "",
+          "comment": "类型\r"
+        },
+        {
+          "name": "business_scope",
+          "type": "varchar(1000)",
+          "nullable": true,
+          "key": "",
+          "comment": "经营范围\r"
+        },
+        {
+          "name": "description",
+          "type": "text",
+          "nullable": true,
+          "key": "",
+          "comment": "简介\r"
+        },
+        {
+          "name": "training_qualification",
+          "type": "varchar(1000)",
+          "nullable": true,
+          "key": "",
+          "comment": "培训资质\r"
+        },
+        {
+          "name": "certification_qualification",
+          "type": "varchar(1000)",
+          "nullable": true,
+          "key": "",
+          "comment": "认定资质\r"
+        },
+        {
+          "name": "address",
+          "type": "varchar(300)",
+          "nullable": true,
+          "key": "",
+          "comment": "地址\r"
+        },
+        {
+          "name": "phone",
+          "type": "varchar(50)",
+          "nullable": true,
+          "key": "",
+          "comment": "联系电话\r"
+        },
+        {
+          "name": "status",
+          "type": "varchar(20)",
+          "nullable": false,
+          "key": "",
+          "comment": "状态\r"
+        },
+        {
+          "name": "sort_order",
+          "type": "int",
+          "nullable": false,
+          "key": "",
+          "comment": "排序\r"
+        },
+        {
+          "name": "created_at",
+          "type": "datetime",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "updated_at",
+          "type": "datetime",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "created_by",
+          "type": "bigint",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "updated_by",
+          "type": "bigint",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "deleted",
+          "type": "int",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "idx_industrial_college_created_at",
+          "unique": false,
+          "columns": [
+            "tenant_id\r",
+            "created_at\r",
+            "deleted\r"
+          ]
+        },
+        {
+          "name": "idx_industrial_college_tag",
+          "unique": false,
+          "columns": [
+            "tenant_id\r",
+            "tag\r",
+            "deleted\r"
+          ]
+        },
+        {
+          "name": "idx_industrial_college_tenant_status",
+          "unique": false,
+          "columns": [
+            "tenant_id\r",
+            "status\r",
+            "deleted\r"
+          ]
+        },
+        {
+          "name": "PRIMARY",
+          "unique": true,
+          "columns": [
+            "id\r"
+          ]
+        }
+      ]
+    },
+    "industrial_platform_item": {
+      "columns": [
+        {
+          "name": "id",
+          "type": "bigint",
+          "nullable": false,
+          "key": "PRI",
+          "comment": "\r"
+        },
+        {
+          "name": "tenant_id",
+          "type": "bigint",
+          "nullable": false,
+          "key": "MUL",
+          "comment": "租户id\r"
+        },
+        {
+          "name": "category",
+          "type": "varchar(40)",
+          "nullable": false,
+          "key": "",
+          "comment": "平台建设分类: master/study/match/apprentice/comment\r"
+        },
+        {
+          "name": "company",
+          "type": "varchar(200)",
+          "nullable": false,
+          "key": "",
+          "comment": "企业名称\r"
+        },
+        {
+          "name": "name",
+          "type": "varchar(200)",
+          "nullable": false,
+          "key": "",
+          "comment": "名称\r"
+        },
+        {
+          "name": "nums",
+          "type": "int",
+          "nullable": true,
+          "key": "",
+          "comment": "人数\r"
+        },
+        {
+          "name": "item_date",
+          "type": "date",
+          "nullable": true,
+          "key": "",
+          "comment": "业务日期\r"
+        },
+        {
+          "name": "state",
+          "type": "varchar(80)",
+          "nullable": true,
+          "key": "",
+          "comment": "状态\r"
+        },
+        {
+          "name": "sort_order",
+          "type": "int",
+          "nullable": false,
+          "key": "",
+          "comment": "排序\r"
+        },
+        {
+          "name": "created_at",
+          "type": "datetime",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "updated_at",
+          "type": "datetime",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "created_by",
+          "type": "bigint",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "updated_by",
+          "type": "bigint",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "deleted",
+          "type": "int",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "idx_industrial_platform_category",
+          "unique": false,
+          "columns": [
+            "tenant_id\r",
+            "category\r",
+            "deleted\r"
+          ]
+        },
+        {
+          "name": "idx_industrial_platform_company",
+          "unique": false,
+          "columns": [
+            "tenant_id\r",
+            "company\r",
+            "deleted\r"
+          ]
+        },
+        {
+          "name": "idx_industrial_platform_date",
+          "unique": false,
+          "columns": [
+            "tenant_id\r",
+            "item_date\r",
+            "deleted\r"
+          ]
+        },
+        {
+          "name": "PRIMARY",
+          "unique": true,
+          "columns": [
+            "id\r"
+          ]
+        }
+      ]
+    },
+    "industrial_talent_service": {
+      "columns": [
+        {
+          "name": "id",
+          "type": "bigint",
+          "nullable": false,
+          "key": "PRI",
+          "comment": "\r"
+        },
+        {
+          "name": "tenant_id",
+          "type": "bigint",
+          "nullable": false,
+          "key": "MUL",
+          "comment": "租户id\r"
+        },
+        {
+          "name": "title",
+          "type": "varchar(300)",
+          "nullable": false,
+          "key": "",
+          "comment": "服务标题\r"
+        },
+        {
+          "name": "source",
+          "type": "varchar(120)",
+          "nullable": false,
+          "key": "",
+          "comment": "来源\r"
+        },
+        {
+          "name": "service_date",
+          "type": "varchar(40)",
+          "nullable": false,
+          "key": "",
+          "comment": "开始日期\r"
+        },
+        {
+          "name": "sort_order",
+          "type": "int",
+          "nullable": false,
+          "key": "",
+          "comment": "排序\r"
+        },
+        {
+          "name": "created_at",
+          "type": "datetime",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "updated_at",
+          "type": "datetime",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "created_by",
+          "type": "bigint",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "updated_by",
+          "type": "bigint",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "deleted",
+          "type": "int",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "idx_industrial_talent_service_tenant",
+          "unique": false,
+          "columns": [
+            "tenant_id\r",
+            "deleted\r"
+          ]
+        },
+        {
+          "name": "PRIMARY",
+          "unique": true,
+          "columns": [
+            "id\r"
+          ]
+        }
+      ]
+    },
+    "industrial_talent_training": {
+      "columns": [
+        {
+          "name": "id",
+          "type": "bigint",
+          "nullable": false,
+          "key": "PRI",
+          "comment": "\r"
+        },
+        {
+          "name": "tenant_id",
+          "type": "bigint",
+          "nullable": false,
+          "key": "MUL",
+          "comment": "租户id\r"
+        },
+        {
+          "name": "name",
+          "type": "varchar(200)",
+          "nullable": false,
+          "key": "",
+          "comment": "企业名称\r"
+        },
+        {
+          "name": "level",
+          "type": "varchar(80)",
+          "nullable": false,
+          "key": "",
+          "comment": "职称/技能等级\r"
+        },
+        {
+          "name": "work_type",
+          "type": "varchar(120)",
+          "nullable": false,
+          "key": "",
+          "comment": "工种\r"
+        },
+        {
+          "name": "zhiwei",
+          "type": "varchar(120)",
+          "nullable": false,
+          "key": "",
+          "comment": "岗位\r"
+        },
+        {
+          "name": "education",
+          "type": "varchar(120)",
+          "nullable": false,
+          "key": "",
+          "comment": "学历要求\r"
+        },
+        {
+          "name": "sort_order",
+          "type": "int",
+          "nullable": false,
+          "key": "",
+          "comment": "排序\r"
+        },
+        {
+          "name": "created_at",
+          "type": "datetime",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "updated_at",
+          "type": "datetime",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "created_by",
+          "type": "bigint",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "updated_by",
+          "type": "bigint",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "deleted",
+          "type": "int",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "idx_industrial_talent_training_tenant",
+          "unique": false,
+          "columns": [
+            "tenant_id\r",
+            "deleted\r"
+          ]
+        },
+        {
+          "name": "idx_industrial_talent_training_work_type",
+          "unique": false,
+          "columns": [
+            "tenant_id\r",
+            "work_type\r",
+            "deleted\r"
+          ]
+        },
+        {
+          "name": "PRIMARY",
+          "unique": true,
+          "columns": [
+            "id\r"
+          ]
+        }
+      ]
+    }
+  }
+}

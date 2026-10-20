@@ -1,0 +1,982 @@
+{
+  "_meta": {
+    "generated": true,
+    "source": "information_schema",
+    "schema": "gjjddb2026",
+    "generatedAt": "2026-10-20T09:10:41.737Z",
+    "notice": "仅含结构元数据，禁止写入任何数据行；迁移版本/双写对基线见 docs/agent/项目现状.md",
+    "onCheckFail": "--check 失败一律以测试库为准重新 --generate 提交（结构变化只能来自迁移）",
+    "tablesCount": 9
+  },
+  "tables": {
+    "analysis_candidate_job": {
+      "columns": [
+        {
+          "name": "id",
+          "type": "bigint",
+          "nullable": false,
+          "key": "PRI",
+          "comment": "\r"
+        },
+        {
+          "name": "tenant_id",
+          "type": "bigint",
+          "nullable": false,
+          "key": "MUL",
+          "comment": "租户ID，0=全局默认\r"
+        },
+        {
+          "name": "job_name",
+          "type": "varchar(255)",
+          "nullable": false,
+          "key": "",
+          "comment": "工种名称\r"
+        },
+        {
+          "name": "job_code",
+          "type": "varchar(64)",
+          "nullable": true,
+          "key": "",
+          "comment": "职业代码，如 6-17-06-02\r"
+        },
+        {
+          "name": "parent_occupation",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "",
+          "comment": "父职业名\r"
+        },
+        {
+          "name": "source",
+          "type": "varchar(32)",
+          "nullable": false,
+          "key": "",
+          "comment": "大典/机构MD/手工\r"
+        },
+        {
+          "name": "sort_order",
+          "type": "int",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "status",
+          "type": "varchar(16)",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "created_by",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "updated_by",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "created_at",
+          "type": "datetime",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "updated_at",
+          "type": "datetime",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "idx_job_status",
+          "unique": false,
+          "columns": [
+            "tenant_id\r",
+            "status\r"
+          ]
+        },
+        {
+          "name": "PRIMARY",
+          "unique": true,
+          "columns": [
+            "id\r"
+          ]
+        },
+        {
+          "name": "uk_job",
+          "unique": true,
+          "columns": [
+            "tenant_id\r",
+            "job_name\r"
+          ]
+        }
+      ]
+    },
+    "analysis_confusable_pair": {
+      "columns": [
+        {
+          "name": "id",
+          "type": "bigint",
+          "nullable": false,
+          "key": "PRI",
+          "comment": "\r"
+        },
+        {
+          "name": "tenant_id",
+          "type": "bigint",
+          "nullable": false,
+          "key": "MUL",
+          "comment": "租户ID，0=全局默认\r"
+        },
+        {
+          "name": "pair_name",
+          "type": "varchar(255)",
+          "nullable": false,
+          "key": "",
+          "comment": "组名，如 电解精炼工 vs 铝电解工\r"
+        },
+        {
+          "name": "jobs_json",
+          "type": "json",
+          "nullable": false,
+          "key": "",
+          "comment": "易混淆工种组\r"
+        },
+        {
+          "name": "discrimination_text",
+          "type": "text",
+          "nullable": false,
+          "key": "",
+          "comment": "区分说明（注入 prompt 的正文）\r"
+        },
+        {
+          "name": "examples_json",
+          "type": "json",
+          "nullable": true,
+          "key": "",
+          "comment": "few-shot 示例 [{input,correct,wrong}]\r"
+        },
+        {
+          "name": "status",
+          "type": "varchar(16)",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "created_by",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "updated_by",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "created_at",
+          "type": "datetime",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "updated_at",
+          "type": "datetime",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "idx_pair_status",
+          "unique": false,
+          "columns": [
+            "tenant_id\r",
+            "status\r"
+          ]
+        },
+        {
+          "name": "PRIMARY",
+          "unique": true,
+          "columns": [
+            "id\r"
+          ]
+        }
+      ]
+    },
+    "analysis_file": {
+      "columns": [
+        {
+          "name": "id",
+          "type": "bigint",
+          "nullable": false,
+          "key": "PRI",
+          "comment": "\r"
+        },
+        {
+          "name": "file_name",
+          "type": "varchar(255)",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "file_path",
+          "type": "varchar(1000)",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "file_type",
+          "type": "varchar(32)",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "created_at",
+          "type": "datetime",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "PRIMARY",
+          "unique": true,
+          "columns": [
+            "id\r"
+          ]
+        }
+      ]
+    },
+    "analysis_manual_selection": {
+      "columns": [
+        {
+          "name": "id",
+          "type": "bigint",
+          "nullable": false,
+          "key": "PRI",
+          "comment": "\r"
+        },
+        {
+          "name": "task_id",
+          "type": "bigint",
+          "nullable": false,
+          "key": "MUL",
+          "comment": "\r"
+        },
+        {
+          "name": "pending_item_id",
+          "type": "bigint",
+          "nullable": false,
+          "key": "MUL",
+          "comment": "\r"
+        },
+        {
+          "name": "selected_job",
+          "type": "varchar(255)",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "created_at",
+          "type": "datetime",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "fk_ams_pending",
+          "unique": false,
+          "columns": [
+            "pending_item_id\r"
+          ]
+        },
+        {
+          "name": "idx_ams_task",
+          "unique": false,
+          "columns": [
+            "task_id\r"
+          ]
+        },
+        {
+          "name": "PRIMARY",
+          "unique": true,
+          "columns": [
+            "id\r"
+          ]
+        }
+      ]
+    },
+    "analysis_pending_item": {
+      "columns": [
+        {
+          "name": "id",
+          "type": "bigint",
+          "nullable": false,
+          "key": "PRI",
+          "comment": "\r"
+        },
+        {
+          "name": "task_id",
+          "type": "bigint",
+          "nullable": false,
+          "key": "MUL",
+          "comment": "\r"
+        },
+        {
+          "name": "row_index",
+          "type": "int",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "person_name",
+          "type": "varchar(255)",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "recommended_level",
+          "type": "varchar(64)",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "eligible_date",
+          "type": "datetime",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "reason",
+          "type": "text",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "candidate_jobs_json",
+          "type": "json",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "created_at",
+          "type": "datetime",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "idx_api_task",
+          "unique": false,
+          "columns": [
+            "task_id\r"
+          ]
+        },
+        {
+          "name": "PRIMARY",
+          "unique": true,
+          "columns": [
+            "id\r"
+          ]
+        }
+      ]
+    },
+    "analysis_prompt": {
+      "columns": [
+        {
+          "name": "id",
+          "type": "bigint",
+          "nullable": false,
+          "key": "PRI",
+          "comment": "\r"
+        },
+        {
+          "name": "tenant_id",
+          "type": "bigint",
+          "nullable": false,
+          "key": "MUL",
+          "comment": "租户ID，0=全局默认\r"
+        },
+        {
+          "name": "prompt_key",
+          "type": "varchar(64)",
+          "nullable": false,
+          "key": "",
+          "comment": "job_resolver_single/job_resolver_batch/company_filter\r"
+        },
+        {
+          "name": "version",
+          "type": "int",
+          "nullable": false,
+          "key": "",
+          "comment": "版本号，单调递增\r"
+        },
+        {
+          "name": "content",
+          "type": "text",
+          "nullable": false,
+          "key": "",
+          "comment": "提示词全文\r"
+        },
+        {
+          "name": "status",
+          "type": "varchar(16)",
+          "nullable": false,
+          "key": "",
+          "comment": "同一 (tenant_id,prompt_key) 下最多一条 ENABLED\r"
+        },
+        {
+          "name": "created_by",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "created_at",
+          "type": "datetime",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "idx_prompt_active",
+          "unique": false,
+          "columns": [
+            "tenant_id\r",
+            "prompt_key\r",
+            "status\r"
+          ]
+        },
+        {
+          "name": "PRIMARY",
+          "unique": true,
+          "columns": [
+            "id\r"
+          ]
+        },
+        {
+          "name": "uk_prompt_version",
+          "unique": true,
+          "columns": [
+            "tenant_id\r",
+            "prompt_key\r",
+            "version\r"
+          ]
+        }
+      ]
+    },
+    "analysis_result_item": {
+      "columns": [
+        {
+          "name": "id",
+          "type": "bigint",
+          "nullable": false,
+          "key": "PRI",
+          "comment": "\r"
+        },
+        {
+          "name": "task_id",
+          "type": "bigint",
+          "nullable": false,
+          "key": "MUL",
+          "comment": "所属分析任务ID，关联analysis_task.id\r"
+        },
+        {
+          "name": "row_index",
+          "type": "int",
+          "nullable": false,
+          "key": "",
+          "comment": "数据行序号（相对于表头的数据行1-based索引）\r"
+        },
+        {
+          "name": "person_name",
+          "type": "varchar(255)",
+          "nullable": false,
+          "key": "",
+          "comment": "姓名\r"
+        },
+        {
+          "name": "person_id_number",
+          "type": "varchar(32)",
+          "nullable": true,
+          "key": "",
+          "comment": "身份证号码\r"
+        },
+        {
+          "name": "company",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "",
+          "comment": "所在单位\r"
+        },
+        {
+          "name": "original_job",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "",
+          "comment": "原工种（采集表原始值）\r"
+        },
+        {
+          "name": "actual_job",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "",
+          "comment": "实际岗位名称（采集表原始值）\r"
+        },
+        {
+          "name": "major",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "",
+          "comment": "所学专业（初中、高中学历的填无）\r"
+        },
+        {
+          "name": "education_level",
+          "type": "varchar(128)",
+          "nullable": true,
+          "key": "",
+          "comment": "学历层次\r"
+        },
+        {
+          "name": "work_start",
+          "type": "date",
+          "nullable": true,
+          "key": "",
+          "comment": "参加工作时间\r"
+        },
+        {
+          "name": "determined_job",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "",
+          "comment": "可认定工种（引擎判定输出）\r"
+        },
+        {
+          "name": "determined_level",
+          "type": "varchar(64)",
+          "nullable": true,
+          "key": "",
+          "comment": "可认定等级（引擎判定输出，如中级工/技师等）\r"
+        },
+        {
+          "name": "eligible_date",
+          "type": "date",
+          "nullable": true,
+          "key": "",
+          "comment": "可认定时间（引擎判定输出，满足年限后可申报的日期）\r"
+        },
+        {
+          "name": "status",
+          "type": "varchar(32)",
+          "nullable": true,
+          "key": "",
+          "comment": "认定状态（推荐/不推荐/待人工选择）\r"
+        },
+        {
+          "name": "reason",
+          "type": "text",
+          "nullable": true,
+          "key": "",
+          "comment": "认定途径说明（引擎判定输出的路径与依据）\r"
+        },
+        {
+          "name": "certificate_count",
+          "type": "int",
+          "nullable": true,
+          "key": "",
+          "comment": "持有证书数量\r"
+        },
+        {
+          "name": "context_json",
+          "type": "json",
+          "nullable": true,
+          "key": "",
+          "comment": "人员认定上下文快照（证书、职称等结构化信息，供复核使用）\r"
+        },
+        {
+          "name": "created_at",
+          "type": "datetime",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "idx_ari_task_job",
+          "unique": false,
+          "columns": [
+            "task_id\r",
+            "determined_job\r"
+          ]
+        },
+        {
+          "name": "idx_ari_task_level",
+          "unique": false,
+          "columns": [
+            "task_id\r",
+            "determined_level\r"
+          ]
+        },
+        {
+          "name": "PRIMARY",
+          "unique": true,
+          "columns": [
+            "id\r"
+          ]
+        }
+      ]
+    },
+    "analysis_rule": {
+      "columns": [
+        {
+          "name": "id",
+          "type": "bigint",
+          "nullable": false,
+          "key": "PRI",
+          "comment": "\r"
+        },
+        {
+          "name": "tenant_id",
+          "type": "bigint",
+          "nullable": false,
+          "key": "MUL",
+          "comment": "租户ID，0=全局默认\r"
+        },
+        {
+          "name": "rule_id",
+          "type": "varchar(64)",
+          "nullable": false,
+          "key": "",
+          "comment": "规则编号，如 高级-2 / 学徒高级-1 / 管理岗-1\r"
+        },
+        {
+          "name": "path_type",
+          "type": "varchar(32)",
+          "nullable": false,
+          "key": "",
+          "comment": "NORMAL=普通路径 | APPRENTICE=学徒制 | SPECIAL=特殊规则\r"
+        },
+        {
+          "name": "level_name",
+          "type": "varchar(64)",
+          "nullable": true,
+          "key": "",
+          "comment": "目标等级（特殊规则为空）\r"
+        },
+        {
+          "name": "rule_type",
+          "type": "varchar(64)",
+          "nullable": false,
+          "key": "",
+          "comment": "规则类型，如 work_years/cert_after/management_position_suppress\r"
+        },
+        {
+          "name": "params_json",
+          "type": "json",
+          "nullable": true,
+          "key": "",
+          "comment": "条件参数：years/base_level/min_education/keywords 等\r"
+        },
+        {
+          "name": "reason_text",
+          "type": "varchar(500)",
+          "nullable": false,
+          "key": "",
+          "comment": "理由文案模板\r"
+        },
+        {
+          "name": "priority",
+          "type": "int",
+          "nullable": false,
+          "key": "",
+          "comment": "同等级内择优顺序，小者优先\r"
+        },
+        {
+          "name": "status",
+          "type": "varchar(16)",
+          "nullable": false,
+          "key": "",
+          "comment": "ENABLED/DISABLED\r"
+        },
+        {
+          "name": "created_by",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "updated_by",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "created_at",
+          "type": "datetime",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "updated_at",
+          "type": "datetime",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "idx_rule_status",
+          "unique": false,
+          "columns": [
+            "tenant_id\r",
+            "status\r",
+            "path_type\r"
+          ]
+        },
+        {
+          "name": "PRIMARY",
+          "unique": true,
+          "columns": [
+            "id\r"
+          ]
+        },
+        {
+          "name": "uk_rule",
+          "unique": true,
+          "columns": [
+            "tenant_id\r",
+            "rule_id\r"
+          ]
+        }
+      ]
+    },
+    "analysis_task": {
+      "columns": [
+        {
+          "name": "id",
+          "type": "bigint",
+          "nullable": false,
+          "key": "PRI",
+          "comment": "\r"
+        },
+        {
+          "name": "status",
+          "type": "varchar(32)",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "total_rows",
+          "type": "int",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "recommended_rows",
+          "type": "int",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "not_recommended_rows",
+          "type": "int",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "pending_manual_rows",
+          "type": "int",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "strict_failed_rows",
+          "type": "int",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "error_message",
+          "type": "text",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "input_file_id",
+          "type": "bigint",
+          "nullable": false,
+          "key": "MUL",
+          "comment": "\r"
+        },
+        {
+          "name": "output_file_id",
+          "type": "bigint",
+          "nullable": true,
+          "key": "MUL",
+          "comment": "\r"
+        },
+        {
+          "name": "review_status",
+          "type": "varchar(32)",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "reviewed_at",
+          "type": "datetime",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "finalized_at",
+          "type": "datetime",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "tenant_id",
+          "type": "bigint",
+          "nullable": true,
+          "key": "MUL",
+          "comment": "Java 租户 sys_tenant.id\r"
+        },
+        {
+          "name": "external_plan_id",
+          "type": "bigint",
+          "nullable": true,
+          "key": "MUL",
+          "comment": "Java train_three_year_plan.id\r"
+        },
+        {
+          "name": "created_at",
+          "type": "datetime",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "updated_at",
+          "type": "datetime",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "stage",
+          "type": "varchar(32)",
+          "nullable": true,
+          "key": "MUL",
+          "comment": "当前进度节点/阶段：VALIDATING/VERIFYING/ANALYZING/GENERATING\r"
+        },
+        {
+          "name": "stage_message",
+          "type": "text",
+          "nullable": true,
+          "key": "",
+          "comment": "当前进度节点/阶段文案\r"
+        },
+        {
+          "name": "auto_chazheng",
+          "type": "tinyint(1)",
+          "nullable": false,
+          "key": "",
+          "comment": "是否开启自动查证：1=开启（执行查证+证书回填），0=直接分析\r"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "analysis_task_stage_IDX",
+          "unique": false,
+          "columns": [
+            "stage\r"
+          ]
+        },
+        {
+          "name": "fk_analysis_task_input_file",
+          "unique": false,
+          "columns": [
+            "input_file_id\r"
+          ]
+        },
+        {
+          "name": "fk_analysis_task_output_file",
+          "unique": false,
+          "columns": [
+            "output_file_id\r"
+          ]
+        },
+        {
+          "name": "idx_analysis_task_plan",
+          "unique": false,
+          "columns": [
+            "external_plan_id\r"
+          ]
+        },
+        {
+          "name": "idx_analysis_task_tenant",
+          "unique": false,
+          "columns": [
+            "tenant_id\r"
+          ]
+        },
+        {
+          "name": "PRIMARY",
+          "unique": true,
+          "columns": [
+            "id\r"
+          ]
+        }
+      ]
+    }
+  }
+}

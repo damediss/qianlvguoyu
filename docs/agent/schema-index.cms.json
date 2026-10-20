@@ -1,0 +1,227 @@
+{
+  "_meta": {
+    "generated": true,
+    "source": "information_schema",
+    "schema": "gjjddb2026",
+    "generatedAt": "2026-10-20T09:10:41.737Z",
+    "notice": "仅含结构元数据，禁止写入任何数据行；迁移版本/双写对基线见 docs/agent/项目现状.md",
+    "onCheckFail": "--check 失败一律以测试库为准重新 --generate 提交（结构变化只能来自迁移）",
+    "tablesCount": 3
+  },
+  "tables": {
+    "cms_article": {
+      "columns": [
+        {
+          "name": "article_id",
+          "type": "int",
+          "nullable": false,
+          "key": "PRI",
+          "comment": "\r"
+        },
+        {
+          "name": "title",
+          "type": "varchar(500)",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "type",
+          "type": "tinyint",
+          "nullable": false,
+          "key": "",
+          "comment": "0列表 1单页 2外链\r"
+        },
+        {
+          "name": "category_id",
+          "type": "int",
+          "nullable": true,
+          "key": "MUL",
+          "comment": "\r"
+        },
+        {
+          "name": "image",
+          "type": "varchar(500)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "album",
+          "type": "text",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "actual_views",
+          "type": "int",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "virtual_views",
+          "type": "int",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "likes",
+          "type": "int",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "comment_numbers",
+          "type": "int",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "recommend",
+          "type": "tinyint",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "sort_number",
+          "type": "int",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "status",
+          "type": "tinyint",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "publish_time",
+          "type": "datetime",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "create_time",
+          "type": "datetime",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "deleted",
+          "type": "tinyint",
+          "nullable": false,
+          "key": "MUL",
+          "comment": "\r"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "idx_cms_article_category",
+          "unique": false,
+          "columns": [
+            "category_id\r"
+          ]
+        },
+        {
+          "name": "idx_cms_article_deleted",
+          "unique": false,
+          "columns": [
+            "deleted\r"
+          ]
+        },
+        {
+          "name": "PRIMARY",
+          "unique": true,
+          "columns": [
+            "article_id\r"
+          ]
+        }
+      ]
+    },
+    "cms_article_category": {
+      "columns": [
+        {
+          "name": "category_id",
+          "type": "int",
+          "nullable": false,
+          "key": "PRI",
+          "comment": "\r"
+        },
+        {
+          "name": "parent_id",
+          "type": "int",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "title",
+          "type": "varchar(200)",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "deleted",
+          "type": "tinyint",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "PRIMARY",
+          "unique": true,
+          "columns": [
+            "category_id\r"
+          ]
+        }
+      ]
+    },
+    "cms_article_content": {
+      "columns": [
+        {
+          "name": "article_id",
+          "type": "int",
+          "nullable": false,
+          "key": "PRI",
+          "comment": "\r"
+        },
+        {
+          "name": "content",
+          "type": "mediumtext",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "create_time",
+          "type": "datetime",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "PRIMARY",
+          "unique": true,
+          "columns": [
+            "article_id\r"
+          ]
+        }
+      ]
+    }
+  }
+}

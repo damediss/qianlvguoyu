@@ -1,0 +1,279 @@
+{
+  "_meta": {
+    "generated": true,
+    "source": "information_schema",
+    "schema": "gjjddb2026",
+    "generatedAt": "2026-10-20T09:10:41.737Z",
+    "notice": "仅含结构元数据，禁止写入任何数据行；迁移版本/双写对基线见 docs/agent/项目现状.md",
+    "onCheckFail": "--check 失败一律以测试库为准重新 --generate 提交（结构变化只能来自迁移）",
+    "tablesCount": 2
+  },
+  "tables": {
+    "course_chapter": {
+      "columns": [
+        {
+          "name": "id",
+          "type": "bigint",
+          "nullable": false,
+          "key": "PRI",
+          "comment": "\r"
+        },
+        {
+          "name": "tenant_id",
+          "type": "bigint",
+          "nullable": false,
+          "key": "MUL",
+          "comment": "\r"
+        },
+        {
+          "name": "course_id",
+          "type": "bigint",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "parent_id",
+          "type": "bigint",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "title",
+          "type": "varchar(128)",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "content_type",
+          "type": "varchar(32)",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "content_text",
+          "type": "text",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "file_id",
+          "type": "bigint",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "sort_order",
+          "type": "int",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "status",
+          "type": "varchar(32)",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "created_at",
+          "type": "datetime",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "updated_at",
+          "type": "datetime",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "created_by",
+          "type": "bigint",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "updated_by",
+          "type": "bigint",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "deleted",
+          "type": "tinyint",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "idx_course_chapter_course",
+          "unique": false,
+          "columns": [
+            "tenant_id\r",
+            "course_id\r"
+          ]
+        },
+        {
+          "name": "idx_course_chapter_parent",
+          "unique": false,
+          "columns": [
+            "tenant_id\r",
+            "parent_id\r"
+          ]
+        },
+        {
+          "name": "PRIMARY",
+          "unique": true,
+          "columns": [
+            "id\r"
+          ]
+        }
+      ]
+    },
+    "course_kejian": {
+      "columns": [
+        {
+          "name": "id",
+          "type": "bigint",
+          "nullable": false,
+          "key": "PRI",
+          "comment": "\r"
+        },
+        {
+          "name": "sno",
+          "type": "varchar(100)",
+          "nullable": true,
+          "key": "",
+          "comment": "编号\r"
+        },
+        {
+          "name": "title",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "",
+          "comment": "标题\r"
+        },
+        {
+          "name": "keshi",
+          "type": "int",
+          "nullable": true,
+          "key": "",
+          "comment": "课时\r"
+        },
+        {
+          "name": "cover",
+          "type": "varchar(500)",
+          "nullable": true,
+          "key": "",
+          "comment": "封面\r"
+        },
+        {
+          "name": "type",
+          "type": "int",
+          "nullable": true,
+          "key": "",
+          "comment": "类型\r"
+        },
+        {
+          "name": "price",
+          "type": "decimal(10,2)",
+          "nullable": true,
+          "key": "",
+          "comment": "价格\r"
+        },
+        {
+          "name": "desction",
+          "type": "text",
+          "nullable": true,
+          "key": "",
+          "comment": "描述\r"
+        },
+        {
+          "name": "content",
+          "type": "text",
+          "nullable": true,
+          "key": "",
+          "comment": "内容\r"
+        },
+        {
+          "name": "file_path",
+          "type": "varchar(500)",
+          "nullable": true,
+          "key": "",
+          "comment": "文件路径\r"
+        },
+        {
+          "name": "work_type_id",
+          "type": "bigint",
+          "nullable": true,
+          "key": "MUL",
+          "comment": "工种ID\r"
+        },
+        {
+          "name": "tag",
+          "type": "int",
+          "nullable": true,
+          "key": "",
+          "comment": "标签\r"
+        },
+        {
+          "name": "jigou_id",
+          "type": "bigint",
+          "nullable": true,
+          "key": "",
+          "comment": "机构ID\r"
+        },
+        {
+          "name": "owner_id",
+          "type": "bigint",
+          "nullable": true,
+          "key": "",
+          "comment": "所有者ID\r"
+        },
+        {
+          "name": "addtime",
+          "type": "bigint",
+          "nullable": true,
+          "key": "",
+          "comment": "添加时间(时间戳)\r"
+        },
+        {
+          "name": "deleted",
+          "type": "tinyint",
+          "nullable": false,
+          "key": "",
+          "comment": "逻辑删除\r"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "idx_course_kejian_work_type",
+          "unique": false,
+          "columns": [
+            "work_type_id\r"
+          ]
+        },
+        {
+          "name": "PRIMARY",
+          "unique": true,
+          "columns": [
+            "id\r"
+          ]
+        }
+      ]
+    }
+  }
+}

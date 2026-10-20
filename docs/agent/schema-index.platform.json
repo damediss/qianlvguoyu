@@ -1,0 +1,422 @@
+{
+  "_meta": {
+    "generated": true,
+    "source": "information_schema",
+    "schema": "gjjddb2026",
+    "generatedAt": "2026-10-20T09:10:41.737Z",
+    "notice": "仅含结构元数据，禁止写入任何数据行；迁移版本/双写对基线见 docs/agent/项目现状.md",
+    "onCheckFail": "--check 失败一律以测试库为准重新 --generate 提交（结构变化只能来自迁移）",
+    "tablesCount": 4
+  },
+  "tables": {
+    "platform_sms": {
+      "columns": [
+        {
+          "name": "id",
+          "type": "bigint",
+          "nullable": false,
+          "key": "PRI",
+          "comment": "\r"
+        },
+        {
+          "name": "phone",
+          "type": "varchar(32)",
+          "nullable": false,
+          "key": "",
+          "comment": "手机号\r"
+        },
+        {
+          "name": "sms",
+          "type": "varchar(16)",
+          "nullable": false,
+          "key": "",
+          "comment": "验证码\r"
+        },
+        {
+          "name": "addtime",
+          "type": "bigint",
+          "nullable": true,
+          "key": "",
+          "comment": "发送时间戳(秒)\r"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "PRIMARY",
+          "unique": true,
+          "columns": [
+            "id\r"
+          ]
+        }
+      ]
+    },
+    "platform_user": {
+      "columns": [
+        {
+          "name": "id",
+          "type": "int",
+          "nullable": false,
+          "key": "PRI",
+          "comment": "\r"
+        },
+        {
+          "name": "realname",
+          "type": "varchar(20)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "idcard",
+          "type": "varchar(20)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "phone",
+          "type": "varchar(11)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "password",
+          "type": "varchar(100)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "stat",
+          "type": "varchar(4)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "addtime",
+          "type": "int",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "logintime",
+          "type": "int",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "org_id",
+          "type": "int",
+          "nullable": false,
+          "key": "",
+          "comment": "所属组织机构id\r"
+        },
+        {
+          "name": "company_id",
+          "type": "int",
+          "nullable": false,
+          "key": "",
+          "comment": "所属企业id\r"
+        },
+        {
+          "name": "wxopenid",
+          "type": "varchar(100)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "deleted",
+          "type": "int",
+          "nullable": false,
+          "key": "",
+          "comment": "是否删除:0否,1是\r"
+        },
+        {
+          "name": "expert_id",
+          "type": "int",
+          "nullable": false,
+          "key": "",
+          "comment": "大于0表示platfrom_account表的专家id\r"
+        },
+        {
+          "name": "task",
+          "type": "int",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "PRIMARY",
+          "unique": true,
+          "columns": [
+            "id\r"
+          ]
+        }
+      ]
+    },
+    "platform_user_detail": {
+      "columns": [
+        {
+          "name": "id",
+          "type": "bigint",
+          "nullable": false,
+          "key": "PRI",
+          "comment": "\r"
+        },
+        {
+          "name": "user_id",
+          "type": "bigint",
+          "nullable": true,
+          "key": "",
+          "comment": "平台用户ID\r"
+        },
+        {
+          "name": "realname",
+          "type": "varchar(100)",
+          "nullable": true,
+          "key": "",
+          "comment": "姓名\r"
+        },
+        {
+          "name": "phone",
+          "type": "varchar(32)",
+          "nullable": true,
+          "key": "",
+          "comment": "手机号\r"
+        },
+        {
+          "name": "idcard",
+          "type": "varchar(32)",
+          "nullable": true,
+          "key": "MUL",
+          "comment": "身份证号\r"
+        },
+        {
+          "name": "gender",
+          "type": "int",
+          "nullable": true,
+          "key": "",
+          "comment": "0男 1女(PHP约定)\r"
+        },
+        {
+          "name": "nation",
+          "type": "varchar(50)",
+          "nullable": true,
+          "key": "",
+          "comment": "民族\r"
+        },
+        {
+          "name": "education",
+          "type": "varchar(100)",
+          "nullable": true,
+          "key": "",
+          "comment": "文化程度\r"
+        },
+        {
+          "name": "school",
+          "type": "varchar(128)",
+          "nullable": true,
+          "key": "",
+          "comment": "毕业学校\r"
+        },
+        {
+          "name": "major",
+          "type": "varchar(64)",
+          "nullable": true,
+          "key": "",
+          "comment": "专业\r"
+        },
+        {
+          "name": "school_no",
+          "type": "varchar(64)",
+          "nullable": true,
+          "key": "",
+          "comment": "毕业证编号\r"
+        },
+        {
+          "name": "in_school_date",
+          "type": "varchar(16)",
+          "nullable": true,
+          "key": "",
+          "comment": "入学日期\r"
+        },
+        {
+          "name": "graduate_date",
+          "type": "varchar(16)",
+          "nullable": true,
+          "key": "",
+          "comment": "毕业日期\r"
+        },
+        {
+          "name": "work_time",
+          "type": "varchar(16)",
+          "nullable": true,
+          "key": "",
+          "comment": "参加工作时间\r"
+        },
+        {
+          "name": "title_type",
+          "type": "varchar(32)",
+          "nullable": true,
+          "key": "",
+          "comment": "职称\r"
+        },
+        {
+          "name": "school_paper",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "",
+          "comment": "毕业证照片路径\r"
+        },
+        {
+          "name": "political",
+          "type": "varchar(100)",
+          "nullable": true,
+          "key": "",
+          "comment": "政治面貌\r"
+        },
+        {
+          "name": "address",
+          "type": "varchar(500)",
+          "nullable": true,
+          "key": "",
+          "comment": "家庭住址\r"
+        },
+        {
+          "name": "house_type",
+          "type": "varchar(32)",
+          "nullable": true,
+          "key": "",
+          "comment": "户口性质\r"
+        },
+        {
+          "name": "idcard_header",
+          "type": "varchar(500)",
+          "nullable": true,
+          "key": "",
+          "comment": "证件照路径或URL\r"
+        },
+        {
+          "name": "birthday",
+          "type": "varchar(32)",
+          "nullable": true,
+          "key": "",
+          "comment": "出生日期\r"
+        },
+        {
+          "name": "deleted",
+          "type": "tinyint",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "idcard_front",
+          "type": "varchar(500)",
+          "nullable": true,
+          "key": "",
+          "comment": "身份证正面图片URL\r"
+        },
+        {
+          "name": "idcard_back",
+          "type": "varchar(500)",
+          "nullable": true,
+          "key": "",
+          "comment": "身份证反面图片URL\r"
+        },
+        {
+          "name": "idcard_start_date",
+          "type": "varchar(20)",
+          "nullable": true,
+          "key": "",
+          "comment": "身份证签发日期\r"
+        },
+        {
+          "name": "idcard_end_date",
+          "type": "varchar(20)",
+          "nullable": true,
+          "key": "",
+          "comment": "身份证失效日期\r"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "idx_platform_user_detail_idcard",
+          "unique": false,
+          "columns": [
+            "idcard\r"
+          ]
+        },
+        {
+          "name": "PRIMARY",
+          "unique": true,
+          "columns": [
+            "id\r"
+          ]
+        }
+      ]
+    },
+    "platform_user_token": {
+      "columns": [
+        {
+          "name": "id",
+          "type": "bigint",
+          "nullable": false,
+          "key": "PRI",
+          "comment": "\r"
+        },
+        {
+          "name": "user_id",
+          "type": "bigint",
+          "nullable": false,
+          "key": "MUL",
+          "comment": "platform_user.id\r"
+        },
+        {
+          "name": "token",
+          "type": "varchar(128)",
+          "nullable": false,
+          "key": "MUL",
+          "comment": "App token (istate)\r"
+        },
+        {
+          "name": "addtime",
+          "type": "bigint",
+          "nullable": true,
+          "key": "",
+          "comment": "创建时间戳\r"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "idx_platform_user_token",
+          "unique": false,
+          "columns": [
+            "token\r"
+          ]
+        },
+        {
+          "name": "idx_platform_user_token_user",
+          "unique": false,
+          "columns": [
+            "user_id\r"
+          ]
+        },
+        {
+          "name": "PRIMARY",
+          "unique": true,
+          "columns": [
+            "id\r"
+          ]
+        }
+      ]
+    }
+  }
+}

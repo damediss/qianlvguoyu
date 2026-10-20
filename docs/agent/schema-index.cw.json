@@ -1,0 +1,1006 @@
+{
+  "_meta": {
+    "generated": true,
+    "source": "information_schema",
+    "schema": "gjjddb2026",
+    "generatedAt": "2026-10-20T09:10:41.737Z",
+    "notice": "仅含结构元数据，禁止写入任何数据行；迁移版本/双写对基线见 docs/agent/项目现状.md",
+    "onCheckFail": "--check 失败一律以测试库为准重新 --generate 提交（结构变化只能来自迁移）",
+    "tablesCount": 7
+  },
+  "tables": {
+    "cw_digest": {
+      "columns": [
+        {
+          "name": "id",
+          "type": "bigint",
+          "nullable": false,
+          "key": "PRI",
+          "comment": "主键(雪花 ID)\r"
+        },
+        {
+          "name": "tenant_id",
+          "type": "bigint",
+          "nullable": false,
+          "key": "MUL",
+          "comment": "租户 ID\r"
+        },
+        {
+          "name": "project_id",
+          "type": "bigint",
+          "nullable": false,
+          "key": "UNI",
+          "comment": "课件项目 ID\r"
+        },
+        {
+          "name": "topics",
+          "type": "json",
+          "nullable": true,
+          "key": "",
+          "comment": "消化产物 [{name,points[],confusions[],key_data[],source_refs[]}]\r"
+        },
+        {
+          "name": "status",
+          "type": "varchar(16)",
+          "nullable": false,
+          "key": "",
+          "comment": "ready/failed\r"
+        },
+        {
+          "name": "error",
+          "type": "varchar(500)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "created_at",
+          "type": "datetime",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "updated_at",
+          "type": "datetime",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "created_by",
+          "type": "bigint",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "updated_by",
+          "type": "bigint",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "deleted",
+          "type": "tinyint",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "idx_cw_digest_tenant",
+          "unique": false,
+          "columns": [
+            "tenant_id\r"
+          ]
+        },
+        {
+          "name": "PRIMARY",
+          "unique": true,
+          "columns": [
+            "id\r"
+          ]
+        },
+        {
+          "name": "uq_cw_digest_project",
+          "unique": true,
+          "columns": [
+            "project_id\r"
+          ]
+        }
+      ]
+    },
+    "cw_knowledge_point": {
+      "columns": [
+        {
+          "name": "id",
+          "type": "bigint",
+          "nullable": false,
+          "key": "PRI",
+          "comment": "主键(雪花 ID)\r"
+        },
+        {
+          "name": "tenant_id",
+          "type": "bigint",
+          "nullable": false,
+          "key": "MUL",
+          "comment": "租户 ID\r"
+        },
+        {
+          "name": "project_id",
+          "type": "bigint",
+          "nullable": false,
+          "key": "MUL",
+          "comment": "课件项目 ID\r"
+        },
+        {
+          "name": "category",
+          "type": "varchar(16)",
+          "nullable": false,
+          "key": "",
+          "comment": "basic基本要求 / work工作要求\r"
+        },
+        {
+          "name": "level_name",
+          "type": "varchar(64)",
+          "nullable": true,
+          "key": "",
+          "comment": "等级(如 五级/初级工;工作要求才有)\r"
+        },
+        {
+          "name": "job_function",
+          "type": "varchar(120)",
+          "nullable": true,
+          "key": "",
+          "comment": "职业功能(工作要求表第 1 列 / 基本要求所属节)\r"
+        },
+        {
+          "name": "job_content",
+          "type": "varchar(200)",
+          "nullable": true,
+          "key": "",
+          "comment": "工作内容(x.y 组名)\r"
+        },
+        {
+          "name": "code",
+          "type": "varchar(16)",
+          "nullable": false,
+          "key": "",
+          "comment": "知识点编号(x.y.z;基本要求为 2.1.1 型)\r"
+        },
+        {
+          "name": "title",
+          "type": "varchar(300)",
+          "nullable": false,
+          "key": "",
+          "comment": "知识点标题\r"
+        },
+        {
+          "name": "skill_text",
+          "type": "text",
+          "nullable": true,
+          "key": "",
+          "comment": "技能要求原文(工作要求技能要求列)\r"
+        },
+        {
+          "name": "knowledge_text",
+          "type": "text",
+          "nullable": true,
+          "key": "",
+          "comment": "相关知识要求原文(工作要求知识列 / 基本要求小节正文)\r"
+        },
+        {
+          "name": "source_ref",
+          "type": "varchar(32)",
+          "nullable": true,
+          "key": "",
+          "comment": "来源小节 ref(S1:N)\r"
+        },
+        {
+          "name": "sort_no",
+          "type": "int",
+          "nullable": false,
+          "key": "",
+          "comment": "文档顺序\r"
+        },
+        {
+          "name": "created_at",
+          "type": "datetime",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "updated_at",
+          "type": "datetime",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "created_by",
+          "type": "bigint",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "updated_by",
+          "type": "bigint",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "deleted",
+          "type": "tinyint",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "idx_cw_kp_project",
+          "unique": false,
+          "columns": [
+            "project_id\r",
+            "sort_no\r"
+          ]
+        },
+        {
+          "name": "idx_cw_kp_tenant",
+          "unique": false,
+          "columns": [
+            "tenant_id\r"
+          ]
+        },
+        {
+          "name": "PRIMARY",
+          "unique": true,
+          "columns": [
+            "id\r"
+          ]
+        }
+      ]
+    },
+    "cw_llm_log": {
+      "columns": [
+        {
+          "name": "id",
+          "type": "bigint",
+          "nullable": false,
+          "key": "PRI",
+          "comment": "主键(雪花 ID)\r"
+        },
+        {
+          "name": "tenant_id",
+          "type": "bigint",
+          "nullable": false,
+          "key": "MUL",
+          "comment": "租户 ID\r"
+        },
+        {
+          "name": "project_id",
+          "type": "bigint",
+          "nullable": true,
+          "key": "",
+          "comment": "课件项目 ID\r"
+        },
+        {
+          "name": "slide_id",
+          "type": "bigint",
+          "nullable": true,
+          "key": "",
+          "comment": "生成页 ID(单页阶段)\r"
+        },
+        {
+          "name": "stage",
+          "type": "varchar(24)",
+          "nullable": false,
+          "key": "",
+          "comment": "digest/outline/slide\r"
+        },
+        {
+          "name": "model_code",
+          "type": "varchar(64)",
+          "nullable": true,
+          "key": "",
+          "comment": "模型配置编码\r"
+        },
+        {
+          "name": "model_id",
+          "type": "varchar(64)",
+          "nullable": true,
+          "key": "",
+          "comment": "实际模型 ID\r"
+        },
+        {
+          "name": "prompt_digest",
+          "type": "varchar(200)",
+          "nullable": true,
+          "key": "",
+          "comment": "prompt 摘要(sha256+长度)\r"
+        },
+        {
+          "name": "prompt_tokens",
+          "type": "int",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "completion_tokens",
+          "type": "int",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "total_tokens",
+          "type": "int",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "cached_tokens",
+          "type": "int",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "duration_ms",
+          "type": "bigint",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "success",
+          "type": "tinyint",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "error",
+          "type": "varchar(500)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "trace_id",
+          "type": "varchar(64)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "created_at",
+          "type": "datetime",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "updated_at",
+          "type": "datetime",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "created_by",
+          "type": "bigint",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "updated_by",
+          "type": "bigint",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "deleted",
+          "type": "tinyint",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "idx_cw_llm_log_project",
+          "unique": false,
+          "columns": [
+            "tenant_id\r",
+            "project_id\r"
+          ]
+        },
+        {
+          "name": "PRIMARY",
+          "unique": true,
+          "columns": [
+            "id\r"
+          ]
+        }
+      ]
+    },
+    "cw_outline_page": {
+      "columns": [
+        {
+          "name": "id",
+          "type": "bigint",
+          "nullable": false,
+          "key": "PRI",
+          "comment": "主键(雪花 ID)\r"
+        },
+        {
+          "name": "tenant_id",
+          "type": "bigint",
+          "nullable": false,
+          "key": "MUL",
+          "comment": "租户 ID\r"
+        },
+        {
+          "name": "project_id",
+          "type": "bigint",
+          "nullable": false,
+          "key": "MUL",
+          "comment": "课件项目 ID\r"
+        },
+        {
+          "name": "chapter_no",
+          "type": "int",
+          "nullable": false,
+          "key": "",
+          "comment": "所属章序号(0=章外页:cover/toc/review)\r"
+        },
+        {
+          "name": "chapter_title",
+          "type": "varchar(120)",
+          "nullable": true,
+          "key": "",
+          "comment": "所属章标题(冗余,便于分组展示)\r"
+        },
+        {
+          "name": "position",
+          "type": "int",
+          "nullable": false,
+          "key": "",
+          "comment": "页序(全文档连续)\r"
+        },
+        {
+          "name": "title",
+          "type": "varchar(120)",
+          "nullable": false,
+          "key": "",
+          "comment": "页标题(内容页应为结论句)\r"
+        },
+        {
+          "name": "objective",
+          "type": "varchar(300)",
+          "nullable": true,
+          "key": "",
+          "comment": "本页目标\r"
+        },
+        {
+          "name": "key_points",
+          "type": "json",
+          "nullable": true,
+          "key": "",
+          "comment": "要点数组 3~5 条\r"
+        },
+        {
+          "name": "page_role",
+          "type": "varchar(16)",
+          "nullable": false,
+          "key": "",
+          "comment": "cover/toc/section/content/summary/review\r"
+        },
+        {
+          "name": "layout_id",
+          "type": "varchar(32)",
+          "nullable": true,
+          "key": "",
+          "comment": "槽位模板 ID(编排层分配)\r"
+        },
+        {
+          "name": "source_refs",
+          "type": "json",
+          "nullable": true,
+          "key": "",
+          "comment": "本页引用的 ref 数组\r"
+        },
+        {
+          "name": "knowledge_point_id",
+          "type": "bigint",
+          "nullable": true,
+          "key": "",
+          "comment": "知识点 ID(cw_knowledge_point.id)\r"
+        },
+        {
+          "name": "created_at",
+          "type": "datetime",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "updated_at",
+          "type": "datetime",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "created_by",
+          "type": "bigint",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "updated_by",
+          "type": "bigint",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "deleted",
+          "type": "tinyint",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "idx_cw_outline_project",
+          "unique": false,
+          "columns": [
+            "project_id\r",
+            "position\r"
+          ]
+        },
+        {
+          "name": "idx_cw_outline_tenant",
+          "unique": false,
+          "columns": [
+            "tenant_id\r"
+          ]
+        },
+        {
+          "name": "PRIMARY",
+          "unique": true,
+          "columns": [
+            "id\r"
+          ]
+        }
+      ]
+    },
+    "cw_project": {
+      "columns": [
+        {
+          "name": "id",
+          "type": "bigint",
+          "nullable": false,
+          "key": "PRI",
+          "comment": "主键(雪花 ID)\r"
+        },
+        {
+          "name": "tenant_id",
+          "type": "bigint",
+          "nullable": false,
+          "key": "MUL",
+          "comment": "租户 ID\r"
+        },
+        {
+          "name": "title",
+          "type": "varchar(200)",
+          "nullable": false,
+          "key": "",
+          "comment": "课件标题\r"
+        },
+        {
+          "name": "source_file_id",
+          "type": "bigint",
+          "nullable": false,
+          "key": "",
+          "comment": "原始 docx 文件 ID(sys_file.id)\r"
+        },
+        {
+          "name": "audience",
+          "type": "varchar(100)",
+          "nullable": true,
+          "key": "",
+          "comment": "受众\r"
+        },
+        {
+          "name": "content_density",
+          "type": "varchar(16)",
+          "nullable": false,
+          "key": "",
+          "comment": "文字量档位 concise/medium/detailed\r"
+        },
+        {
+          "name": "theme_id",
+          "type": "varchar(32)",
+          "nullable": false,
+          "key": "",
+          "comment": "主题 ID(一期固定 enterprise)\r"
+        },
+        {
+          "name": "status",
+          "type": "varchar(24)",
+          "nullable": false,
+          "key": "",
+          "comment": "draft草稿 parsing解析中 digesting整理素材中 outline_generating大纲生成中 outline_ready待确认 generating生成中 ready完成 partial部分失败 failed失败 cancelled已取消\r"
+        },
+        {
+          "name": "total_pages",
+          "type": "int",
+          "nullable": false,
+          "key": "",
+          "comment": "总页数\r"
+        },
+        {
+          "name": "ready_pages",
+          "type": "int",
+          "nullable": false,
+          "key": "",
+          "comment": "已完成页数\r"
+        },
+        {
+          "name": "failed_pages",
+          "type": "int",
+          "nullable": false,
+          "key": "",
+          "comment": "失败页数\r"
+        },
+        {
+          "name": "error",
+          "type": "varchar(500)",
+          "nullable": true,
+          "key": "",
+          "comment": "项目级错误(白话)\r"
+        },
+        {
+          "name": "created_at",
+          "type": "datetime",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "updated_at",
+          "type": "datetime",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "created_by",
+          "type": "bigint",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "updated_by",
+          "type": "bigint",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "deleted",
+          "type": "tinyint",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "idx_cw_proj_tenant",
+          "unique": false,
+          "columns": [
+            "tenant_id\r",
+            "id\r"
+          ]
+        },
+        {
+          "name": "PRIMARY",
+          "unique": true,
+          "columns": [
+            "id\r"
+          ]
+        }
+      ]
+    },
+    "cw_slide": {
+      "columns": [
+        {
+          "name": "id",
+          "type": "bigint",
+          "nullable": false,
+          "key": "PRI",
+          "comment": "主键(雪花 ID)\r"
+        },
+        {
+          "name": "tenant_id",
+          "type": "bigint",
+          "nullable": false,
+          "key": "MUL",
+          "comment": "租户 ID\r"
+        },
+        {
+          "name": "project_id",
+          "type": "bigint",
+          "nullable": false,
+          "key": "MUL",
+          "comment": "课件项目 ID\r"
+        },
+        {
+          "name": "outline_page_id",
+          "type": "bigint",
+          "nullable": true,
+          "key": "",
+          "comment": "大纲页 ID\r"
+        },
+        {
+          "name": "position",
+          "type": "int",
+          "nullable": false,
+          "key": "",
+          "comment": "页序\r"
+        },
+        {
+          "name": "layout_id",
+          "type": "varchar(32)",
+          "nullable": true,
+          "key": "",
+          "comment": "实际使用的模板\r"
+        },
+        {
+          "name": "blocks",
+          "type": "json",
+          "nullable": true,
+          "key": "",
+          "comment": "内容块数组(单一事实源)\r"
+        },
+        {
+          "name": "speaker_notes",
+          "type": "varchar(1000)",
+          "nullable": true,
+          "key": "",
+          "comment": "讲稿提示(写入 PPTX 备注页)\r"
+        },
+        {
+          "name": "issues",
+          "type": "json",
+          "nullable": true,
+          "key": "",
+          "comment": "残留质量告警\r"
+        },
+        {
+          "name": "status",
+          "type": "varchar(16)",
+          "nullable": false,
+          "key": "",
+          "comment": "pending/generating/ready/failed/cancelled\r"
+        },
+        {
+          "name": "error",
+          "type": "varchar(500)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "revision",
+          "type": "int",
+          "nullable": false,
+          "key": "",
+          "comment": "乐观锁(重试/覆盖写保护)\r"
+        },
+        {
+          "name": "created_at",
+          "type": "datetime",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "updated_at",
+          "type": "datetime",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "created_by",
+          "type": "bigint",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "updated_by",
+          "type": "bigint",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "deleted",
+          "type": "tinyint",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "idx_cw_slide_project_pos",
+          "unique": false,
+          "columns": [
+            "project_id\r",
+            "position\r"
+          ]
+        },
+        {
+          "name": "idx_cw_slide_project_status",
+          "unique": false,
+          "columns": [
+            "project_id\r",
+            "status\r"
+          ]
+        },
+        {
+          "name": "idx_cw_slide_tenant",
+          "unique": false,
+          "columns": [
+            "tenant_id\r"
+          ]
+        },
+        {
+          "name": "PRIMARY",
+          "unique": true,
+          "columns": [
+            "id\r"
+          ]
+        }
+      ]
+    },
+    "cw_source_section": {
+      "columns": [
+        {
+          "name": "id",
+          "type": "bigint",
+          "nullable": false,
+          "key": "PRI",
+          "comment": "主键(雪花 ID)\r"
+        },
+        {
+          "name": "tenant_id",
+          "type": "bigint",
+          "nullable": false,
+          "key": "MUL",
+          "comment": "租户 ID\r"
+        },
+        {
+          "name": "project_id",
+          "type": "bigint",
+          "nullable": false,
+          "key": "MUL",
+          "comment": "课件项目 ID\r"
+        },
+        {
+          "name": "ref",
+          "type": "varchar(32)",
+          "nullable": false,
+          "key": "",
+          "comment": "稳定引用号 S{来源}:{小节},一期恒 S1:N\r"
+        },
+        {
+          "name": "heading",
+          "type": "varchar(200)",
+          "nullable": true,
+          "key": "",
+          "comment": "小节标题(无标题小节为 NULL)\r"
+        },
+        {
+          "name": "level",
+          "type": "int",
+          "nullable": false,
+          "key": "",
+          "comment": "标题级别 0~6\r"
+        },
+        {
+          "name": "text",
+          "type": "mediumtext",
+          "nullable": true,
+          "key": "",
+          "comment": "小节正文(表格已管道化)\r"
+        },
+        {
+          "name": "locator",
+          "type": "varchar(64)",
+          "nullable": true,
+          "key": "",
+          "comment": "定位描述(第 N 段)\r"
+        },
+        {
+          "name": "created_at",
+          "type": "datetime",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "updated_at",
+          "type": "datetime",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "created_by",
+          "type": "bigint",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "updated_by",
+          "type": "bigint",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "deleted",
+          "type": "tinyint",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "idx_cw_section_project",
+          "unique": false,
+          "columns": [
+            "project_id\r"
+          ]
+        },
+        {
+          "name": "idx_cw_section_tenant",
+          "unique": false,
+          "columns": [
+            "tenant_id\r"
+          ]
+        },
+        {
+          "name": "PRIMARY",
+          "unique": true,
+          "columns": [
+            "id\r"
+          ]
+        }
+      ]
+    }
+  }
+}

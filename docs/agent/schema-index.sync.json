@@ -1,0 +1,89 @@
+{
+  "_meta": {
+    "generated": true,
+    "source": "information_schema",
+    "schema": "gjjddb2026",
+    "generatedAt": "2026-10-20T09:10:41.737Z",
+    "notice": "仅含结构元数据，禁止写入任何数据行；迁移版本/双写对基线见 docs/agent/项目现状.md",
+    "onCheckFail": "--check 失败一律以测试库为准重新 --generate 提交（结构变化只能来自迁移）",
+    "tablesCount": 1
+  },
+  "tables": {
+    "sync_checkpoint": {
+      "columns": [
+        {
+          "name": "table_name",
+          "type": "varchar(64)",
+          "nullable": false,
+          "key": "PRI",
+          "comment": "同步表名：platform_user / platform_user_token / platform_user_detail\r"
+        },
+        {
+          "name": "last_max_id",
+          "type": "bigint",
+          "nullable": false,
+          "key": "",
+          "comment": "id 水位线（新增快路径）\r"
+        },
+        {
+          "name": "last_run_at",
+          "type": "datetime",
+          "nullable": true,
+          "key": "",
+          "comment": "最近执行时间\r"
+        },
+        {
+          "name": "last_success_at",
+          "type": "datetime",
+          "nullable": true,
+          "key": "",
+          "comment": "最近成功时间\r"
+        },
+        {
+          "name": "fail_count",
+          "type": "int",
+          "nullable": false,
+          "key": "",
+          "comment": "连续失败次数（成功即清零）\r"
+        },
+        {
+          "name": "last_error",
+          "type": "varchar(500)",
+          "nullable": true,
+          "key": "",
+          "comment": "最近一次错误信息\r"
+        },
+        {
+          "name": "stats",
+          "type": "varchar(500)",
+          "nullable": true,
+          "key": "",
+          "comment": "最近一周期统计：new=x,updated=y,deleted=z\r"
+        },
+        {
+          "name": "created_at",
+          "type": "datetime",
+          "nullable": false,
+          "key": "",
+          "comment": "创建时间\r"
+        },
+        {
+          "name": "updated_at",
+          "type": "datetime",
+          "nullable": false,
+          "key": "",
+          "comment": "更新时间\r"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "PRIMARY",
+          "unique": true,
+          "columns": [
+            "table_name\r"
+          ]
+        }
+      ]
+    }
+  }
+}

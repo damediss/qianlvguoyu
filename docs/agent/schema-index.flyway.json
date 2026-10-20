@@ -1,0 +1,268 @@
+{
+  "_meta": {
+    "generated": true,
+    "source": "information_schema",
+    "schema": "gjjddb2026",
+    "generatedAt": "2026-10-20T09:10:41.737Z",
+    "notice": "仅含结构元数据，禁止写入任何数据行；迁移版本/双写对基线见 docs/agent/项目现状.md",
+    "onCheckFail": "--check 失败一律以测试库为准重新 --generate 提交（结构变化只能来自迁移）",
+    "tablesCount": 3
+  },
+  "tables": {
+    "flyway_failed_backup_20260604": {
+      "columns": [
+        {
+          "name": "installed_rank",
+          "type": "int",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "version",
+          "type": "varchar(50)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "description",
+          "type": "varchar(200)",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "type",
+          "type": "varchar(20)",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "script",
+          "type": "varchar(1000)",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "checksum",
+          "type": "int",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "installed_by",
+          "type": "varchar(100)",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "installed_on",
+          "type": "timestamp",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "execution_time",
+          "type": "int",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "success",
+          "type": "tinyint(1)",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        }
+      ],
+      "indexes": []
+    },
+    "flyway_schema_history": {
+      "columns": [
+        {
+          "name": "installed_rank",
+          "type": "int",
+          "nullable": false,
+          "key": "PRI",
+          "comment": "\r"
+        },
+        {
+          "name": "version",
+          "type": "varchar(50)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "description",
+          "type": "varchar(200)",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "type",
+          "type": "varchar(20)",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "script",
+          "type": "varchar(1000)",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "checksum",
+          "type": "int",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "installed_by",
+          "type": "varchar(100)",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "installed_on",
+          "type": "timestamp",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "execution_time",
+          "type": "int",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "success",
+          "type": "tinyint(1)",
+          "nullable": false,
+          "key": "MUL",
+          "comment": "\r"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "flyway_schema_history_s_idx",
+          "unique": false,
+          "columns": [
+            "success\r"
+          ]
+        },
+        {
+          "name": "PRIMARY",
+          "unique": true,
+          "columns": [
+            "installed_rank\r"
+          ]
+        }
+      ]
+    },
+    "flyway_schema_history_backup_20260706_1459": {
+      "columns": [
+        {
+          "name": "installed_rank",
+          "type": "int",
+          "nullable": false,
+          "key": "PRI",
+          "comment": "\r"
+        },
+        {
+          "name": "version",
+          "type": "varchar(50)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "description",
+          "type": "varchar(200)",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "type",
+          "type": "varchar(20)",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "script",
+          "type": "varchar(1000)",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "checksum",
+          "type": "int",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "installed_by",
+          "type": "varchar(100)",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "installed_on",
+          "type": "timestamp",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "execution_time",
+          "type": "int",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "success",
+          "type": "tinyint(1)",
+          "nullable": false,
+          "key": "MUL",
+          "comment": "\r"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "flyway_schema_history_s_idx",
+          "unique": false,
+          "columns": [
+            "success\r"
+          ]
+        },
+        {
+          "name": "PRIMARY",
+          "unique": true,
+          "columns": [
+            "installed_rank\r"
+          ]
+        }
+      ]
+    }
+  }
+}

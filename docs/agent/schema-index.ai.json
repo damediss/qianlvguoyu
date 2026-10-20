@@ -1,0 +1,1433 @@
+{
+  "_meta": {
+    "generated": true,
+    "source": "information_schema",
+    "schema": "gjjddb2026",
+    "generatedAt": "2026-10-20T09:10:41.737Z",
+    "notice": "仅含结构元数据，禁止写入任何数据行；迁移版本/双写对基线见 docs/agent/项目现状.md",
+    "onCheckFail": "--check 失败一律以测试库为准重新 --generate 提交（结构变化只能来自迁移）",
+    "tablesCount": 9
+  },
+  "tables": {
+    "ai_generation_draft": {
+      "columns": [
+        {
+          "name": "id",
+          "type": "bigint",
+          "nullable": false,
+          "key": "PRI",
+          "comment": "\r"
+        },
+        {
+          "name": "tenant_id",
+          "type": "bigint",
+          "nullable": false,
+          "key": "MUL",
+          "comment": "\r"
+        },
+        {
+          "name": "draft_type",
+          "type": "varchar(64)",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "source_type",
+          "type": "varchar(64)",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "source_id",
+          "type": "bigint",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "prompt",
+          "type": "text",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "result_text",
+          "type": "text",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "model_name",
+          "type": "varchar(128)",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "status",
+          "type": "varchar(32)",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "created_at",
+          "type": "datetime",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "updated_at",
+          "type": "datetime",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "created_by",
+          "type": "bigint",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "updated_by",
+          "type": "bigint",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "deleted",
+          "type": "tinyint",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "idx_ai_generation_draft_created",
+          "unique": false,
+          "columns": [
+            "tenant_id\r",
+            "created_at\r"
+          ]
+        },
+        {
+          "name": "idx_ai_generation_draft_source",
+          "unique": false,
+          "columns": [
+            "tenant_id\r",
+            "source_type\r",
+            "source_id\r"
+          ]
+        },
+        {
+          "name": "PRIMARY",
+          "unique": true,
+          "columns": [
+            "id\r"
+          ]
+        }
+      ]
+    },
+    "ai_review_answer": {
+      "columns": [
+        {
+          "name": "id",
+          "type": "bigint",
+          "nullable": false,
+          "key": "PRI",
+          "comment": "雪花 ID\r"
+        },
+        {
+          "name": "plan_id",
+          "type": "bigint",
+          "nullable": false,
+          "key": "MUL",
+          "comment": "计划 id\r"
+        },
+        {
+          "name": "day_id",
+          "type": "bigint",
+          "nullable": true,
+          "key": "",
+          "comment": "每日任务 id（模考答完可空）\r"
+        },
+        {
+          "name": "mock_paper_id",
+          "type": "bigint",
+          "nullable": true,
+          "key": "",
+          "comment": "模考卷 id（round_type=mock 时，作答幂等键用）\r"
+        },
+        {
+          "name": "platform_user_id",
+          "type": "bigint",
+          "nullable": false,
+          "key": "MUL",
+          "comment": "学员\r"
+        },
+        {
+          "name": "exam_plan_id",
+          "type": "bigint",
+          "nullable": true,
+          "key": "",
+          "comment": "冗余：train_exam_list.id（回写 PHP exam_result.exam_plan_id 用）\r"
+        },
+        {
+          "name": "question_id",
+          "type": "bigint",
+          "nullable": false,
+          "key": "",
+          "comment": "exam_exam_detail.id\r"
+        },
+        {
+          "name": "question_score",
+          "type": "decimal(10,1)",
+          "nullable": true,
+          "key": "",
+          "comment": "冗余：题目分值（回写 get_score 用，对=题分/错=0）\r"
+        },
+        {
+          "name": "earned_score",
+          "type": "decimal(10,1)",
+          "nullable": true,
+          "key": "",
+          "comment": "实得分（严格判分部分分；空=按 is_correct 推导）\r"
+        },
+        {
+          "name": "knowledge_id",
+          "type": "bigint",
+          "nullable": true,
+          "key": "",
+          "comment": "冗余便于统计\r"
+        },
+        {
+          "name": "question_type",
+          "type": "varchar(16)",
+          "nullable": true,
+          "key": "",
+          "comment": "single/multi/judge/...\r"
+        },
+        {
+          "name": "round_type",
+          "type": "varchar(8)",
+          "nullable": false,
+          "key": "",
+          "comment": "new/review/mock\r"
+        },
+        {
+          "name": "user_answer",
+          "type": "text",
+          "nullable": true,
+          "key": "",
+          "comment": "作答内容（单/判：选项内容；多选：内容数组 JSON）\r"
+        },
+        {
+          "name": "is_correct",
+          "type": "tinyint",
+          "nullable": false,
+          "key": "",
+          "comment": "0/1\r"
+        },
+        {
+          "name": "use_time_sec",
+          "type": "int",
+          "nullable": false,
+          "key": "",
+          "comment": "用时（秒）\r"
+        },
+        {
+          "name": "attempt_seq",
+          "type": "int",
+          "nullable": false,
+          "key": "",
+          "comment": "该题第几次作答\r"
+        },
+        {
+          "name": "php_synced",
+          "type": "tinyint",
+          "nullable": false,
+          "key": "MUL",
+          "comment": "回写 PHP exam_result：0 未回写 1 已回写 2 失败待补偿\r"
+        },
+        {
+          "name": "php_sync_time",
+          "type": "datetime",
+          "nullable": true,
+          "key": "",
+          "comment": "回写成功时间\r"
+        },
+        {
+          "name": "tenant_id",
+          "type": "bigint",
+          "nullable": false,
+          "key": "MUL",
+          "comment": "\r"
+        },
+        {
+          "name": "deleted",
+          "type": "tinyint",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "created_by",
+          "type": "bigint",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "updated_by",
+          "type": "bigint",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "created_at",
+          "type": "datetime",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "updated_at",
+          "type": "datetime",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "idx_ai_review_answer_sync",
+          "unique": false,
+          "columns": [
+            "php_synced\r",
+            "id\r"
+          ]
+        },
+        {
+          "name": "idx_ai_review_answer_tenant_created",
+          "unique": false,
+          "columns": [
+            "tenant_id\r",
+            "created_at\r"
+          ]
+        },
+        {
+          "name": "idx_ai_review_answer_user",
+          "unique": false,
+          "columns": [
+            "platform_user_id\r",
+            "plan_id\r"
+          ]
+        },
+        {
+          "name": "PRIMARY",
+          "unique": true,
+          "columns": [
+            "id\r"
+          ]
+        },
+        {
+          "name": "uk_ai_review_answer_once",
+          "unique": true,
+          "columns": [
+            "plan_id\r",
+            "day_id\r",
+            "question_id\r",
+            "attempt_seq\r"
+          ]
+        }
+      ]
+    },
+    "ai_review_gray_whitelist": {
+      "columns": [
+        {
+          "name": "id",
+          "type": "bigint",
+          "nullable": false,
+          "key": "PRI",
+          "comment": "雪花 ID\r"
+        },
+        {
+          "name": "tenant_id",
+          "type": "bigint",
+          "nullable": false,
+          "key": "MUL",
+          "comment": "租户 ID\r"
+        },
+        {
+          "name": "scope_type",
+          "type": "varchar(16)",
+          "nullable": false,
+          "key": "",
+          "comment": "范围类型：exam / user\r"
+        },
+        {
+          "name": "scope_id",
+          "type": "bigint",
+          "nullable": false,
+          "key": "",
+          "comment": "范围 ID：train_exam_list.id 或 platform_user.id\r"
+        },
+        {
+          "name": "remark",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "",
+          "comment": "备注（试点说明）\r"
+        },
+        {
+          "name": "deleted",
+          "type": "tinyint",
+          "nullable": false,
+          "key": "",
+          "comment": "逻辑删除\r"
+        },
+        {
+          "name": "created_by",
+          "type": "bigint",
+          "nullable": true,
+          "key": "",
+          "comment": "创建人\r"
+        },
+        {
+          "name": "updated_by",
+          "type": "bigint",
+          "nullable": true,
+          "key": "",
+          "comment": "更新人\r"
+        },
+        {
+          "name": "created_at",
+          "type": "datetime",
+          "nullable": false,
+          "key": "",
+          "comment": "创建时间\r"
+        },
+        {
+          "name": "updated_at",
+          "type": "datetime",
+          "nullable": false,
+          "key": "",
+          "comment": "更新时间\r"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "PRIMARY",
+          "unique": true,
+          "columns": [
+            "id\r"
+          ]
+        },
+        {
+          "name": "uk_gray_scope",
+          "unique": true,
+          "columns": [
+            "tenant_id\r",
+            "scope_type\r",
+            "scope_id\r",
+            "deleted\r"
+          ]
+        }
+      ]
+    },
+    "ai_review_interrupt_log": {
+      "columns": [
+        {
+          "name": "id",
+          "type": "bigint",
+          "nullable": false,
+          "key": "PRI",
+          "comment": "雪花 ID\r"
+        },
+        {
+          "name": "plan_id",
+          "type": "bigint",
+          "nullable": false,
+          "key": "MUL",
+          "comment": "计划 id\r"
+        },
+        {
+          "name": "platform_user_id",
+          "type": "bigint",
+          "nullable": false,
+          "key": "MUL",
+          "comment": "学员\r"
+        },
+        {
+          "name": "interrupt_case",
+          "type": "varchar(2)",
+          "nullable": false,
+          "key": "",
+          "comment": "A/B/C/D\r"
+        },
+        {
+          "name": "gap_days",
+          "type": "int",
+          "nullable": false,
+          "key": "",
+          "comment": "本次间隔天数\r"
+        },
+        {
+          "name": "stage_at_interrupt",
+          "type": "tinyint",
+          "nullable": false,
+          "key": "",
+          "comment": "中断时阶段\r"
+        },
+        {
+          "name": "tenant_id",
+          "type": "bigint",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "deleted",
+          "type": "tinyint",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "created_by",
+          "type": "bigint",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "updated_by",
+          "type": "bigint",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "created_at",
+          "type": "datetime",
+          "nullable": false,
+          "key": "MUL",
+          "comment": "\r"
+        },
+        {
+          "name": "updated_at",
+          "type": "datetime",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "idx_ai_review_interrupt_log_created",
+          "unique": false,
+          "columns": [
+            "created_at\r"
+          ]
+        },
+        {
+          "name": "idx_ai_review_interrupt_log_plan",
+          "unique": false,
+          "columns": [
+            "plan_id\r"
+          ]
+        },
+        {
+          "name": "idx_ai_review_interrupt_log_user",
+          "unique": false,
+          "columns": [
+            "platform_user_id\r"
+          ]
+        },
+        {
+          "name": "PRIMARY",
+          "unique": true,
+          "columns": [
+            "id\r"
+          ]
+        }
+      ]
+    },
+    "ai_review_mock_paper": {
+      "columns": [
+        {
+          "name": "id",
+          "type": "bigint",
+          "nullable": false,
+          "key": "PRI",
+          "comment": "雪花 ID\r"
+        },
+        {
+          "name": "plan_id",
+          "type": "bigint",
+          "nullable": false,
+          "key": "MUL",
+          "comment": "计划 id\r"
+        },
+        {
+          "name": "paper_no",
+          "type": "int",
+          "nullable": false,
+          "key": "",
+          "comment": "第几套\r"
+        },
+        {
+          "name": "question_count",
+          "type": "int",
+          "nullable": false,
+          "key": "",
+          "comment": "题量\r"
+        },
+        {
+          "name": "total_score",
+          "type": "decimal(10,1)",
+          "nullable": false,
+          "key": "",
+          "comment": "总分\r"
+        },
+        {
+          "name": "pass_score",
+          "type": "decimal(10,1)",
+          "nullable": false,
+          "key": "",
+          "comment": "及格分（total×0.6）\r"
+        },
+        {
+          "name": "time_limit_min",
+          "type": "int",
+          "nullable": false,
+          "key": "",
+          "comment": "时长（分钟）\r"
+        },
+        {
+          "name": "status",
+          "type": "varchar(16)",
+          "nullable": false,
+          "key": "",
+          "comment": "ready/done\r"
+        },
+        {
+          "name": "score",
+          "type": "decimal(10,1)",
+          "nullable": true,
+          "key": "",
+          "comment": "得分\r"
+        },
+        {
+          "name": "correct_count",
+          "type": "int",
+          "nullable": true,
+          "key": "",
+          "comment": "答对数\r"
+        },
+        {
+          "name": "tenant_id",
+          "type": "bigint",
+          "nullable": false,
+          "key": "MUL",
+          "comment": "\r"
+        },
+        {
+          "name": "deleted",
+          "type": "tinyint",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "created_by",
+          "type": "bigint",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "updated_by",
+          "type": "bigint",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "created_at",
+          "type": "datetime",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "updated_at",
+          "type": "datetime",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "idx_ai_review_mock_paper_tenant_status",
+          "unique": false,
+          "columns": [
+            "tenant_id\r",
+            "status\r"
+          ]
+        },
+        {
+          "name": "idx_ai_review_mock_plan",
+          "unique": false,
+          "columns": [
+            "plan_id\r",
+            "status\r"
+          ]
+        },
+        {
+          "name": "PRIMARY",
+          "unique": true,
+          "columns": [
+            "id\r"
+          ]
+        }
+      ]
+    },
+    "ai_review_mock_paper_item": {
+      "columns": [
+        {
+          "name": "id",
+          "type": "bigint",
+          "nullable": false,
+          "key": "PRI",
+          "comment": "雪花 ID\r"
+        },
+        {
+          "name": "paper_id",
+          "type": "bigint",
+          "nullable": false,
+          "key": "MUL",
+          "comment": "模考卷 id\r"
+        },
+        {
+          "name": "question_id",
+          "type": "bigint",
+          "nullable": false,
+          "key": "",
+          "comment": "exam_exam_detail.id\r"
+        },
+        {
+          "name": "question_type",
+          "type": "varchar(16)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "sort_number",
+          "type": "int",
+          "nullable": false,
+          "key": "",
+          "comment": "题序（随机，脱离题库顺序）\r"
+        },
+        {
+          "name": "score",
+          "type": "decimal(10,1)",
+          "nullable": false,
+          "key": "",
+          "comment": "分值\r"
+        },
+        {
+          "name": "tenant_id",
+          "type": "bigint",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "deleted",
+          "type": "tinyint",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "created_by",
+          "type": "bigint",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "updated_by",
+          "type": "bigint",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "created_at",
+          "type": "datetime",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "updated_at",
+          "type": "datetime",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "PRIMARY",
+          "unique": true,
+          "columns": [
+            "id\r"
+          ]
+        },
+        {
+          "name": "uk_ai_review_mock_item",
+          "unique": true,
+          "columns": [
+            "paper_id\r",
+            "question_id\r"
+          ]
+        }
+      ]
+    },
+    "ai_review_plan": {
+      "columns": [
+        {
+          "name": "id",
+          "type": "bigint",
+          "nullable": false,
+          "key": "PRI",
+          "comment": "雪花 ID\r"
+        },
+        {
+          "name": "platform_user_id",
+          "type": "bigint",
+          "nullable": false,
+          "key": "MUL",
+          "comment": "学员（PHP platform_user.id）\r"
+        },
+        {
+          "name": "exam_id",
+          "type": "bigint",
+          "nullable": false,
+          "key": "",
+          "comment": "培训考试计划 train_exam_list.id\r"
+        },
+        {
+          "name": "work_type_id",
+          "type": "bigint",
+          "nullable": true,
+          "key": "",
+          "comment": "工种（题目范围快照）\r"
+        },
+        {
+          "name": "level",
+          "type": "varchar(32)",
+          "nullable": true,
+          "key": "",
+          "comment": "等级快照\r"
+        },
+        {
+          "name": "course_id",
+          "type": "bigint",
+          "nullable": true,
+          "key": "",
+          "comment": "科目快照\r"
+        },
+        {
+          "name": "source",
+          "type": "int",
+          "nullable": true,
+          "key": "",
+          "comment": "题库来源快照（train_exam_list.source）\r"
+        },
+        {
+          "name": "weight_snapshot",
+          "type": "json",
+          "nullable": true,
+          "key": "",
+          "comment": "权重快照（§5.7：计划生成时固化，[{knowledgeId,title,rate}]）\r"
+        },
+        {
+          "name": "weight_source",
+          "type": "varchar(16)",
+          "nullable": true,
+          "key": "",
+          "comment": "权重来源：standard(type=3)/custom(type=0)/count(题量兜底)\r"
+        },
+        {
+          "name": "exam_date",
+          "type": "date",
+          "nullable": true,
+          "key": "",
+          "comment": "考试日期（最近未来日）\r"
+        },
+        {
+          "name": "start_date",
+          "type": "date",
+          "nullable": false,
+          "key": "",
+          "comment": "复习开始日（计划生成日）\r"
+        },
+        {
+          "name": "total_days",
+          "type": "int",
+          "nullable": false,
+          "key": "",
+          "comment": "总天数\r"
+        },
+        {
+          "name": "stage1_days",
+          "type": "int",
+          "nullable": false,
+          "key": "",
+          "comment": "阶段1天数（50%）\r"
+        },
+        {
+          "name": "stage2_days",
+          "type": "int",
+          "nullable": false,
+          "key": "",
+          "comment": "阶段2天数（30%）\r"
+        },
+        {
+          "name": "stage3_days",
+          "type": "int",
+          "nullable": false,
+          "key": "",
+          "comment": "阶段3天数（20%，尾差归此）\r"
+        },
+        {
+          "name": "total_questions",
+          "type": "int",
+          "nullable": false,
+          "key": "",
+          "comment": "题目全集题数\r"
+        },
+        {
+          "name": "target_questions",
+          "type": "int",
+          "nullable": false,
+          "key": "",
+          "comment": "冗余裁剪后必做题数\r"
+        },
+        {
+          "name": "must_do_ids",
+          "type": "json",
+          "nullable": true,
+          "key": "",
+          "comment": "必做池题 id 列表（排题的输入快照，裁剪/中断删尾部后同步更新）\r"
+        },
+        {
+          "name": "dropped_question_ids",
+          "type": "json",
+          "nullable": true,
+          "key": "",
+          "comment": "被裁剪/中断补救放弃的题 id（扩展题，不进任何每日任务）\r"
+        },
+        {
+          "name": "trimmed",
+          "type": "tinyint",
+          "nullable": false,
+          "key": "",
+          "comment": "是否触发裁剪\r"
+        },
+        {
+          "name": "daily_new_cap",
+          "type": "int",
+          "nullable": false,
+          "key": "",
+          "comment": "每日新题上限快照\r"
+        },
+        {
+          "name": "daily_total_cap",
+          "type": "int",
+          "nullable": false,
+          "key": "",
+          "comment": "每日总量上限快照\r"
+        },
+        {
+          "name": "current_stage",
+          "type": "tinyint",
+          "nullable": false,
+          "key": "",
+          "comment": "当前阶段 1/2/3\r"
+        },
+        {
+          "name": "current_day_index",
+          "type": "int",
+          "nullable": false,
+          "key": "",
+          "comment": "当前第几天（从 1 起）\r"
+        },
+        {
+          "name": "last_active_date",
+          "type": "date",
+          "nullable": true,
+          "key": "",
+          "comment": "最后活跃日（有作答即更新）\r"
+        },
+        {
+          "name": "interrupt_count",
+          "type": "int",
+          "nullable": false,
+          "key": "",
+          "comment": "中断次数（零星中断判定用）\r"
+        },
+        {
+          "name": "status",
+          "type": "varchar(16)",
+          "nullable": false,
+          "key": "MUL",
+          "comment": "active/completed/abandoned\r"
+        },
+        {
+          "name": "tenant_id",
+          "type": "bigint",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "deleted",
+          "type": "tinyint",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "created_by",
+          "type": "bigint",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "updated_by",
+          "type": "bigint",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "created_at",
+          "type": "datetime",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "updated_at",
+          "type": "datetime",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "idx_ai_review_plan_status",
+          "unique": false,
+          "columns": [
+            "status\r",
+            "tenant_id\r"
+          ]
+        },
+        {
+          "name": "PRIMARY",
+          "unique": true,
+          "columns": [
+            "id\r"
+          ]
+        },
+        {
+          "name": "uk_ai_review_plan_user_exam",
+          "unique": true,
+          "columns": [
+            "platform_user_id\r",
+            "exam_id\r"
+          ]
+        }
+      ]
+    },
+    "ai_review_plan_day": {
+      "columns": [
+        {
+          "name": "id",
+          "type": "bigint",
+          "nullable": false,
+          "key": "PRI",
+          "comment": "雪花 ID\r"
+        },
+        {
+          "name": "plan_id",
+          "type": "bigint",
+          "nullable": false,
+          "key": "MUL",
+          "comment": "计划 id\r"
+        },
+        {
+          "name": "day_index",
+          "type": "int",
+          "nullable": false,
+          "key": "",
+          "comment": "第几天\r"
+        },
+        {
+          "name": "plan_date",
+          "type": "date",
+          "nullable": false,
+          "key": "MUL",
+          "comment": "计划日期\r"
+        },
+        {
+          "name": "stage",
+          "type": "tinyint",
+          "nullable": false,
+          "key": "",
+          "comment": "1/2/3\r"
+        },
+        {
+          "name": "new_question_ids",
+          "type": "json",
+          "nullable": true,
+          "key": "",
+          "comment": "今日新题 id 有序列表\r"
+        },
+        {
+          "name": "review_question_ids",
+          "type": "json",
+          "nullable": true,
+          "key": "",
+          "comment": "今日复盘题 id 有序列表（红牌置顶、加星优先）\r"
+        },
+        {
+          "name": "mock_paper_id",
+          "type": "bigint",
+          "nullable": true,
+          "key": "",
+          "comment": "阶段3 模考卷 id\r"
+        },
+        {
+          "name": "new_target",
+          "type": "int",
+          "nullable": false,
+          "key": "",
+          "comment": "新题目标量\r"
+        },
+        {
+          "name": "review_target",
+          "type": "int",
+          "nullable": false,
+          "key": "",
+          "comment": "复盘目标量\r"
+        },
+        {
+          "name": "new_done",
+          "type": "int",
+          "nullable": false,
+          "key": "",
+          "comment": "新题完成数\r"
+        },
+        {
+          "name": "review_done",
+          "type": "int",
+          "nullable": false,
+          "key": "",
+          "comment": "复盘完成数\r"
+        },
+        {
+          "name": "correct_count",
+          "type": "int",
+          "nullable": false,
+          "key": "",
+          "comment": "当日答对数\r"
+        },
+        {
+          "name": "answer_count",
+          "type": "int",
+          "nullable": false,
+          "key": "",
+          "comment": "当日作答数\r"
+        },
+        {
+          "name": "status",
+          "type": "varchar(16)",
+          "nullable": false,
+          "key": "",
+          "comment": "pending/in_progress/done/skipped/abandoned\r"
+        },
+        {
+          "name": "strategy_note",
+          "type": "varchar(500)",
+          "nullable": true,
+          "key": "",
+          "comment": "当日策略说明（中断补救文案等，展示给学员）\r"
+        },
+        {
+          "name": "tenant_id",
+          "type": "bigint",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "deleted",
+          "type": "tinyint",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "created_by",
+          "type": "bigint",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "updated_by",
+          "type": "bigint",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "created_at",
+          "type": "datetime",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "updated_at",
+          "type": "datetime",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "idx_ai_review_day_date",
+          "unique": false,
+          "columns": [
+            "plan_date\r",
+            "status\r"
+          ]
+        },
+        {
+          "name": "PRIMARY",
+          "unique": true,
+          "columns": [
+            "id\r"
+          ]
+        },
+        {
+          "name": "uk_ai_review_day_plan_day",
+          "unique": true,
+          "columns": [
+            "plan_id\r",
+            "day_index\r"
+          ]
+        }
+      ]
+    },
+    "ai_review_wrong_item": {
+      "columns": [
+        {
+          "name": "id",
+          "type": "bigint",
+          "nullable": false,
+          "key": "PRI",
+          "comment": "雪花 ID\r"
+        },
+        {
+          "name": "plan_id",
+          "type": "bigint",
+          "nullable": false,
+          "key": "MUL",
+          "comment": "计划 id\r"
+        },
+        {
+          "name": "platform_user_id",
+          "type": "bigint",
+          "nullable": false,
+          "key": "",
+          "comment": "学员\r"
+        },
+        {
+          "name": "question_id",
+          "type": "bigint",
+          "nullable": false,
+          "key": "",
+          "comment": "exam_exam_detail.id\r"
+        },
+        {
+          "name": "knowledge_id",
+          "type": "bigint",
+          "nullable": true,
+          "key": "",
+          "comment": "知识点（L3）\r"
+        },
+        {
+          "name": "card_level",
+          "type": "varchar(8)",
+          "nullable": false,
+          "key": "",
+          "comment": "red/yellow/green\r"
+        },
+        {
+          "name": "star",
+          "type": "tinyint",
+          "nullable": false,
+          "key": "",
+          "comment": "二次错误加星（顽固盲区）\r"
+        },
+        {
+          "name": "consecutive_correct",
+          "type": "int",
+          "nullable": false,
+          "key": "",
+          "comment": "连续答对计数\r"
+        },
+        {
+          "name": "last_correct_date",
+          "type": "date",
+          "nullable": true,
+          "key": "",
+          "comment": "最近一次答对日期（黄牌间隔>3天判定）\r"
+        },
+        {
+          "name": "wrong_count",
+          "type": "int",
+          "nullable": false,
+          "key": "",
+          "comment": "累计答错\r"
+        },
+        {
+          "name": "correct_count",
+          "type": "int",
+          "nullable": false,
+          "key": "",
+          "comment": "累计答对\r"
+        },
+        {
+          "name": "first_wrong_time",
+          "type": "datetime",
+          "nullable": true,
+          "key": "",
+          "comment": "首次答错时间\r"
+        },
+        {
+          "name": "last_wrong_time",
+          "type": "datetime",
+          "nullable": true,
+          "key": "",
+          "comment": "最近答错时间\r"
+        },
+        {
+          "name": "removed",
+          "type": "tinyint",
+          "nullable": false,
+          "key": "",
+          "comment": "是否已移出（绿牌=1）\r"
+        },
+        {
+          "name": "remove_time",
+          "type": "datetime",
+          "nullable": true,
+          "key": "",
+          "comment": "移出时间\r"
+        },
+        {
+          "name": "tenant_id",
+          "type": "bigint",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "deleted",
+          "type": "tinyint",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "created_by",
+          "type": "bigint",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "updated_by",
+          "type": "bigint",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "created_at",
+          "type": "datetime",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "updated_at",
+          "type": "datetime",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "idx_ai_review_wrong_level",
+          "unique": false,
+          "columns": [
+            "plan_id\r",
+            "card_level\r",
+            "removed\r"
+          ]
+        },
+        {
+          "name": "PRIMARY",
+          "unique": true,
+          "columns": [
+            "id\r"
+          ]
+        },
+        {
+          "name": "uk_ai_review_wrong_plan_q",
+          "unique": true,
+          "columns": [
+            "plan_id\r",
+            "question_id\r"
+          ]
+        }
+      ]
+    }
+  }
+}

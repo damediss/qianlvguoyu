@@ -1,0 +1,6416 @@
+{
+  "_meta": {
+    "generated": true,
+    "source": "information_schema",
+    "schema": "gjjddb2026",
+    "generatedAt": "2026-10-20T09:10:41.737Z",
+    "notice": "仅含结构元数据，禁止写入任何数据行；迁移版本/双写对基线见 docs/agent/项目现状.md",
+    "onCheckFail": "--check 失败一律以测试库为准重新 --generate 提交（结构变化只能来自迁移）",
+    "tablesCount": 38
+  },
+  "tables": {
+    "exam_course": {
+      "columns": [
+        {
+          "name": "id",
+          "type": "int",
+          "nullable": false,
+          "key": "PRI",
+          "comment": "\r"
+        },
+        {
+          "name": "work_type_id",
+          "type": "int",
+          "nullable": true,
+          "key": "MUL",
+          "comment": "工种id\r"
+        },
+        {
+          "name": "title",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "",
+          "comment": "科目名称\r"
+        },
+        {
+          "name": "level",
+          "type": "tinyint(1)",
+          "nullable": true,
+          "key": "",
+          "comment": "0初级1中级2高级3技师4高级技师\r"
+        },
+        {
+          "name": "series_no_group",
+          "type": "varchar(200)",
+          "nullable": true,
+          "key": "",
+          "comment": "科目编码(编组)\r"
+        },
+        {
+          "name": "series_no",
+          "type": "varchar(200)",
+          "nullable": true,
+          "key": "",
+          "comment": "科目编码\r"
+        },
+        {
+          "name": "user_in_charge",
+          "type": "int",
+          "nullable": true,
+          "key": "",
+          "comment": "拥有者id\r"
+        },
+        {
+          "name": "user_in_charge_name",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "",
+          "comment": "拥有者名称\r"
+        },
+        {
+          "name": "last_level_get_year",
+          "type": "int",
+          "nullable": true,
+          "key": "",
+          "comment": "上级获得年份要求\r"
+        },
+        {
+          "name": "work_year_limit",
+          "type": "int",
+          "nullable": true,
+          "key": "",
+          "comment": "累计从事本职业或相关职业工作年\r"
+        },
+        {
+          "name": "min_level",
+          "type": "int",
+          "nullable": true,
+          "key": "",
+          "comment": "最低证书要求\r"
+        },
+        {
+          "name": "min_level_year",
+          "type": "int",
+          "nullable": true,
+          "key": "",
+          "comment": "最低证书获得年\r"
+        },
+        {
+          "name": "start_age",
+          "type": "int",
+          "nullable": true,
+          "key": "",
+          "comment": "开始年龄\r"
+        },
+        {
+          "name": "is_general",
+          "type": "tinyint(1)",
+          "nullable": true,
+          "key": "",
+          "comment": "是否通用资源\r"
+        },
+        {
+          "name": "exam_condition",
+          "type": "text",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "version",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "",
+          "comment": "版本\r"
+        },
+        {
+          "name": "comments",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "",
+          "comment": "描述\r"
+        },
+        {
+          "name": "user_id",
+          "type": "int",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "status",
+          "type": "int",
+          "nullable": false,
+          "key": "",
+          "comment": "状态\r"
+        },
+        {
+          "name": "sort_number",
+          "type": "int",
+          "nullable": false,
+          "key": "",
+          "comment": "排序号\r"
+        },
+        {
+          "name": "tenant_id",
+          "type": "bigint",
+          "nullable": false,
+          "key": "",
+          "comment": "租户id\r"
+        },
+        {
+          "name": "create_time",
+          "type": "timestamp",
+          "nullable": false,
+          "key": "",
+          "comment": "创建时间\r"
+        },
+        {
+          "name": "deleted",
+          "type": "int",
+          "nullable": false,
+          "key": "",
+          "comment": "是否删除, 0否, 1是\r"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "id",
+          "unique": false,
+          "columns": [
+            "id\r"
+          ]
+        },
+        {
+          "name": "PRIMARY",
+          "unique": true,
+          "columns": [
+            "id\r"
+          ]
+        },
+        {
+          "name": "work_type_id",
+          "unique": false,
+          "columns": [
+            "work_type_id\r"
+          ]
+        }
+      ]
+    },
+    "exam_detail_dedup_list": {
+      "columns": [
+        {
+          "name": "id",
+          "type": "bigint",
+          "nullable": false,
+          "key": "PRI",
+          "comment": "\r"
+        },
+        {
+          "name": "tenant_id",
+          "type": "bigint",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "detail_id",
+          "type": "int",
+          "nullable": false,
+          "key": "MUL",
+          "comment": "\r"
+        },
+        {
+          "name": "group_key",
+          "type": "varchar(32)",
+          "nullable": false,
+          "key": "MUL",
+          "comment": "\r"
+        },
+        {
+          "name": "is_keeper",
+          "type": "tinyint",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "keeper_id",
+          "type": "int",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "create_wave",
+          "type": "varchar(16)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "status",
+          "type": "varchar(20)",
+          "nullable": false,
+          "key": "MUL",
+          "comment": "\r"
+        },
+        {
+          "name": "created_at",
+          "type": "datetime",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "updated_at",
+          "type": "datetime",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "created_by",
+          "type": "bigint",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "updated_by",
+          "type": "bigint",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "deleted",
+          "type": "tinyint",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "idx_kfdl_detail",
+          "unique": false,
+          "columns": [
+            "detail_id\r"
+          ]
+        },
+        {
+          "name": "idx_kfdl_group",
+          "unique": false,
+          "columns": [
+            "group_key\r"
+          ]
+        },
+        {
+          "name": "idx_kfdl_status",
+          "unique": false,
+          "columns": [
+            "status\r"
+          ]
+        },
+        {
+          "name": "PRIMARY",
+          "unique": true,
+          "columns": [
+            "id\r"
+          ]
+        }
+      ]
+    },
+    "exam_detail_knowledge_fix": {
+      "columns": [
+        {
+          "name": "id",
+          "type": "bigint",
+          "nullable": false,
+          "key": "PRI",
+          "comment": "\r"
+        },
+        {
+          "name": "tenant_id",
+          "type": "bigint",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "detail_id",
+          "type": "int",
+          "nullable": false,
+          "key": "MUL",
+          "comment": "\r"
+        },
+        {
+          "name": "old_knowledge_id",
+          "type": "int",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "course_id",
+          "type": "int",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "new_knowledge_id",
+          "type": "int",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "confidence",
+          "type": "decimal(4,3)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "basis",
+          "type": "varchar(16)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "llm_reason",
+          "type": "varchar(200)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "status",
+          "type": "varchar(20)",
+          "nullable": false,
+          "key": "MUL",
+          "comment": "\r"
+        },
+        {
+          "name": "batch_no",
+          "type": "bigint",
+          "nullable": true,
+          "key": "MUL",
+          "comment": "\r"
+        },
+        {
+          "name": "created_at",
+          "type": "datetime",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "updated_at",
+          "type": "datetime",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "created_by",
+          "type": "bigint",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "updated_by",
+          "type": "bigint",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "deleted",
+          "type": "tinyint",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "idx_kffd_batch",
+          "unique": false,
+          "columns": [
+            "batch_no\r"
+          ]
+        },
+        {
+          "name": "idx_kffd_detail",
+          "unique": false,
+          "columns": [
+            "detail_id\r"
+          ]
+        },
+        {
+          "name": "idx_kffd_status",
+          "unique": false,
+          "columns": [
+            "status\r"
+          ]
+        },
+        {
+          "name": "PRIMARY",
+          "unique": true,
+          "columns": [
+            "id\r"
+          ]
+        }
+      ]
+    },
+    "exam_exam_detail": {
+      "columns": [
+        {
+          "name": "id",
+          "type": "int",
+          "nullable": false,
+          "key": "PRI",
+          "comment": "\r"
+        },
+        {
+          "name": "exam_id",
+          "type": "int",
+          "nullable": true,
+          "key": "",
+          "comment": "考试ID(可为空表示题库中的题)\r"
+        },
+        {
+          "name": "task_detail_id",
+          "type": "int",
+          "nullable": true,
+          "key": "",
+          "comment": "任务明细ID\r"
+        },
+        {
+          "name": "source",
+          "type": "int",
+          "nullable": true,
+          "key": "",
+          "comment": "来源: 0=内部, 1=外部, 2=AI生成, 3=赛前复习\r"
+        },
+        {
+          "name": "org_id",
+          "type": "bigint",
+          "nullable": true,
+          "key": "",
+          "comment": "组织ID\r"
+        },
+        {
+          "name": "org_name",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "",
+          "comment": "组织名称\r"
+        },
+        {
+          "name": "knowledge_id",
+          "type": "int",
+          "nullable": true,
+          "key": "",
+          "comment": "知识点ID → exam_knowledge_structure.id\r"
+        },
+        {
+          "name": "is_private",
+          "type": "int",
+          "nullable": true,
+          "key": "",
+          "comment": "是否私有: 0=否, 1=是\r"
+        },
+        {
+          "name": "difficulty",
+          "type": "int",
+          "nullable": true,
+          "key": "",
+          "comment": "难度: 0=易, 1=较易, 2=中, 3=较难, 4=难\r"
+        },
+        {
+          "name": "user_id",
+          "type": "int",
+          "nullable": true,
+          "key": "",
+          "comment": "创建人\r"
+        },
+        {
+          "name": "check_user_id",
+          "type": "int",
+          "nullable": true,
+          "key": "",
+          "comment": "初审人\r"
+        },
+        {
+          "name": "final_check_user_id",
+          "type": "int",
+          "nullable": true,
+          "key": "",
+          "comment": "终审人\r"
+        },
+        {
+          "name": "type",
+          "type": "varchar(50)",
+          "nullable": true,
+          "key": "",
+          "comment": "题型: single/multi/judge/essay/explain/cal/simple_fill/fill/answer等\r"
+        },
+        {
+          "name": "keyword",
+          "type": "varchar(500)",
+          "nullable": true,
+          "key": "",
+          "comment": "关键词\r"
+        },
+        {
+          "name": "audio",
+          "type": "varchar(500)",
+          "nullable": true,
+          "key": "",
+          "comment": "音频路径\r"
+        },
+        {
+          "name": "video",
+          "type": "varchar(500)",
+          "nullable": true,
+          "key": "",
+          "comment": "视频路径\r"
+        },
+        {
+          "name": "content",
+          "type": "text",
+          "nullable": true,
+          "key": "",
+          "comment": "题干\r"
+        },
+        {
+          "name": "answer",
+          "type": "text",
+          "nullable": true,
+          "key": "",
+          "comment": "答案(JSON)\r"
+        },
+        {
+          "name": "score",
+          "type": "decimal(8,2)",
+          "nullable": true,
+          "key": "",
+          "comment": "分值\r"
+        },
+        {
+          "name": "resolve",
+          "type": "text",
+          "nullable": true,
+          "key": "",
+          "comment": "解析\r"
+        },
+        {
+          "name": "check_status",
+          "type": "int",
+          "nullable": true,
+          "key": "",
+          "comment": "初审状态: 0=待审, 1=通过, 2=不通过\r"
+        },
+        {
+          "name": "final_check_status",
+          "type": "int",
+          "nullable": true,
+          "key": "",
+          "comment": "终审状态: 0=待审, 1=通过, 2=不通过\r"
+        },
+        {
+          "name": "status",
+          "type": "int",
+          "nullable": false,
+          "key": "",
+          "comment": "状态: 0=无效, 1=有效\r"
+        },
+        {
+          "name": "sort_number",
+          "type": "int",
+          "nullable": false,
+          "key": "",
+          "comment": "排序号\r"
+        },
+        {
+          "name": "tenant_id",
+          "type": "int",
+          "nullable": false,
+          "key": "MUL",
+          "comment": "租户ID\r"
+        },
+        {
+          "name": "create_time",
+          "type": "datetime",
+          "nullable": true,
+          "key": "",
+          "comment": "创建时间\r"
+        },
+        {
+          "name": "update_time",
+          "type": "datetime",
+          "nullable": true,
+          "key": "",
+          "comment": "更新时间,记录最近一次修改时刻\r"
+        },
+        {
+          "name": "check_time",
+          "type": "datetime",
+          "nullable": true,
+          "key": "",
+          "comment": "审核时间\r"
+        },
+        {
+          "name": "final_check_time",
+          "type": "datetime",
+          "nullable": true,
+          "key": "",
+          "comment": "终审时间\r"
+        },
+        {
+          "name": "deleted",
+          "type": "int",
+          "nullable": false,
+          "key": "",
+          "comment": "逻辑删除\r"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "idx_ed_difficulty",
+          "unique": false,
+          "columns": [
+            "tenant_id\r",
+            "difficulty\r"
+          ]
+        },
+        {
+          "name": "idx_ed_knowledge",
+          "unique": false,
+          "columns": [
+            "tenant_id\r",
+            "knowledge_id\r"
+          ]
+        },
+        {
+          "name": "idx_ed_org",
+          "unique": false,
+          "columns": [
+            "tenant_id\r",
+            "org_id\r"
+          ]
+        },
+        {
+          "name": "idx_ed_status",
+          "unique": false,
+          "columns": [
+            "tenant_id\r",
+            "status\r"
+          ]
+        },
+        {
+          "name": "idx_ed_tenant",
+          "unique": false,
+          "columns": [
+            "tenant_id\r"
+          ]
+        },
+        {
+          "name": "idx_ed_tenant_knowledge_deleted",
+          "unique": false,
+          "columns": [
+            "tenant_id\r",
+            "knowledge_id\r",
+            "deleted\r"
+          ]
+        },
+        {
+          "name": "idx_ed_tenant_sort_desc",
+          "unique": false,
+          "columns": [
+            "tenant_id\r",
+            "sort_number\r",
+            "id\r"
+          ]
+        },
+        {
+          "name": "idx_ed_type",
+          "unique": false,
+          "columns": [
+            "tenant_id\r",
+            "type\r"
+          ]
+        },
+        {
+          "name": "PRIMARY",
+          "unique": true,
+          "columns": [
+            "id\r"
+          ]
+        }
+      ]
+    },
+    "exam_faq_conversion": {
+      "columns": [
+        {
+          "name": "id",
+          "type": "bigint",
+          "nullable": false,
+          "key": "PRI",
+          "comment": "主键（雪花 ID）\r"
+        },
+        {
+          "name": "tenant_id",
+          "type": "bigint",
+          "nullable": false,
+          "key": "MUL",
+          "comment": "租户 ID\r"
+        },
+        {
+          "name": "batch_id",
+          "type": "bigint",
+          "nullable": true,
+          "key": "",
+          "comment": "所属批次 exam_faq_conversion_batch.id\r"
+        },
+        {
+          "name": "exam_id",
+          "type": "int",
+          "nullable": true,
+          "key": "",
+          "comment": "来源试题 exam_exam_detail.id\r"
+        },
+        {
+          "name": "work_type_id",
+          "type": "int",
+          "nullable": false,
+          "key": "",
+          "comment": "工种 ID exam_work_type.id\r"
+        },
+        {
+          "name": "course_id",
+          "type": "int",
+          "nullable": true,
+          "key": "",
+          "comment": "科目 ID exam_course.id\r"
+        },
+        {
+          "name": "knowledge_id",
+          "type": "int",
+          "nullable": true,
+          "key": "",
+          "comment": "知识点 ID exam_knowledge_structure.id\r"
+        },
+        {
+          "name": "source_type",
+          "type": "varchar(50)",
+          "nullable": true,
+          "key": "",
+          "comment": "题型: single/multi/judge\r"
+        },
+        {
+          "name": "source_difficulty",
+          "type": "int",
+          "nullable": true,
+          "key": "",
+          "comment": "难度\r"
+        },
+        {
+          "name": "source_content",
+          "type": "text",
+          "nullable": true,
+          "key": "",
+          "comment": "原始题干\r"
+        },
+        {
+          "name": "source_answer",
+          "type": "text",
+          "nullable": true,
+          "key": "",
+          "comment": "原始答案 JSON\r"
+        },
+        {
+          "name": "standard_question",
+          "type": "text",
+          "nullable": false,
+          "key": "",
+          "comment": "标准问\r"
+        },
+        {
+          "name": "answers",
+          "type": "json",
+          "nullable": false,
+          "key": "",
+          "comment": "答案数组\r"
+        },
+        {
+          "name": "similar_questions",
+          "type": "json",
+          "nullable": true,
+          "key": "",
+          "comment": "相似问数组（LLM 生成）\r"
+        },
+        {
+          "name": "negative_questions",
+          "type": "json",
+          "nullable": true,
+          "key": "",
+          "comment": "反例数组（LLM 生成）\r"
+        },
+        {
+          "name": "tag_name",
+          "type": "varchar(500)",
+          "nullable": true,
+          "key": "",
+          "comment": "标签路径：题型|知识点末三级|难度\r"
+        },
+        {
+          "name": "conversion_status",
+          "type": "varchar(32)",
+          "nullable": false,
+          "key": "",
+          "comment": "pending=待转换 / processing=转换中 / success=成功 / failed=失败 / skipped=跳过\r"
+        },
+        {
+          "name": "model_code",
+          "type": "varchar(64)",
+          "nullable": true,
+          "key": "",
+          "comment": "使用的 LLM 模型编码\r"
+        },
+        {
+          "name": "error_message",
+          "type": "varchar(1024)",
+          "nullable": true,
+          "key": "",
+          "comment": "转换失败原因\r"
+        },
+        {
+          "name": "retry_count",
+          "type": "int",
+          "nullable": false,
+          "key": "",
+          "comment": "重试次数\r"
+        },
+        {
+          "name": "weknora_imported",
+          "type": "tinyint",
+          "nullable": false,
+          "key": "",
+          "comment": "是否已导入 WeKnora: 0=否 1=是\r"
+        },
+        {
+          "name": "weknora_imported_at",
+          "type": "datetime",
+          "nullable": true,
+          "key": "",
+          "comment": "导入 WeKnora 时间\r"
+        },
+        {
+          "name": "created_at",
+          "type": "datetime",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "updated_at",
+          "type": "datetime",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "created_by",
+          "type": "bigint",
+          "nullable": true,
+          "key": "",
+          "comment": "创建人\r"
+        },
+        {
+          "name": "updated_by",
+          "type": "bigint",
+          "nullable": true,
+          "key": "",
+          "comment": "更新人\r"
+        },
+        {
+          "name": "deleted",
+          "type": "tinyint",
+          "nullable": false,
+          "key": "",
+          "comment": "逻辑删除: 0=未删 1=已删\r"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "idx_efc_batch",
+          "unique": false,
+          "columns": [
+            "tenant_id\r",
+            "batch_id\r"
+          ]
+        },
+        {
+          "name": "idx_efc_knowledge",
+          "unique": false,
+          "columns": [
+            "tenant_id\r",
+            "knowledge_id\r"
+          ]
+        },
+        {
+          "name": "idx_efc_status",
+          "unique": false,
+          "columns": [
+            "tenant_id\r",
+            "conversion_status\r"
+          ]
+        },
+        {
+          "name": "idx_efc_work_type_status",
+          "unique": false,
+          "columns": [
+            "tenant_id\r",
+            "work_type_id\r",
+            "conversion_status\r"
+          ]
+        },
+        {
+          "name": "PRIMARY",
+          "unique": true,
+          "columns": [
+            "id\r"
+          ]
+        },
+        {
+          "name": "uk_exam_faq_conversion_exam",
+          "unique": true,
+          "columns": [
+            "tenant_id\r",
+            "exam_id\r",
+            "deleted\r"
+          ]
+        }
+      ]
+    },
+    "exam_faq_conversion_batch": {
+      "columns": [
+        {
+          "name": "id",
+          "type": "bigint",
+          "nullable": false,
+          "key": "PRI",
+          "comment": "主键（雪花 ID）\r"
+        },
+        {
+          "name": "tenant_id",
+          "type": "bigint",
+          "nullable": false,
+          "key": "MUL",
+          "comment": "租户 ID\r"
+        },
+        {
+          "name": "work_type_id",
+          "type": "int",
+          "nullable": false,
+          "key": "",
+          "comment": "工种 ID\r"
+        },
+        {
+          "name": "work_type_name",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "",
+          "comment": "工种名称（快照）\r"
+        },
+        {
+          "name": "course_ids",
+          "type": "json",
+          "nullable": true,
+          "key": "",
+          "comment": "选中的科目 ID 列表（空=全部科目）\r"
+        },
+        {
+          "name": "model_code",
+          "type": "varchar(64)",
+          "nullable": true,
+          "key": "",
+          "comment": "本次使用的模型编码\r"
+        },
+        {
+          "name": "model_name",
+          "type": "varchar(128)",
+          "nullable": true,
+          "key": "",
+          "comment": "模型名称快照\r"
+        },
+        {
+          "name": "total_exams",
+          "type": "int",
+          "nullable": false,
+          "key": "",
+          "comment": "参与转换的试题总数\r"
+        },
+        {
+          "name": "success_count",
+          "type": "int",
+          "nullable": false,
+          "key": "",
+          "comment": "转换成功数\r"
+        },
+        {
+          "name": "failed_count",
+          "type": "int",
+          "nullable": false,
+          "key": "",
+          "comment": "转换失败数\r"
+        },
+        {
+          "name": "skipped_count",
+          "type": "int",
+          "nullable": false,
+          "key": "",
+          "comment": "跳过数\r"
+        },
+        {
+          "name": "pending_count",
+          "type": "int",
+          "nullable": false,
+          "key": "",
+          "comment": "待转换数\r"
+        },
+        {
+          "name": "status",
+          "type": "varchar(32)",
+          "nullable": false,
+          "key": "",
+          "comment": "running=执行中 / paused=暂停 / completed=完成 / canceled=取消\r"
+        },
+        {
+          "name": "started_at",
+          "type": "datetime",
+          "nullable": true,
+          "key": "",
+          "comment": "开始时间\r"
+        },
+        {
+          "name": "completed_at",
+          "type": "datetime",
+          "nullable": true,
+          "key": "",
+          "comment": "完成时间\r"
+        },
+        {
+          "name": "error_message",
+          "type": "varchar(1024)",
+          "nullable": true,
+          "key": "",
+          "comment": "错误信息\r"
+        },
+        {
+          "name": "concurrency_limit",
+          "type": "int",
+          "nullable": false,
+          "key": "",
+          "comment": "并发批次数\r"
+        },
+        {
+          "name": "created_at",
+          "type": "datetime",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "updated_at",
+          "type": "datetime",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "created_by",
+          "type": "bigint",
+          "nullable": true,
+          "key": "",
+          "comment": "创建人\r"
+        },
+        {
+          "name": "updated_by",
+          "type": "bigint",
+          "nullable": true,
+          "key": "",
+          "comment": "更新人\r"
+        },
+        {
+          "name": "deleted",
+          "type": "tinyint",
+          "nullable": false,
+          "key": "",
+          "comment": "逻辑删除: 0=未删 1=已删\r"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "idx_efcb_status",
+          "unique": false,
+          "columns": [
+            "tenant_id\r",
+            "status\r"
+          ]
+        },
+        {
+          "name": "idx_efcb_work_type",
+          "unique": false,
+          "columns": [
+            "tenant_id\r",
+            "work_type_id\r"
+          ]
+        },
+        {
+          "name": "PRIMARY",
+          "unique": true,
+          "columns": [
+            "id\r"
+          ]
+        }
+      ]
+    },
+    "exam_faq_model_config": {
+      "columns": [
+        {
+          "name": "id",
+          "type": "bigint",
+          "nullable": false,
+          "key": "PRI",
+          "comment": "主键（雪花 ID）\r"
+        },
+        {
+          "name": "tenant_id",
+          "type": "bigint",
+          "nullable": false,
+          "key": "MUL",
+          "comment": "租户 ID\r"
+        },
+        {
+          "name": "model_code",
+          "type": "varchar(64)",
+          "nullable": false,
+          "key": "",
+          "comment": "模型编码（唯一标识，如 deepseek-v3）\r"
+        },
+        {
+          "name": "model_name",
+          "type": "varchar(128)",
+          "nullable": false,
+          "key": "",
+          "comment": "模型显示名称\r"
+        },
+        {
+          "name": "base_url",
+          "type": "varchar(512)",
+          "nullable": false,
+          "key": "",
+          "comment": "API Base URL\r"
+        },
+        {
+          "name": "api_key",
+          "type": "varchar(512)",
+          "nullable": false,
+          "key": "",
+          "comment": "API 密钥\r"
+        },
+        {
+          "name": "api_format",
+          "type": "varchar(32)",
+          "nullable": false,
+          "key": "",
+          "comment": "API 格式: openai_compatible / anthropic / custom\r"
+        },
+        {
+          "name": "model_id",
+          "type": "varchar(128)",
+          "nullable": false,
+          "key": "",
+          "comment": "模型 ID（请求 body 中的 model 字段值）\r"
+        },
+        {
+          "name": "temperature",
+          "type": "decimal(3,2)",
+          "nullable": false,
+          "key": "",
+          "comment": "采样温度\r"
+        },
+        {
+          "name": "max_tokens",
+          "type": "int",
+          "nullable": false,
+          "key": "",
+          "comment": "最大输出 token\r"
+        },
+        {
+          "name": "extra_config",
+          "type": "json",
+          "nullable": true,
+          "key": "",
+          "comment": "扩展配置（可选，存储自定义 headers 等）\r"
+        },
+        {
+          "name": "status",
+          "type": "varchar(32)",
+          "nullable": false,
+          "key": "",
+          "comment": "enabled / disabled\r"
+        },
+        {
+          "name": "created_at",
+          "type": "datetime",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "updated_at",
+          "type": "datetime",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "created_by",
+          "type": "bigint",
+          "nullable": true,
+          "key": "",
+          "comment": "创建人\r"
+        },
+        {
+          "name": "updated_by",
+          "type": "bigint",
+          "nullable": true,
+          "key": "",
+          "comment": "更新人\r"
+        },
+        {
+          "name": "deleted",
+          "type": "tinyint",
+          "nullable": false,
+          "key": "",
+          "comment": "逻辑删除: 0=未删 1=已删\r"
+        },
+        {
+          "name": "thinking",
+          "type": "varchar(16)",
+          "nullable": true,
+          "key": "",
+          "comment": "LongCat 思考模式：enabled/disabled，非 LongCat 模型留空\r"
+        },
+        {
+          "name": "reasoning_effort",
+          "type": "varchar(8)",
+          "nullable": false,
+          "key": "",
+          "comment": "DeepSeek 推理强度：low/high/max，仅 thinking=enabled 时随 thinking 节点发送\r"
+        },
+        {
+          "name": "jev_theta1",
+          "type": "decimal(4,3)",
+          "nullable": true,
+          "key": "",
+          "comment": "Jev 阶段1（L2）置信门限，NULL=默认0.5，硬底线≥0.3由应用校验\r"
+        },
+        {
+          "name": "jev_theta2",
+          "type": "decimal(4,3)",
+          "nullable": true,
+          "key": "",
+          "comment": "Jev 阶段2（L3）置信门限，NULL=默认0.5，<0.3 应用校验拒绝\r"
+        },
+        {
+          "name": "jev_concurrency",
+          "type": "int",
+          "nullable": true,
+          "key": "",
+          "comment": "Jev 独立并发上限，NULL=默认5，不与 LLM 并发池混用\r"
+        },
+        {
+          "name": "jev_read_timeout_seconds",
+          "type": "int",
+          "nullable": true,
+          "key": "",
+          "comment": "Jev 读取超时秒数，NULL=默认30（实测 e2e 1~5.6s@255 选项）\r"
+        },
+        {
+          "name": "jev_prune_stage2",
+          "type": "tinyint",
+          "nullable": false,
+          "key": "",
+          "comment": "stage2 剪枝开关：兄弟内关键词 top-8（1=开）。作用于 JEV 与 LLM 兜底两通道，0=原路径\r"
+        },
+        {
+          "name": "jev_prune_stage1",
+          "type": "tinyint",
+          "nullable": false,
+          "key": "",
+          "comment": "stage1 宽剪开关：L2 证据聚合 top-5（1=开）。仅 JEV 通道，LLM 全流程 stage1 恒全量（附一 KP-18）\r"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "PRIMARY",
+          "unique": true,
+          "columns": [
+            "id\r"
+          ]
+        },
+        {
+          "name": "uk_model_config_code",
+          "unique": true,
+          "columns": [
+            "tenant_id\r",
+            "model_code\r",
+            "deleted\r"
+          ]
+        }
+      ]
+    },
+    "exam_faq_weknora_config": {
+      "columns": [
+        {
+          "name": "id",
+          "type": "bigint",
+          "nullable": false,
+          "key": "PRI",
+          "comment": "主键（雪花 ID）\r"
+        },
+        {
+          "name": "tenant_id",
+          "type": "bigint",
+          "nullable": false,
+          "key": "MUL",
+          "comment": "租户 ID\r"
+        },
+        {
+          "name": "webhook_secret",
+          "type": "varchar(256)",
+          "nullable": true,
+          "key": "",
+          "comment": "签名密钥（共享给 WeKnora，用于 sha256 校验）\r"
+        },
+        {
+          "name": "enabled_events",
+          "type": "json",
+          "nullable": true,
+          "key": "",
+          "comment": "启用的事件列表\r"
+        },
+        {
+          "name": "knowledge_base_id",
+          "type": "varchar(128)",
+          "nullable": true,
+          "key": "",
+          "comment": "WeKnora 知识库 ID\r"
+        },
+        {
+          "name": "faq_set_id",
+          "type": "varchar(128)",
+          "nullable": true,
+          "key": "",
+          "comment": "FAQ 数据集 ID\r"
+        },
+        {
+          "name": "webhook_enabled",
+          "type": "tinyint",
+          "nullable": false,
+          "key": "",
+          "comment": "Webhook 接收开关: 0=关 1=开\r"
+        },
+        {
+          "name": "auto_export",
+          "type": "tinyint",
+          "nullable": false,
+          "key": "",
+          "comment": "转换成功后自动导出到 WeKnora: 0=否 1=是\r"
+        },
+        {
+          "name": "created_at",
+          "type": "datetime",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "updated_at",
+          "type": "datetime",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "created_by",
+          "type": "bigint",
+          "nullable": true,
+          "key": "",
+          "comment": "创建人\r"
+        },
+        {
+          "name": "updated_by",
+          "type": "bigint",
+          "nullable": true,
+          "key": "",
+          "comment": "更新人\r"
+        },
+        {
+          "name": "deleted",
+          "type": "tinyint",
+          "nullable": false,
+          "key": "",
+          "comment": "逻辑删除: 0=未删 1=已删\r"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "PRIMARY",
+          "unique": true,
+          "columns": [
+            "id\r"
+          ]
+        },
+        {
+          "name": "uk_weknora_config_tenant",
+          "unique": true,
+          "columns": [
+            "tenant_id\r",
+            "deleted\r"
+          ]
+        }
+      ]
+    },
+    "exam_knowledge_fix_batch": {
+      "columns": [
+        {
+          "name": "id",
+          "type": "bigint",
+          "nullable": false,
+          "key": "PRI",
+          "comment": "\r"
+        },
+        {
+          "name": "tenant_id",
+          "type": "bigint",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "batch_no",
+          "type": "bigint",
+          "nullable": true,
+          "key": "MUL",
+          "comment": "\r"
+        },
+        {
+          "name": "total",
+          "type": "int",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "done",
+          "type": "int",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "failed",
+          "type": "int",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "apply_cnt",
+          "type": "int",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "keep_cnt",
+          "type": "int",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "flag_cnt",
+          "type": "int",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "self_consistency_rate",
+          "type": "decimal(5,4)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "status",
+          "type": "varchar(20)",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "fail_reason",
+          "type": "varchar(300)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "created_at",
+          "type": "datetime",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "updated_at",
+          "type": "datetime",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "created_by",
+          "type": "bigint",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "updated_by",
+          "type": "bigint",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "deleted",
+          "type": "tinyint",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "jev_classified",
+          "type": "int",
+          "nullable": false,
+          "key": "",
+          "comment": "Jev 通道分类行数（apply/keep/flag/jev-l2-direct）\r"
+        },
+        {
+          "name": "llm_fallback",
+          "type": "int",
+          "nullable": false,
+          "key": "",
+          "comment": "走 LLM 全流程兜底行数（含通道关闭/未过双门/Jev 失败）\r"
+        },
+        {
+          "name": "jev_avg_confidence",
+          "type": "decimal(5,4)",
+          "nullable": true,
+          "key": "",
+          "comment": "Jev 行平均置信度（信息项，不卡门禁）\r"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "idx_kfkb_batch",
+          "unique": false,
+          "columns": [
+            "batch_no\r"
+          ]
+        },
+        {
+          "name": "PRIMARY",
+          "unique": true,
+          "columns": [
+            "id\r"
+          ]
+        }
+      ]
+    },
+    "exam_knowledge_fix_llm_log": {
+      "columns": [
+        {
+          "name": "id",
+          "type": "bigint",
+          "nullable": false,
+          "key": "PRI",
+          "comment": "\r"
+        },
+        {
+          "name": "tenant_id",
+          "type": "bigint",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "batch_no",
+          "type": "bigint",
+          "nullable": true,
+          "key": "MUL",
+          "comment": "\r"
+        },
+        {
+          "name": "detail_id",
+          "type": "int",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "stage",
+          "type": "varchar(16)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "model_id",
+          "type": "varchar(64)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "prompt_digest",
+          "type": "varchar(200)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "prompt_tokens",
+          "type": "int",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "completion_tokens",
+          "type": "int",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "total_tokens",
+          "type": "int",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "cached_tokens",
+          "type": "int",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "duration_ms",
+          "type": "int",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "created_at",
+          "type": "datetime",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "updated_at",
+          "type": "datetime",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "created_by",
+          "type": "bigint",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "updated_by",
+          "type": "bigint",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "deleted",
+          "type": "tinyint",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "confidence_definition",
+          "type": "varchar(128)",
+          "nullable": true,
+          "key": "",
+          "comment": "Jev 响应 metadata.confidence_definition（口径随路由漂移，须落库）\r"
+        },
+        {
+          "name": "top1_prob",
+          "type": "decimal(8,6)",
+          "nullable": true,
+          "key": "",
+          "comment": "Jev 概率分布 top1\r"
+        },
+        {
+          "name": "top2_prob",
+          "type": "decimal(8,6)",
+          "nullable": true,
+          "key": "",
+          "comment": "Jev 概率分布 top2\r"
+        },
+        {
+          "name": "pruned_candidates",
+          "type": "int",
+          "nullable": true,
+          "key": "",
+          "comment": "剪枝后候选数（stage1=L2 短名单、stage2=兄弟集；NULL=该次调用未启用剪枝，如 LLM stage1 恒全量）\r"
+        },
+        {
+          "name": "prune_weak_fallback",
+          "type": "tinyint",
+          "nullable": true,
+          "key": "",
+          "comment": "弱信号回退：1=题干与候选标题零词面重合回退全量，0=正常剪枝，NULL=未启用剪枝\r"
+        },
+        {
+          "name": "prune_reserved_old",
+          "type": "tinyint",
+          "nullable": true,
+          "key": "",
+          "comment": "keep 保位：1=老节点/老 L2 被强制保留槽位，0=已在名单内或无老节点，NULL=未启用剪枝\r"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "idx_kfll_batch",
+          "unique": false,
+          "columns": [
+            "batch_no\r"
+          ]
+        },
+        {
+          "name": "PRIMARY",
+          "unique": true,
+          "columns": [
+            "id\r"
+          ]
+        }
+      ]
+    },
+    "exam_knowledge_rate": {
+      "columns": [
+        {
+          "name": "id",
+          "type": "int",
+          "nullable": false,
+          "key": "PRI",
+          "comment": "\r"
+        },
+        {
+          "name": "course_id",
+          "type": "int",
+          "nullable": true,
+          "key": "",
+          "comment": "科目ID → exam_course.id\r"
+        },
+        {
+          "name": "type",
+          "type": "int",
+          "nullable": true,
+          "key": "",
+          "comment": "类型\r"
+        },
+        {
+          "name": "is_standard",
+          "type": "int",
+          "nullable": true,
+          "key": "",
+          "comment": "是否标准比重: 0=否, 1=是\r"
+        },
+        {
+          "name": "title",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "",
+          "comment": "标题\r"
+        },
+        {
+          "name": "sort_number",
+          "type": "int",
+          "nullable": true,
+          "key": "",
+          "comment": "排序号(越小越靠前)\r"
+        },
+        {
+          "name": "comments",
+          "type": "varchar(500)",
+          "nullable": true,
+          "key": "",
+          "comment": "备注\r"
+        },
+        {
+          "name": "status",
+          "type": "int",
+          "nullable": true,
+          "key": "",
+          "comment": "状态: 0=冻结, 1=正常\r"
+        },
+        {
+          "name": "user_id",
+          "type": "int",
+          "nullable": true,
+          "key": "",
+          "comment": "创建人\r"
+        },
+        {
+          "name": "deleted",
+          "type": "int",
+          "nullable": true,
+          "key": "",
+          "comment": "逻辑删除: 0=否, 1=是\r"
+        },
+        {
+          "name": "tenant_id",
+          "type": "int",
+          "nullable": false,
+          "key": "MUL",
+          "comment": "租户ID\r"
+        },
+        {
+          "name": "create_time",
+          "type": "datetime",
+          "nullable": true,
+          "key": "",
+          "comment": "创建时间\r"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "idx_knowledge_rate_course",
+          "unique": false,
+          "columns": [
+            "tenant_id\r",
+            "course_id\r"
+          ]
+        },
+        {
+          "name": "PRIMARY",
+          "unique": true,
+          "columns": [
+            "id\r"
+          ]
+        }
+      ]
+    },
+    "exam_knowledge_rate_detail": {
+      "columns": [
+        {
+          "name": "id",
+          "type": "int",
+          "nullable": false,
+          "key": "PRI",
+          "comment": "\r"
+        },
+        {
+          "name": "knowledge_rate_id",
+          "type": "int",
+          "nullable": false,
+          "key": "",
+          "comment": "比重ID → exam_knowledge_rate.id\r"
+        },
+        {
+          "name": "knowledge_id",
+          "type": "int",
+          "nullable": true,
+          "key": "",
+          "comment": "知识点ID → exam_knowledge_structure.id\r"
+        },
+        {
+          "name": "rate",
+          "type": "int",
+          "nullable": true,
+          "key": "",
+          "comment": "比重百分比(%)\r"
+        },
+        {
+          "name": "user_id",
+          "type": "int",
+          "nullable": true,
+          "key": "",
+          "comment": "创建人\r"
+        },
+        {
+          "name": "sort_number",
+          "type": "int",
+          "nullable": true,
+          "key": "",
+          "comment": "排序号\r"
+        },
+        {
+          "name": "comments",
+          "type": "varchar(500)",
+          "nullable": true,
+          "key": "",
+          "comment": "备注\r"
+        },
+        {
+          "name": "status",
+          "type": "int",
+          "nullable": true,
+          "key": "",
+          "comment": "状态: 0=冻结, 1=正常\r"
+        },
+        {
+          "name": "deleted",
+          "type": "int",
+          "nullable": true,
+          "key": "",
+          "comment": "逻辑删除: 0=否, 1=是\r"
+        },
+        {
+          "name": "tenant_id",
+          "type": "int",
+          "nullable": false,
+          "key": "MUL",
+          "comment": "租户ID\r"
+        },
+        {
+          "name": "create_time",
+          "type": "datetime",
+          "nullable": true,
+          "key": "",
+          "comment": "创建时间\r"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "idx_rate_detail_rate",
+          "unique": false,
+          "columns": [
+            "tenant_id\r",
+            "knowledge_rate_id\r"
+          ]
+        },
+        {
+          "name": "PRIMARY",
+          "unique": true,
+          "columns": [
+            "id\r"
+          ]
+        }
+      ]
+    },
+    "exam_knowledge_structure": {
+      "columns": [
+        {
+          "name": "id",
+          "type": "int",
+          "nullable": false,
+          "key": "PRI",
+          "comment": "\r"
+        },
+        {
+          "name": "type",
+          "type": "int",
+          "nullable": false,
+          "key": "",
+          "comment": "类型: 0=理论, 1=实操\r"
+        },
+        {
+          "name": "use_type",
+          "type": "int",
+          "nullable": true,
+          "key": "",
+          "comment": "用途类型\r"
+        },
+        {
+          "name": "course_id",
+          "type": "int",
+          "nullable": true,
+          "key": "",
+          "comment": "科目ID → exam_course.id\r"
+        },
+        {
+          "name": "parent_id",
+          "type": "int",
+          "nullable": true,
+          "key": "",
+          "comment": "父级ID, 0=根\r"
+        },
+        {
+          "name": "cover",
+          "type": "varchar(500)",
+          "nullable": true,
+          "key": "",
+          "comment": "封面\r"
+        },
+        {
+          "name": "intro",
+          "type": "varchar(1000)",
+          "nullable": true,
+          "key": "",
+          "comment": "简介\r"
+        },
+        {
+          "name": "title",
+          "type": "varchar(255)",
+          "nullable": false,
+          "key": "",
+          "comment": "名称\r"
+        },
+        {
+          "name": "series_no",
+          "type": "varchar(200)",
+          "nullable": true,
+          "key": "",
+          "comment": "编号\r"
+        },
+        {
+          "name": "level",
+          "type": "int",
+          "nullable": false,
+          "key": "",
+          "comment": "层级: 0=一级鉴定范围, 1=二级, 2=三级, 3=鉴定点\r"
+        },
+        {
+          "name": "important",
+          "type": "varchar(10)",
+          "nullable": true,
+          "key": "",
+          "comment": "重要程度\r"
+        },
+        {
+          "name": "user_id",
+          "type": "int",
+          "nullable": true,
+          "key": "",
+          "comment": "创建人ID\r"
+        },
+        {
+          "name": "status",
+          "type": "int",
+          "nullable": false,
+          "key": "",
+          "comment": "状态: 0=停用, 1=启用\r"
+        },
+        {
+          "name": "sort_number",
+          "type": "int",
+          "nullable": false,
+          "key": "",
+          "comment": "排序号\r"
+        },
+        {
+          "name": "tenant_id",
+          "type": "int",
+          "nullable": false,
+          "key": "MUL",
+          "comment": "租户ID\r"
+        },
+        {
+          "name": "org_id",
+          "type": "int",
+          "nullable": true,
+          "key": "",
+          "comment": "组织ID\r"
+        },
+        {
+          "name": "org_name",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "",
+          "comment": "组织名称\r"
+        },
+        {
+          "name": "amount",
+          "type": "int",
+          "nullable": true,
+          "key": "",
+          "comment": "关联试题数量\r"
+        },
+        {
+          "name": "create_time",
+          "type": "datetime",
+          "nullable": true,
+          "key": "",
+          "comment": "创建时间\r"
+        },
+        {
+          "name": "deleted",
+          "type": "int",
+          "nullable": false,
+          "key": "",
+          "comment": "逻辑删除\r"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "idx_ks_course",
+          "unique": false,
+          "columns": [
+            "tenant_id\r",
+            "course_id\r"
+          ]
+        },
+        {
+          "name": "idx_ks_level",
+          "unique": false,
+          "columns": [
+            "tenant_id\r",
+            "course_id\r",
+            "level\r"
+          ]
+        },
+        {
+          "name": "idx_ks_parent",
+          "unique": false,
+          "columns": [
+            "tenant_id\r",
+            "parent_id\r"
+          ]
+        },
+        {
+          "name": "idx_ks_tenant",
+          "unique": false,
+          "columns": [
+            "tenant_id\r"
+          ]
+        },
+        {
+          "name": "idx_ks_tenant_status_course",
+          "unique": false,
+          "columns": [
+            "tenant_id\r",
+            "status\r",
+            "course_id\r"
+          ]
+        },
+        {
+          "name": "PRIMARY",
+          "unique": true,
+          "columns": [
+            "id\r"
+          ]
+        }
+      ]
+    },
+    "exam_make_exam_plan": {
+      "columns": [
+        {
+          "name": "id",
+          "type": "int",
+          "nullable": false,
+          "key": "PRI",
+          "comment": "\r"
+        },
+        {
+          "name": "course_id",
+          "type": "int",
+          "nullable": true,
+          "key": "",
+          "comment": "科目ID → exam_course.id\r"
+        },
+        {
+          "name": "rate_id",
+          "type": "int",
+          "nullable": true,
+          "key": "",
+          "comment": "比重ID → exam_knowledge_rate.id\r"
+        },
+        {
+          "name": "type",
+          "type": "int",
+          "nullable": true,
+          "key": "",
+          "comment": "类型\r"
+        },
+        {
+          "name": "exam_type",
+          "type": "int",
+          "nullable": false,
+          "key": "",
+          "comment": "考试类型: 0=理论, 1=实操\r"
+        },
+        {
+          "name": "title",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "",
+          "comment": "名称\r"
+        },
+        {
+          "name": "time",
+          "type": "int",
+          "nullable": true,
+          "key": "",
+          "comment": "考试时长(分钟)\r"
+        },
+        {
+          "name": "is_computer",
+          "type": "int",
+          "nullable": true,
+          "key": "",
+          "comment": "是否机考: 0=否, 1=是\r"
+        },
+        {
+          "name": "is_print",
+          "type": "int",
+          "nullable": true,
+          "key": "",
+          "comment": "是否打印: 0=否, 1=是\r"
+        },
+        {
+          "name": "open_rate",
+          "type": "int",
+          "nullable": true,
+          "key": "",
+          "comment": "公开比例(%)\r"
+        },
+        {
+          "name": "total_point",
+          "type": "int",
+          "nullable": true,
+          "key": "",
+          "comment": "总分值\r"
+        },
+        {
+          "name": "pass_point",
+          "type": "int",
+          "nullable": true,
+          "key": "",
+          "comment": "及格分值\r"
+        },
+        {
+          "name": "comments",
+          "type": "varchar(500)",
+          "nullable": true,
+          "key": "",
+          "comment": "备注\r"
+        },
+        {
+          "name": "user_id",
+          "type": "int",
+          "nullable": true,
+          "key": "",
+          "comment": "创建人\r"
+        },
+        {
+          "name": "status",
+          "type": "int",
+          "nullable": true,
+          "key": "",
+          "comment": "状态: 0=无效, 1=有效\r"
+        },
+        {
+          "name": "is_all",
+          "type": "int",
+          "nullable": true,
+          "key": "",
+          "comment": "是否选择全部题目: 0=否, 1=是\r"
+        },
+        {
+          "name": "sort_number",
+          "type": "int",
+          "nullable": true,
+          "key": "",
+          "comment": "排序号\r"
+        },
+        {
+          "name": "tenant_id",
+          "type": "int",
+          "nullable": false,
+          "key": "MUL",
+          "comment": "租户ID\r"
+        },
+        {
+          "name": "create_time",
+          "type": "datetime",
+          "nullable": true,
+          "key": "",
+          "comment": "创建时间\r"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "idx_make_plan_course",
+          "unique": false,
+          "columns": [
+            "tenant_id\r",
+            "course_id\r"
+          ]
+        },
+        {
+          "name": "idx_make_plan_status",
+          "unique": false,
+          "columns": [
+            "tenant_id\r",
+            "status\r"
+          ]
+        },
+        {
+          "name": "PRIMARY",
+          "unique": true,
+          "columns": [
+            "id\r"
+          ]
+        }
+      ]
+    },
+    "exam_make_exam_plan_detail": {
+      "columns": [
+        {
+          "name": "id",
+          "type": "int",
+          "nullable": false,
+          "key": "PRI",
+          "comment": "\r"
+        },
+        {
+          "name": "make_id",
+          "type": "int",
+          "nullable": false,
+          "key": "",
+          "comment": "组卷计划ID → exam_make_exam_plan.id\r"
+        },
+        {
+          "name": "course_id",
+          "type": "int",
+          "nullable": true,
+          "key": "",
+          "comment": "科目ID\r"
+        },
+        {
+          "name": "type",
+          "type": "varchar(50)",
+          "nullable": true,
+          "key": "",
+          "comment": "试题类型: single/multi/judge/fill/essay/short/explain/cal/simple_fill/answer/analysis\r"
+        },
+        {
+          "name": "num",
+          "type": "int",
+          "nullable": true,
+          "key": "",
+          "comment": "数量\r"
+        },
+        {
+          "name": "point",
+          "type": "decimal(10,2)",
+          "nullable": true,
+          "key": "",
+          "comment": "每题分值\r"
+        },
+        {
+          "name": "start_point",
+          "type": "int",
+          "nullable": true,
+          "key": "",
+          "comment": "参考分值(起)\r"
+        },
+        {
+          "name": "end_point",
+          "type": "int",
+          "nullable": true,
+          "key": "",
+          "comment": "参考分值(止)\r"
+        },
+        {
+          "name": "difficulty_start",
+          "type": "int",
+          "nullable": true,
+          "key": "",
+          "comment": "难度(起): 0=易~4=难\r"
+        },
+        {
+          "name": "difficulty_end",
+          "type": "int",
+          "nullable": true,
+          "key": "",
+          "comment": "难度(止): 0=易~4=难\r"
+        },
+        {
+          "name": "total_point",
+          "type": "decimal(10,2)",
+          "nullable": true,
+          "key": "",
+          "comment": "总分值 = num × point\r"
+        },
+        {
+          "name": "user_id",
+          "type": "int",
+          "nullable": true,
+          "key": "",
+          "comment": "创建人\r"
+        },
+        {
+          "name": "status",
+          "type": "int",
+          "nullable": true,
+          "key": "",
+          "comment": "状态: 0=无效, 1=有效\r"
+        },
+        {
+          "name": "sort_number",
+          "type": "int",
+          "nullable": true,
+          "key": "",
+          "comment": "排序号\r"
+        },
+        {
+          "name": "tenant_id",
+          "type": "int",
+          "nullable": false,
+          "key": "MUL",
+          "comment": "租户ID\r"
+        },
+        {
+          "name": "create_time",
+          "type": "datetime",
+          "nullable": true,
+          "key": "",
+          "comment": "创建时间\r"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "idx_plan_detail_make",
+          "unique": false,
+          "columns": [
+            "tenant_id\r",
+            "make_id\r"
+          ]
+        },
+        {
+          "name": "PRIMARY",
+          "unique": true,
+          "columns": [
+            "id\r"
+          ]
+        }
+      ]
+    },
+    "exam_mock_paper": {
+      "columns": [
+        {
+          "name": "id",
+          "type": "int",
+          "nullable": false,
+          "key": "PRI",
+          "comment": "\r"
+        },
+        {
+          "name": "user_id",
+          "type": "bigint",
+          "nullable": false,
+          "key": "",
+          "comment": "所属学员\r"
+        },
+        {
+          "name": "tenant_id",
+          "type": "bigint",
+          "nullable": false,
+          "key": "MUL",
+          "comment": "\r"
+        },
+        {
+          "name": "class_id",
+          "type": "bigint",
+          "nullable": true,
+          "key": "",
+          "comment": "刷题班级\r"
+        },
+        {
+          "name": "people_id",
+          "type": "bigint",
+          "nullable": true,
+          "key": "",
+          "comment": "花名册学员\r"
+        },
+        {
+          "name": "course_id",
+          "type": "int",
+          "nullable": true,
+          "key": "",
+          "comment": "主科目\r"
+        },
+        {
+          "name": "title",
+          "type": "varchar(128)",
+          "nullable": false,
+          "key": "",
+          "comment": "试卷标题\r"
+        },
+        {
+          "name": "question_ids",
+          "type": "varchar(2000)",
+          "nullable": false,
+          "key": "",
+          "comment": "题目 id 列表(英文逗号分隔)\r"
+        },
+        {
+          "name": "total_count",
+          "type": "int",
+          "nullable": false,
+          "key": "",
+          "comment": "题目数\r"
+        },
+        {
+          "name": "total_point",
+          "type": "int",
+          "nullable": false,
+          "key": "",
+          "comment": "总分\r"
+        },
+        {
+          "name": "pass_point",
+          "type": "int",
+          "nullable": false,
+          "key": "",
+          "comment": "及格分\r"
+        },
+        {
+          "name": "time_limit",
+          "type": "int",
+          "nullable": false,
+          "key": "",
+          "comment": "限时(分钟)\r"
+        },
+        {
+          "name": "mode",
+          "type": "varchar(16)",
+          "nullable": false,
+          "key": "",
+          "comment": "mock=模拟考 wrong=错题重练 random=随机练习\r"
+        },
+        {
+          "name": "score",
+          "type": "int",
+          "nullable": false,
+          "key": "",
+          "comment": "本次得分(交卷后填)\r"
+        },
+        {
+          "name": "right_count",
+          "type": "int",
+          "nullable": false,
+          "key": "",
+          "comment": "答对题数\r"
+        },
+        {
+          "name": "status",
+          "type": "varchar(16)",
+          "nullable": false,
+          "key": "",
+          "comment": "pending=未开始 doing=答题中 done=已交卷\r"
+        },
+        {
+          "name": "create_time",
+          "type": "datetime",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "finish_time",
+          "type": "datetime",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "idx_emp_user",
+          "unique": false,
+          "columns": [
+            "tenant_id\r",
+            "user_id\r",
+            "status\r"
+          ]
+        },
+        {
+          "name": "idx_mock_paper_class_user",
+          "unique": false,
+          "columns": [
+            "tenant_id\r",
+            "class_id\r",
+            "user_id\r"
+          ]
+        },
+        {
+          "name": "PRIMARY",
+          "unique": true,
+          "columns": [
+            "id\r"
+          ]
+        }
+      ]
+    },
+    "exam_operate_detail": {
+      "columns": [
+        {
+          "name": "id",
+          "type": "int",
+          "nullable": false,
+          "key": "PRI",
+          "comment": "\r"
+        },
+        {
+          "name": "course_id",
+          "type": "int",
+          "nullable": true,
+          "key": "",
+          "comment": "科目ID\r"
+        },
+        {
+          "name": "work_type_id",
+          "type": "int",
+          "nullable": true,
+          "key": "",
+          "comment": "工种ID\r"
+        },
+        {
+          "name": "knowledge_id",
+          "type": "int",
+          "nullable": true,
+          "key": "",
+          "comment": "知识点ID\r"
+        },
+        {
+          "name": "title",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "",
+          "comment": "标题\r"
+        },
+        {
+          "name": "student_prepare",
+          "type": "text",
+          "nullable": true,
+          "key": "",
+          "comment": "考生准备\r"
+        },
+        {
+          "name": "content",
+          "type": "text",
+          "nullable": true,
+          "key": "",
+          "comment": "内容\r"
+        },
+        {
+          "name": "score",
+          "type": "decimal(10,2)",
+          "nullable": true,
+          "key": "",
+          "comment": "配分\r"
+        },
+        {
+          "name": "weight",
+          "type": "int",
+          "nullable": true,
+          "key": "",
+          "comment": "权重\r"
+        },
+        {
+          "name": "equip_prepare",
+          "type": "text",
+          "nullable": true,
+          "key": "",
+          "comment": "设备设施及准备\r"
+        },
+        {
+          "name": "exam_content",
+          "type": "text",
+          "nullable": true,
+          "key": "",
+          "comment": "考试内容\r"
+        },
+        {
+          "name": "scoring_template_json",
+          "type": "json",
+          "nullable": true,
+          "key": "",
+          "comment": "评分要素模板快照源\r"
+        },
+        {
+          "name": "user_id",
+          "type": "int",
+          "nullable": true,
+          "key": "",
+          "comment": "创建人\r"
+        },
+        {
+          "name": "status",
+          "type": "int",
+          "nullable": true,
+          "key": "",
+          "comment": "状态: 0=无效, 1=有效\r"
+        },
+        {
+          "name": "sort_number",
+          "type": "int",
+          "nullable": true,
+          "key": "",
+          "comment": "排序号\r"
+        },
+        {
+          "name": "tenant_id",
+          "type": "int",
+          "nullable": false,
+          "key": "MUL",
+          "comment": "租户ID\r"
+        },
+        {
+          "name": "create_time",
+          "type": "datetime",
+          "nullable": true,
+          "key": "",
+          "comment": "创建时间\r"
+        },
+        {
+          "name": "update_time",
+          "type": "datetime",
+          "nullable": true,
+          "key": "",
+          "comment": "修改时间\r"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "idx_operate_detail_course",
+          "unique": false,
+          "columns": [
+            "tenant_id\r",
+            "course_id\r"
+          ]
+        },
+        {
+          "name": "PRIMARY",
+          "unique": true,
+          "columns": [
+            "id\r"
+          ]
+        }
+      ]
+    },
+    "exam_operate_paper": {
+      "columns": [
+        {
+          "name": "id",
+          "type": "int",
+          "nullable": false,
+          "key": "PRI",
+          "comment": "\r"
+        },
+        {
+          "name": "make_id",
+          "type": "int",
+          "nullable": true,
+          "key": "",
+          "comment": "关联组卷计划ID\r"
+        },
+        {
+          "name": "source",
+          "type": "int",
+          "nullable": true,
+          "key": "",
+          "comment": "来源\r"
+        },
+        {
+          "name": "work_type_id",
+          "type": "int",
+          "nullable": true,
+          "key": "",
+          "comment": "工种ID\r"
+        },
+        {
+          "name": "course_id",
+          "type": "int",
+          "nullable": true,
+          "key": "",
+          "comment": "科目ID\r"
+        },
+        {
+          "name": "num",
+          "type": "int",
+          "nullable": true,
+          "key": "",
+          "comment": "总题数\r"
+        },
+        {
+          "name": "code",
+          "type": "varchar(100)",
+          "nullable": true,
+          "key": "",
+          "comment": "编号\r"
+        },
+        {
+          "name": "level",
+          "type": "varchar(50)",
+          "nullable": true,
+          "key": "",
+          "comment": "等级名(初级工/五级~首席技师)\r"
+        },
+        {
+          "name": "title",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "",
+          "comment": "名称\r"
+        },
+        {
+          "name": "time",
+          "type": "int",
+          "nullable": true,
+          "key": "",
+          "comment": "考试时间(分钟)\r"
+        },
+        {
+          "name": "total_point",
+          "type": "int",
+          "nullable": true,
+          "key": "",
+          "comment": "总分\r"
+        },
+        {
+          "name": "pass_point",
+          "type": "int",
+          "nullable": true,
+          "key": "",
+          "comment": "及格分\r"
+        },
+        {
+          "name": "comments",
+          "type": "varchar(500)",
+          "nullable": true,
+          "key": "",
+          "comment": "描述\r"
+        },
+        {
+          "name": "user_id",
+          "type": "int",
+          "nullable": true,
+          "key": "",
+          "comment": "创建人\r"
+        },
+        {
+          "name": "status",
+          "type": "int",
+          "nullable": true,
+          "key": "",
+          "comment": "状态: 0=无效, 1=有效\r"
+        },
+        {
+          "name": "sort_number",
+          "type": "int",
+          "nullable": true,
+          "key": "",
+          "comment": "排序号\r"
+        },
+        {
+          "name": "tenant_id",
+          "type": "int",
+          "nullable": false,
+          "key": "MUL",
+          "comment": "租户ID\r"
+        },
+        {
+          "name": "create_time",
+          "type": "datetime",
+          "nullable": true,
+          "key": "",
+          "comment": "创建时间\r"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "idx_operate_paper_make",
+          "unique": false,
+          "columns": [
+            "tenant_id\r",
+            "make_id\r"
+          ]
+        },
+        {
+          "name": "PRIMARY",
+          "unique": true,
+          "columns": [
+            "id\r"
+          ]
+        }
+      ]
+    },
+    "exam_operate_paper_detail": {
+      "columns": [
+        {
+          "name": "id",
+          "type": "int",
+          "nullable": false,
+          "key": "PRI",
+          "comment": "\r"
+        },
+        {
+          "name": "paper_id",
+          "type": "int",
+          "nullable": false,
+          "key": "",
+          "comment": "实操试卷ID → exam_operate_paper.id\r"
+        },
+        {
+          "name": "title",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "",
+          "comment": "标题\r"
+        },
+        {
+          "name": "student_prepare",
+          "type": "text",
+          "nullable": true,
+          "key": "",
+          "comment": "考生准备\r"
+        },
+        {
+          "name": "content",
+          "type": "text",
+          "nullable": true,
+          "key": "",
+          "comment": "内容\r"
+        },
+        {
+          "name": "score",
+          "type": "decimal(10,2)",
+          "nullable": true,
+          "key": "",
+          "comment": "配分\r"
+        },
+        {
+          "name": "weight",
+          "type": "int",
+          "nullable": false,
+          "key": "",
+          "comment": "兼容字段，实操评分固定100%且不参与计算\r"
+        },
+        {
+          "name": "equip_prepare",
+          "type": "text",
+          "nullable": true,
+          "key": "",
+          "comment": "设备设施及准备\r"
+        },
+        {
+          "name": "exam_content",
+          "type": "text",
+          "nullable": true,
+          "key": "",
+          "comment": "考试内容\r"
+        },
+        {
+          "name": "scoring_template_json",
+          "type": "json",
+          "nullable": true,
+          "key": "",
+          "comment": "评分要素模板快照\r"
+        },
+        {
+          "name": "user_id",
+          "type": "int",
+          "nullable": true,
+          "key": "",
+          "comment": "创建人\r"
+        },
+        {
+          "name": "status",
+          "type": "int",
+          "nullable": true,
+          "key": "",
+          "comment": "状态: 0=无效, 1=有效\r"
+        },
+        {
+          "name": "sort_number",
+          "type": "int",
+          "nullable": true,
+          "key": "",
+          "comment": "排序号\r"
+        },
+        {
+          "name": "tenant_id",
+          "type": "int",
+          "nullable": false,
+          "key": "MUL",
+          "comment": "租户ID\r"
+        },
+        {
+          "name": "create_time",
+          "type": "datetime",
+          "nullable": true,
+          "key": "",
+          "comment": "创建时间\r"
+        },
+        {
+          "name": "update_time",
+          "type": "datetime",
+          "nullable": true,
+          "key": "",
+          "comment": "修改时间\r"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "idx_operate_detail_paper",
+          "unique": false,
+          "columns": [
+            "tenant_id\r",
+            "paper_id\r"
+          ]
+        },
+        {
+          "name": "PRIMARY",
+          "unique": true,
+          "columns": [
+            "id\r"
+          ]
+        }
+      ]
+    },
+    "exam_paper": {
+      "columns": [
+        {
+          "name": "id",
+          "type": "int",
+          "nullable": false,
+          "key": "PRI",
+          "comment": "\r"
+        },
+        {
+          "name": "make_id",
+          "type": "int",
+          "nullable": true,
+          "key": "",
+          "comment": "关联组卷计划ID → exam_make_exam_plan.id\r"
+        },
+        {
+          "name": "source",
+          "type": "int",
+          "nullable": true,
+          "key": "",
+          "comment": "来源: 0=默认\r"
+        },
+        {
+          "name": "type",
+          "type": "int",
+          "nullable": true,
+          "key": "",
+          "comment": "类型\r"
+        },
+        {
+          "name": "code",
+          "type": "varchar(100)",
+          "nullable": true,
+          "key": "",
+          "comment": "试卷编号\r"
+        },
+        {
+          "name": "title",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "",
+          "comment": "名称\r"
+        },
+        {
+          "name": "time",
+          "type": "int",
+          "nullable": true,
+          "key": "",
+          "comment": "考试时间(分钟)\r"
+        },
+        {
+          "name": "total_point",
+          "type": "int",
+          "nullable": true,
+          "key": "",
+          "comment": "总分\r"
+        },
+        {
+          "name": "pass_point",
+          "type": "int",
+          "nullable": true,
+          "key": "",
+          "comment": "及格分\r"
+        },
+        {
+          "name": "is_computer",
+          "type": "int",
+          "nullable": true,
+          "key": "",
+          "comment": "是否机考: 0=否, 1=是\r"
+        },
+        {
+          "name": "is_print",
+          "type": "int",
+          "nullable": true,
+          "key": "",
+          "comment": "是否打印: 0=否, 1=是\r"
+        },
+        {
+          "name": "comments",
+          "type": "varchar(500)",
+          "nullable": true,
+          "key": "",
+          "comment": "描述\r"
+        },
+        {
+          "name": "user_id",
+          "type": "int",
+          "nullable": true,
+          "key": "",
+          "comment": "创建人\r"
+        },
+        {
+          "name": "status",
+          "type": "int",
+          "nullable": true,
+          "key": "",
+          "comment": "状态: 0=无效, 1=有效\r"
+        },
+        {
+          "name": "sort_number",
+          "type": "int",
+          "nullable": true,
+          "key": "",
+          "comment": "排序号\r"
+        },
+        {
+          "name": "tenant_id",
+          "type": "int",
+          "nullable": false,
+          "key": "MUL",
+          "comment": "租户ID\r"
+        },
+        {
+          "name": "create_time",
+          "type": "datetime",
+          "nullable": true,
+          "key": "",
+          "comment": "创建时间\r"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "idx_paper_make",
+          "unique": false,
+          "columns": [
+            "tenant_id\r",
+            "make_id\r"
+          ]
+        },
+        {
+          "name": "idx_paper_status",
+          "unique": false,
+          "columns": [
+            "tenant_id\r",
+            "status\r"
+          ]
+        },
+        {
+          "name": "PRIMARY",
+          "unique": true,
+          "columns": [
+            "id\r"
+          ]
+        }
+      ]
+    },
+    "exam_paper_detail": {
+      "columns": [
+        {
+          "name": "id",
+          "type": "int",
+          "nullable": false,
+          "key": "PRI",
+          "comment": "\r"
+        },
+        {
+          "name": "paper_id",
+          "type": "int",
+          "nullable": false,
+          "key": "",
+          "comment": "试卷ID → exam_paper.id\r"
+        },
+        {
+          "name": "exam_id",
+          "type": "int",
+          "nullable": true,
+          "key": "",
+          "comment": "题库试题ID → exam_exam_detail.id\r"
+        },
+        {
+          "name": "type",
+          "type": "varchar(50)",
+          "nullable": true,
+          "key": "",
+          "comment": "试题类型\r"
+        },
+        {
+          "name": "diff",
+          "type": "int",
+          "nullable": true,
+          "key": "",
+          "comment": "难度: 0=易~4=难\r"
+        },
+        {
+          "name": "content",
+          "type": "text",
+          "nullable": true,
+          "key": "",
+          "comment": "题干\r"
+        },
+        {
+          "name": "answer",
+          "type": "text",
+          "nullable": true,
+          "key": "",
+          "comment": "答案\r"
+        },
+        {
+          "name": "score",
+          "type": "decimal(10,2)",
+          "nullable": true,
+          "key": "",
+          "comment": "分值\r"
+        },
+        {
+          "name": "resolve",
+          "type": "text",
+          "nullable": true,
+          "key": "",
+          "comment": "解析\r"
+        },
+        {
+          "name": "status",
+          "type": "int",
+          "nullable": true,
+          "key": "",
+          "comment": "状态: 0=无效, 1=有效\r"
+        },
+        {
+          "name": "sort_number",
+          "type": "int",
+          "nullable": true,
+          "key": "",
+          "comment": "排序号\r"
+        },
+        {
+          "name": "tenant_id",
+          "type": "int",
+          "nullable": false,
+          "key": "MUL",
+          "comment": "租户ID\r"
+        },
+        {
+          "name": "create_time",
+          "type": "datetime",
+          "nullable": true,
+          "key": "",
+          "comment": "创建时间\r"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "idx_paper_detail_paper",
+          "unique": false,
+          "columns": [
+            "tenant_id\r",
+            "paper_id\r"
+          ]
+        },
+        {
+          "name": "PRIMARY",
+          "unique": true,
+          "columns": [
+            "id\r"
+          ]
+        }
+      ]
+    },
+    "exam_result": {
+      "columns": [
+        {
+          "name": "id",
+          "type": "bigint",
+          "nullable": false,
+          "key": "PRI",
+          "comment": "\r"
+        },
+        {
+          "name": "type",
+          "type": "varchar(50)",
+          "nullable": false,
+          "key": "",
+          "comment": "类型\r"
+        },
+        {
+          "name": "exam_plan_id",
+          "type": "bigint",
+          "nullable": true,
+          "key": "",
+          "comment": "考试计划ID\r"
+        },
+        {
+          "name": "paper_id",
+          "type": "bigint",
+          "nullable": true,
+          "key": "",
+          "comment": "试卷ID\r"
+        },
+        {
+          "name": "detail_id",
+          "type": "bigint",
+          "nullable": true,
+          "key": "",
+          "comment": "详情ID\r"
+        },
+        {
+          "name": "get_score",
+          "type": "decimal(10,2)",
+          "nullable": true,
+          "key": "",
+          "comment": "得分\r"
+        },
+        {
+          "name": "exam_type",
+          "type": "int",
+          "nullable": true,
+          "key": "",
+          "comment": "考试类型\r"
+        },
+        {
+          "name": "exam_id",
+          "type": "bigint",
+          "nullable": true,
+          "key": "MUL",
+          "comment": "考试ID\r"
+        },
+        {
+          "name": "user_id",
+          "type": "bigint",
+          "nullable": true,
+          "key": "MUL",
+          "comment": "用户ID\r"
+        },
+        {
+          "name": "platform_user_id",
+          "type": "bigint",
+          "nullable": true,
+          "key": "",
+          "comment": "平台用户ID\r"
+        },
+        {
+          "name": "user_answer",
+          "type": "text",
+          "nullable": false,
+          "key": "",
+          "comment": "用户答案\r"
+        },
+        {
+          "name": "sort_number",
+          "type": "int",
+          "nullable": true,
+          "key": "",
+          "comment": "排序号\r"
+        },
+        {
+          "name": "tenant_id",
+          "type": "bigint",
+          "nullable": false,
+          "key": "MUL",
+          "comment": "租户ID\r"
+        },
+        {
+          "name": "create_time",
+          "type": "datetime",
+          "nullable": true,
+          "key": "",
+          "comment": "创建时间\r"
+        },
+        {
+          "name": "deleted",
+          "type": "tinyint",
+          "nullable": false,
+          "key": "",
+          "comment": "逻辑删除\r"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "idx_exam_result_exam",
+          "unique": false,
+          "columns": [
+            "exam_id\r"
+          ]
+        },
+        {
+          "name": "idx_exam_result_tenant",
+          "unique": false,
+          "columns": [
+            "tenant_id\r"
+          ]
+        },
+        {
+          "name": "idx_exam_result_user",
+          "unique": false,
+          "columns": [
+            "user_id\r"
+          ]
+        },
+        {
+          "name": "PRIMARY",
+          "unique": true,
+          "columns": [
+            "id\r"
+          ]
+        }
+      ]
+    },
+    "exam_session": {
+      "columns": [
+        {
+          "name": "id",
+          "type": "bigint",
+          "nullable": false,
+          "key": "PRI",
+          "comment": "\r"
+        },
+        {
+          "name": "tenant_id",
+          "type": "bigint",
+          "nullable": false,
+          "key": "MUL",
+          "comment": "\r"
+        },
+        {
+          "name": "course_id",
+          "type": "bigint",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "paper_id",
+          "type": "bigint",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "title",
+          "type": "varchar(128)",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "start_at",
+          "type": "datetime",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "end_at",
+          "type": "datetime",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "status",
+          "type": "varchar(32)",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "allow_retake",
+          "type": "tinyint",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "created_at",
+          "type": "datetime",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "updated_at",
+          "type": "datetime",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "created_by",
+          "type": "bigint",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "updated_by",
+          "type": "bigint",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "deleted",
+          "type": "tinyint",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "idx_exam_session_status",
+          "unique": false,
+          "columns": [
+            "tenant_id\r",
+            "status\r"
+          ]
+        },
+        {
+          "name": "idx_exam_session_time",
+          "unique": false,
+          "columns": [
+            "tenant_id\r",
+            "start_at\r",
+            "end_at\r"
+          ]
+        },
+        {
+          "name": "PRIMARY",
+          "unique": true,
+          "columns": [
+            "id\r"
+          ]
+        }
+      ]
+    },
+    "exam_skill_blueprint": {
+      "columns": [
+        {
+          "name": "id",
+          "type": "bigint",
+          "nullable": false,
+          "key": "PRI",
+          "comment": "主键（雪花 ID）\r"
+        },
+        {
+          "name": "tenant_id",
+          "type": "bigint",
+          "nullable": false,
+          "key": "MUL",
+          "comment": "租户 ID\r"
+        },
+        {
+          "name": "work_type_id",
+          "type": "int",
+          "nullable": false,
+          "key": "",
+          "comment": "工种 ID exam_work_type.id\r"
+        },
+        {
+          "name": "level",
+          "type": "tinyint",
+          "nullable": false,
+          "key": "",
+          "comment": "等级 1=一级/高级技师 … 5=五级/初级工（数字=国标级别数，与 task_examshicao.level 同口径）\r"
+        },
+        {
+          "name": "title",
+          "type": "varchar(255)",
+          "nullable": false,
+          "key": "",
+          "comment": "细目表标题，如 矿山生产集控员（二级/技师）操作技能考评要素细目表\r"
+        },
+        {
+          "name": "source_file_name",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "",
+          "comment": "上传文件名\r"
+        },
+        {
+          "name": "source_file_id",
+          "type": "bigint",
+          "nullable": true,
+          "key": "",
+          "comment": "源细目表文件 ID（sys_file.id），导入时留存，供事后下载核对\r"
+        },
+        {
+          "name": "point_count",
+          "type": "int",
+          "nullable": false,
+          "key": "",
+          "comment": "考评点数量\r"
+        },
+        {
+          "name": "xyz_ratio",
+          "type": "varchar(20)",
+          "nullable": true,
+          "key": "",
+          "comment": "考评点重要程度比例，如 18:5:0（仅统计展示，不做硬校验）\r"
+        },
+        {
+          "name": "weight_check",
+          "type": "tinyint",
+          "nullable": false,
+          "key": "",
+          "comment": "一级权重合计校验 0未通过 1通过\r"
+        },
+        {
+          "name": "check_report",
+          "type": "json",
+          "nullable": true,
+          "key": "",
+          "comment": "导入校验报告\r"
+        },
+        {
+          "name": "status",
+          "type": "varchar(32)",
+          "nullable": false,
+          "key": "",
+          "comment": "imported已导入 generating生成中 done已完成\r"
+        },
+        {
+          "name": "created_at",
+          "type": "datetime",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "updated_at",
+          "type": "datetime",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "created_by",
+          "type": "bigint",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "updated_by",
+          "type": "bigint",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "deleted",
+          "type": "tinyint",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "idx_esb_tenant",
+          "unique": false,
+          "columns": [
+            "tenant_id\r"
+          ]
+        },
+        {
+          "name": "idx_esb_work_level",
+          "unique": false,
+          "columns": [
+            "tenant_id\r",
+            "work_type_id\r",
+            "level\r"
+          ]
+        },
+        {
+          "name": "PRIMARY",
+          "unique": true,
+          "columns": [
+            "id\r"
+          ]
+        }
+      ]
+    },
+    "exam_skill_blueprint_node": {
+      "columns": [
+        {
+          "name": "id",
+          "type": "bigint",
+          "nullable": false,
+          "key": "PRI",
+          "comment": "主键（雪花 ID）\r"
+        },
+        {
+          "name": "tenant_id",
+          "type": "bigint",
+          "nullable": false,
+          "key": "MUL",
+          "comment": "租户 ID\r"
+        },
+        {
+          "name": "blueprint_id",
+          "type": "bigint",
+          "nullable": false,
+          "key": "",
+          "comment": "批次 exam_skill_blueprint.id\r"
+        },
+        {
+          "name": "parent_id",
+          "type": "bigint",
+          "nullable": false,
+          "key": "",
+          "comment": "父节点 id，0=根\r"
+        },
+        {
+          "name": "node_level",
+          "type": "tinyint",
+          "nullable": false,
+          "key": "",
+          "comment": "1一级 2二级 3考评点\r"
+        },
+        {
+          "name": "code",
+          "type": "varchar(20)",
+          "nullable": false,
+          "key": "",
+          "comment": "本级代码 A/B/001\r"
+        },
+        {
+          "name": "full_code",
+          "type": "varchar(50)",
+          "nullable": false,
+          "key": "",
+          "comment": "全路径代码，如 A-A-001（考评点，入库与导出按父链现拼）\r"
+        },
+        {
+          "name": "name",
+          "type": "varchar(500)",
+          "nullable": false,
+          "key": "",
+          "comment": "名称\r"
+        },
+        {
+          "name": "weight",
+          "type": "decimal(5,2)",
+          "nullable": true,
+          "key": "",
+          "comment": "考评比重（百分比数值 0-100，一/二级）\r"
+        },
+        {
+          "name": "select_mode",
+          "type": "varchar(20)",
+          "nullable": true,
+          "key": "",
+          "comment": "选考方式 必考/任选一项/任选两项（一/二级）\r"
+        },
+        {
+          "name": "skill_requirement",
+          "type": "text",
+          "nullable": true,
+          "key": "",
+          "comment": "技能要求编号条目原文（仅二级）\r"
+        },
+        {
+          "name": "importance",
+          "type": "char(1)",
+          "nullable": true,
+          "key": "",
+          "comment": "重要程度 X/Y/Z（仅考评点）\r"
+        },
+        {
+          "name": "question_quota",
+          "type": "tinyint",
+          "nullable": true,
+          "key": "",
+          "comment": "细目表\"试题量\"列原值（仅存档展示；生成固定按每点 5 题）\r"
+        },
+        {
+          "name": "xyz_stat",
+          "type": "varchar(20)",
+          "nullable": true,
+          "key": "",
+          "comment": "累计重要程度比例，如 6:0:0（一/二级）\r"
+        },
+        {
+          "name": "sort_order",
+          "type": "int",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "created_at",
+          "type": "datetime",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "updated_at",
+          "type": "datetime",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "created_by",
+          "type": "bigint",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "updated_by",
+          "type": "bigint",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "deleted",
+          "type": "tinyint",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "idx_esbn_blueprint",
+          "unique": false,
+          "columns": [
+            "tenant_id\r",
+            "blueprint_id\r"
+          ]
+        },
+        {
+          "name": "idx_esbn_full_code",
+          "unique": false,
+          "columns": [
+            "tenant_id\r",
+            "blueprint_id\r",
+            "full_code\r"
+          ]
+        },
+        {
+          "name": "idx_esbn_parent",
+          "unique": false,
+          "columns": [
+            "tenant_id\r",
+            "parent_id\r"
+          ]
+        },
+        {
+          "name": "PRIMARY",
+          "unique": true,
+          "columns": [
+            "id\r"
+          ]
+        }
+      ]
+    },
+    "exam_skill_gen_batch": {
+      "columns": [
+        {
+          "name": "id",
+          "type": "bigint",
+          "nullable": false,
+          "key": "PRI",
+          "comment": "主键（雪花 ID）\r"
+        },
+        {
+          "name": "tenant_id",
+          "type": "bigint",
+          "nullable": false,
+          "key": "MUL",
+          "comment": "租户 ID\r"
+        },
+        {
+          "name": "blueprint_id",
+          "type": "bigint",
+          "nullable": false,
+          "key": "",
+          "comment": "细目表批次 exam_skill_blueprint.id\r"
+        },
+        {
+          "name": "work_type_id",
+          "type": "int",
+          "nullable": true,
+          "key": "",
+          "comment": "工种 exam_work_type.id（冗余自蓝图）\r"
+        },
+        {
+          "name": "level",
+          "type": "tinyint",
+          "nullable": true,
+          "key": "",
+          "comment": "等级 1~5（冗余自蓝图）\r"
+        },
+        {
+          "name": "model_config_id",
+          "type": "bigint",
+          "nullable": false,
+          "key": "",
+          "comment": "模型配置 exam_faq_model_config.id\r"
+        },
+        {
+          "name": "model_id",
+          "type": "varchar(128)",
+          "nullable": false,
+          "key": "",
+          "comment": "模型 ID 快照\r"
+        },
+        {
+          "name": "model_code",
+          "type": "varchar(64)",
+          "nullable": true,
+          "key": "",
+          "comment": "模型编码快照\r"
+        },
+        {
+          "name": "thinking",
+          "type": "varchar(16)",
+          "nullable": true,
+          "key": "",
+          "comment": "思考模式快照 enabled/disabled\r"
+        },
+        {
+          "name": "reasoning_effort",
+          "type": "varchar(8)",
+          "nullable": true,
+          "key": "",
+          "comment": "推理强度快照 low/high/max\r"
+        },
+        {
+          "name": "quota_config",
+          "type": "json",
+          "nullable": false,
+          "key": "",
+          "comment": "题量配置（一期固定 {\"perPoint\":5}）\r"
+        },
+        {
+          "name": "status",
+          "type": "varchar(32)",
+          "nullable": false,
+          "key": "",
+          "comment": "pending/running/paused/done/failed\r"
+        },
+        {
+          "name": "total_points",
+          "type": "int",
+          "nullable": false,
+          "key": "",
+          "comment": "考评点总数\r"
+        },
+        {
+          "name": "done_points",
+          "type": "int",
+          "nullable": false,
+          "key": "",
+          "comment": "已完成考评点数\r"
+        },
+        {
+          "name": "failed_points",
+          "type": "int",
+          "nullable": false,
+          "key": "",
+          "comment": "失败考评点数\r"
+        },
+        {
+          "name": "total_questions",
+          "type": "int",
+          "nullable": false,
+          "key": "",
+          "comment": "已生成试题数\r"
+        },
+        {
+          "name": "run_id",
+          "type": "bigint",
+          "nullable": true,
+          "key": "",
+          "comment": "编排独占权：每次编排生成新值，逐块校验一致才继续派发\r"
+        },
+        {
+          "name": "token_usage",
+          "type": "bigint",
+          "nullable": false,
+          "key": "",
+          "comment": "token 用量累计\r"
+        },
+        {
+          "name": "prompt_tokens",
+          "type": "bigint",
+          "nullable": false,
+          "key": "",
+          "comment": "prompt token 累计\r"
+        },
+        {
+          "name": "completion_tokens",
+          "type": "bigint",
+          "nullable": false,
+          "key": "",
+          "comment": "completion token 累计\r"
+        },
+        {
+          "name": "cached_tokens",
+          "type": "bigint",
+          "nullable": false,
+          "key": "",
+          "comment": "缓存命中 token 累计\r"
+        },
+        {
+          "name": "prompt_digest",
+          "type": "varchar(200)",
+          "nullable": true,
+          "key": "",
+          "comment": "prompt 摘要\r"
+        },
+        {
+          "name": "fail_reason",
+          "type": "varchar(500)",
+          "nullable": true,
+          "key": "",
+          "comment": "失败原因\r"
+        },
+        {
+          "name": "started_at",
+          "type": "datetime",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "finished_at",
+          "type": "datetime",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "created_at",
+          "type": "datetime",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "updated_at",
+          "type": "datetime",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "created_by",
+          "type": "bigint",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "updated_by",
+          "type": "bigint",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "deleted",
+          "type": "tinyint",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "idx_esgb_blueprint",
+          "unique": false,
+          "columns": [
+            "tenant_id\r",
+            "blueprint_id\r"
+          ]
+        },
+        {
+          "name": "idx_esgb_status",
+          "unique": false,
+          "columns": [
+            "tenant_id\r",
+            "status\r"
+          ]
+        },
+        {
+          "name": "idx_esgb_tenant",
+          "unique": false,
+          "columns": [
+            "tenant_id\r"
+          ]
+        },
+        {
+          "name": "PRIMARY",
+          "unique": true,
+          "columns": [
+            "id\r"
+          ]
+        }
+      ]
+    },
+    "exam_skill_gen_draft": {
+      "columns": [
+        {
+          "name": "id",
+          "type": "bigint",
+          "nullable": false,
+          "key": "PRI",
+          "comment": "主键（雪花 ID）\r"
+        },
+        {
+          "name": "tenant_id",
+          "type": "bigint",
+          "nullable": false,
+          "key": "MUL",
+          "comment": "租户 ID\r"
+        },
+        {
+          "name": "batch_id",
+          "type": "bigint",
+          "nullable": false,
+          "key": "",
+          "comment": "生成批次 exam_skill_gen_batch.id\r"
+        },
+        {
+          "name": "blueprint_id",
+          "type": "bigint",
+          "nullable": false,
+          "key": "",
+          "comment": "细目表批次 exam_skill_blueprint.id\r"
+        },
+        {
+          "name": "node_id",
+          "type": "bigint",
+          "nullable": false,
+          "key": "",
+          "comment": "考评点 exam_skill_blueprint_node.id\r"
+        },
+        {
+          "name": "question_name",
+          "type": "varchar(300)",
+          "nullable": false,
+          "key": "",
+          "comment": "试题名称\r"
+        },
+        {
+          "name": "score",
+          "type": "decimal(5,1)",
+          "nullable": false,
+          "key": "",
+          "comment": "本题分值（固定 100 分制）\r"
+        },
+        {
+          "name": "weight",
+          "type": "decimal(5,2)",
+          "nullable": true,
+          "key": "",
+          "comment": "权重（%=所属二级考评范围权重）\r"
+        },
+        {
+          "name": "duration_minutes",
+          "type": "int",
+          "nullable": true,
+          "key": "",
+          "comment": "考核时间（分钟）\r"
+        },
+        {
+          "name": "exam_form",
+          "type": "varchar(20)",
+          "nullable": true,
+          "key": "",
+          "comment": "考核形式 实操/模拟操作/口试等\r"
+        },
+        {
+          "name": "site_preparation",
+          "type": "text",
+          "nullable": true,
+          "key": "",
+          "comment": "考场准备（含设备设施表 JSON 子结构）\r"
+        },
+        {
+          "name": "examinee_prepare",
+          "type": "text",
+          "nullable": true,
+          "key": "",
+          "comment": "考生准备\r"
+        },
+        {
+          "name": "requirements",
+          "type": "text",
+          "nullable": true,
+          "key": "",
+          "comment": "具体考核要求\r"
+        },
+        {
+          "name": "negatives",
+          "type": "text",
+          "nullable": true,
+          "key": "",
+          "comment": "否定项说明\r"
+        },
+        {
+          "name": "scoring_items",
+          "type": "json",
+          "nullable": true,
+          "key": "",
+          "comment": "评分标准 [{item,score,scoreDesc,maxDeduct,step}]\r"
+        },
+        {
+          "name": "difficulty",
+          "type": "tinyint",
+          "nullable": false,
+          "key": "",
+          "comment": "难度 1~5（一期不让 LLM 填，默认 3，页面可改）\r"
+        },
+        {
+          "name": "consistency",
+          "type": "tinyint",
+          "nullable": false,
+          "key": "",
+          "comment": "题目-目标一致性 1-5，默认 5\r"
+        },
+        {
+          "name": "ai_model",
+          "type": "varchar(100)",
+          "nullable": true,
+          "key": "",
+          "comment": "生成模型\r"
+        },
+        {
+          "name": "ai_thinking",
+          "type": "varchar(16)",
+          "nullable": true,
+          "key": "",
+          "comment": "生成时思考模式\r"
+        },
+        {
+          "name": "gen_duration_ms",
+          "type": "int",
+          "nullable": true,
+          "key": "",
+          "comment": "生成耗时毫秒\r"
+        },
+        {
+          "name": "review_status",
+          "type": "varchar(32)",
+          "nullable": false,
+          "key": "",
+          "comment": "draft/approved/rejected\r"
+        },
+        {
+          "name": "review_by",
+          "type": "bigint",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "review_at",
+          "type": "datetime",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "publish_status",
+          "type": "tinyint",
+          "nullable": false,
+          "key": "",
+          "comment": "0未入库 1已入库\r"
+        },
+        {
+          "name": "published_task_id",
+          "type": "bigint",
+          "nullable": true,
+          "key": "",
+          "comment": "task_examshicao.id\r"
+        },
+        {
+          "name": "published_detail_id",
+          "type": "bigint",
+          "nullable": true,
+          "key": "",
+          "comment": "task_examshicao_detail.id\r"
+        },
+        {
+          "name": "created_at",
+          "type": "datetime",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "updated_at",
+          "type": "datetime",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "created_by",
+          "type": "bigint",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "updated_by",
+          "type": "bigint",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "deleted",
+          "type": "tinyint",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "idx_esgd_batch",
+          "unique": false,
+          "columns": [
+            "tenant_id\r",
+            "batch_id\r"
+          ]
+        },
+        {
+          "name": "idx_esgd_node",
+          "unique": false,
+          "columns": [
+            "tenant_id\r",
+            "node_id\r"
+          ]
+        },
+        {
+          "name": "idx_esgd_publish",
+          "unique": false,
+          "columns": [
+            "tenant_id\r",
+            "publish_status\r"
+          ]
+        },
+        {
+          "name": "idx_esgd_review",
+          "unique": false,
+          "columns": [
+            "tenant_id\r",
+            "batch_id\r",
+            "review_status\r"
+          ]
+        },
+        {
+          "name": "idx_esgd_tenant_time",
+          "unique": false,
+          "columns": [
+            "tenant_id\r",
+            "created_at\r"
+          ]
+        },
+        {
+          "name": "PRIMARY",
+          "unique": true,
+          "columns": [
+            "id\r"
+          ]
+        }
+      ]
+    },
+    "exam_standard_node": {
+      "columns": [
+        {
+          "name": "id",
+          "type": "bigint",
+          "nullable": false,
+          "key": "PRI",
+          "comment": "雪花ID\r"
+        },
+        {
+          "name": "tenant_id",
+          "type": "bigint",
+          "nullable": false,
+          "key": "",
+          "comment": "租户ID\r"
+        },
+        {
+          "name": "task_id",
+          "type": "bigint",
+          "nullable": false,
+          "key": "MUL",
+          "comment": "所属任务\r"
+        },
+        {
+          "name": "parent_id",
+          "type": "bigint",
+          "nullable": false,
+          "key": "MUL",
+          "comment": "父节点（本表 id），0=L0 之上\r"
+        },
+        {
+          "name": "node_key",
+          "type": "varchar(64)",
+          "nullable": false,
+          "key": "",
+          "comment": "树内编码 A / A-A / A-A-A / A-A-A-001\r"
+        },
+        {
+          "name": "node_level",
+          "type": "int",
+          "nullable": false,
+          "key": "",
+          "comment": "层级 0~3\r"
+        },
+        {
+          "name": "sort_number",
+          "type": "int",
+          "nullable": false,
+          "key": "",
+          "comment": "同级排序\r"
+        },
+        {
+          "name": "dimension",
+          "type": "varchar(10)",
+          "nullable": false,
+          "key": "",
+          "comment": "theory/skill，骨架节点恒为 theory\r"
+        },
+        {
+          "name": "title_raw",
+          "type": "text",
+          "nullable": true,
+          "key": "",
+          "comment": "docx 抽取原文\r"
+        },
+        {
+          "name": "title",
+          "type": "varchar(512)",
+          "nullable": false,
+          "key": "",
+          "comment": "展示标题（含编码后缀，人工可改）\r"
+        },
+        {
+          "name": "important",
+          "type": "varchar(4)",
+          "nullable": true,
+          "key": "",
+          "comment": "重要程度 X/Y/Z（仅 L3）\r"
+        },
+        {
+          "name": "weight",
+          "type": "decimal(6,4)",
+          "nullable": true,
+          "key": "",
+          "comment": "权重（如 0.2500），L0/L1 解析期落值，L2 可人工微调\r"
+        },
+        {
+          "name": "related_knowledge",
+          "type": "text",
+          "nullable": true,
+          "key": "",
+          "comment": "L2 相关知识原文（理论细目表\"相关知识\"列）\r"
+        },
+        {
+          "name": "skill_requirement",
+          "type": "text",
+          "nullable": true,
+          "key": "",
+          "comment": "L2 技能要求原文（技能细目表\"技能要求\"列）\r"
+        },
+        {
+          "name": "source",
+          "type": "varchar(10)",
+          "nullable": false,
+          "key": "",
+          "comment": "extract/llm/manual\r"
+        },
+        {
+          "name": "review_status",
+          "type": "varchar(10)",
+          "nullable": false,
+          "key": "",
+          "comment": "pending/approved/modified\r"
+        },
+        {
+          "name": "direction",
+          "type": "varchar(64)",
+          "nullable": false,
+          "key": "",
+          "comment": "所属方向（无方向工种为\"默认\"）\r"
+        },
+        {
+          "name": "level_code",
+          "type": "int",
+          "nullable": false,
+          "key": "",
+          "comment": "所属等级 0=五级/初级 … 4=一级/高级技师\r"
+        },
+        {
+          "name": "need_llm",
+          "type": "tinyint",
+          "nullable": false,
+          "key": "",
+          "comment": "1=L2 无列举项，需 LLM 概括补叶\r"
+        },
+        {
+          "name": "deleted",
+          "type": "tinyint",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "created_by",
+          "type": "bigint",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "updated_by",
+          "type": "bigint",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "created_at",
+          "type": "datetime",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "updated_at",
+          "type": "datetime",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "idx_standard_node_parent",
+          "unique": false,
+          "columns": [
+            "parent_id\r"
+          ]
+        },
+        {
+          "name": "idx_standard_node_task",
+          "unique": false,
+          "columns": [
+            "task_id\r",
+            "deleted\r"
+          ]
+        },
+        {
+          "name": "PRIMARY",
+          "unique": true,
+          "columns": [
+            "id\r"
+          ]
+        },
+        {
+          "name": "uk_standard_node_key",
+          "unique": true,
+          "columns": [
+            "task_id\r",
+            "level_code\r",
+            "direction\r",
+            "dimension\r",
+            "node_key\r"
+          ]
+        }
+      ]
+    },
+    "exam_standard_task": {
+      "columns": [
+        {
+          "name": "id",
+          "type": "bigint",
+          "nullable": false,
+          "key": "PRI",
+          "comment": "雪花ID\r"
+        },
+        {
+          "name": "tenant_id",
+          "type": "bigint",
+          "nullable": false,
+          "key": "MUL",
+          "comment": "租户ID\r"
+        },
+        {
+          "name": "work_type_title",
+          "type": "varchar(128)",
+          "nullable": false,
+          "key": "",
+          "comment": "职业名称\r"
+        },
+        {
+          "name": "series_no",
+          "type": "varchar(64)",
+          "nullable": true,
+          "key": "",
+          "comment": "职业编码，如 6-16-01-12\r"
+        },
+        {
+          "name": "version",
+          "type": "varchar(32)",
+          "nullable": true,
+          "key": "",
+          "comment": "版本年，如 2019\r"
+        },
+        {
+          "name": "file_id",
+          "type": "bigint",
+          "nullable": true,
+          "key": "",
+          "comment": "上传 docx 文件ID（file 模块）\r"
+        },
+        {
+          "name": "file_hash",
+          "type": "varchar(64)",
+          "nullable": true,
+          "key": "",
+          "comment": "文件 SHA-256，重复上传检测\r"
+        },
+        {
+          "name": "status",
+          "type": "varchar(20)",
+          "nullable": false,
+          "key": "",
+          "comment": "uploaded/parsed/llm_running/reviewing/confirmed/exported\r"
+        },
+        {
+          "name": "directions_json",
+          "type": "text",
+          "nullable": true,
+          "key": "",
+          "comment": "方向列表 JSON，如 [\"电焊工\",\"气焊工\"]\r"
+        },
+        {
+          "name": "levels_json",
+          "type": "text",
+          "nullable": true,
+          "key": "",
+          "comment": "等级列表 JSON，如 [{\"levelCode\":0,\"levelName\":\"五级/初级工\"}]\r"
+        },
+        {
+          "name": "weights_json",
+          "type": "mediumtext",
+          "nullable": true,
+          "key": "",
+          "comment": "双权重表 JSON：{\"theory\":[{category,item,values:{\"0|电焊工\":25}}],\"skill\":[...]}\r"
+        },
+        {
+          "name": "parse_warnings",
+          "type": "text",
+          "nullable": true,
+          "key": "",
+          "comment": "解析警告（每行一条）\r"
+        },
+        {
+          "name": "llm_model_id",
+          "type": "varchar(64)",
+          "nullable": true,
+          "key": "",
+          "comment": "LLM 概括所用模型\r"
+        },
+        {
+          "name": "llm_finished_at",
+          "type": "datetime",
+          "nullable": true,
+          "key": "",
+          "comment": "LLM 概括完成时间\r"
+        },
+        {
+          "name": "deleted",
+          "type": "tinyint",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "created_by",
+          "type": "bigint",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "updated_by",
+          "type": "bigint",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "created_at",
+          "type": "datetime",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "updated_at",
+          "type": "datetime",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "direction_levels_json",
+          "type": "text",
+          "nullable": true,
+          "key": "",
+          "comment": "工种 -> 可用 levelCode 列表的 JSON，来自 docx 1.4 节\r"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "idx_standard_task_tenant",
+          "unique": false,
+          "columns": [
+            "tenant_id\r",
+            "deleted\r"
+          ]
+        },
+        {
+          "name": "PRIMARY",
+          "unique": true,
+          "columns": [
+            "id\r"
+          ]
+        }
+      ]
+    },
+    "exam_theory_blueprint": {
+      "columns": [
+        {
+          "name": "id",
+          "type": "bigint",
+          "nullable": false,
+          "key": "PRI",
+          "comment": "主键（雪花 ID）\r"
+        },
+        {
+          "name": "tenant_id",
+          "type": "bigint",
+          "nullable": false,
+          "key": "MUL",
+          "comment": "租户 ID\r"
+        },
+        {
+          "name": "work_type_id",
+          "type": "int",
+          "nullable": false,
+          "key": "",
+          "comment": "工种 ID exam_work_type.id\r"
+        },
+        {
+          "name": "level",
+          "type": "tinyint",
+          "nullable": false,
+          "key": "",
+          "comment": "等级 1初级工 2中级工 3高级工 4技师 5高级技师（与 task_exam.level 同口径）\r"
+        },
+        {
+          "name": "course_id",
+          "type": "int",
+          "nullable": true,
+          "key": "",
+          "comment": "挂接科目 exam_course.id（导入时匹配、入库时兜底创建）\r"
+        },
+        {
+          "name": "title",
+          "type": "varchar(255)",
+          "nullable": false,
+          "key": "",
+          "comment": "细目表标题，如 氧化铝制取工（五级/初级工）轻冶料浆配料工\r"
+        },
+        {
+          "name": "source_file_name",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "",
+          "comment": "上传文件名\r"
+        },
+        {
+          "name": "source_file_id",
+          "type": "bigint",
+          "nullable": true,
+          "key": "",
+          "comment": "源细目表文件ID（sys_file.id），导入时留存\r"
+        },
+        {
+          "name": "point_count",
+          "type": "int",
+          "nullable": false,
+          "key": "",
+          "comment": "考评点数量\r"
+        },
+        {
+          "name": "xyz_ratio",
+          "type": "varchar(20)",
+          "nullable": true,
+          "key": "",
+          "comment": "考评点重要程度比例，如 181:12:7\r"
+        },
+        {
+          "name": "weight_check",
+          "type": "tinyint",
+          "nullable": false,
+          "key": "",
+          "comment": "权重合计校验 0未通过 1通过\r"
+        },
+        {
+          "name": "check_report",
+          "type": "json",
+          "nullable": true,
+          "key": "",
+          "comment": "导入校验报告\r"
+        },
+        {
+          "name": "status",
+          "type": "varchar(32)",
+          "nullable": false,
+          "key": "",
+          "comment": "imported已导入 generating生成中 done已完成\r"
+        },
+        {
+          "name": "created_at",
+          "type": "datetime",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "updated_at",
+          "type": "datetime",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "created_by",
+          "type": "bigint",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "updated_by",
+          "type": "bigint",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "deleted",
+          "type": "tinyint",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "idx_etb_tenant",
+          "unique": false,
+          "columns": [
+            "tenant_id\r"
+          ]
+        },
+        {
+          "name": "idx_etb_work_level",
+          "unique": false,
+          "columns": [
+            "tenant_id\r",
+            "work_type_id\r",
+            "level\r"
+          ]
+        },
+        {
+          "name": "PRIMARY",
+          "unique": true,
+          "columns": [
+            "id\r"
+          ]
+        }
+      ]
+    },
+    "exam_theory_blueprint_node": {
+      "columns": [
+        {
+          "name": "id",
+          "type": "bigint",
+          "nullable": false,
+          "key": "PRI",
+          "comment": "主键（雪花 ID）\r"
+        },
+        {
+          "name": "tenant_id",
+          "type": "bigint",
+          "nullable": false,
+          "key": "MUL",
+          "comment": "租户 ID\r"
+        },
+        {
+          "name": "blueprint_id",
+          "type": "bigint",
+          "nullable": false,
+          "key": "",
+          "comment": "批次 exam_theory_blueprint.id\r"
+        },
+        {
+          "name": "parent_id",
+          "type": "bigint",
+          "nullable": false,
+          "key": "",
+          "comment": "父节点 id，0=根\r"
+        },
+        {
+          "name": "node_level",
+          "type": "tinyint",
+          "nullable": false,
+          "key": "",
+          "comment": "1一级 2二级 3三级 4考评点\r"
+        },
+        {
+          "name": "code",
+          "type": "varchar(20)",
+          "nullable": false,
+          "key": "",
+          "comment": "本级代码 A/B/001\r"
+        },
+        {
+          "name": "full_code",
+          "type": "varchar(50)",
+          "nullable": false,
+          "key": "",
+          "comment": "全路径代码，如 A-A-A-001（考评点）\r"
+        },
+        {
+          "name": "name",
+          "type": "varchar(500)",
+          "nullable": false,
+          "key": "",
+          "comment": "名称\r"
+        },
+        {
+          "name": "weight",
+          "type": "decimal(5,2)",
+          "nullable": true,
+          "key": "",
+          "comment": "考评权重（百分比数值 0-100）\r"
+        },
+        {
+          "name": "importance",
+          "type": "char(1)",
+          "nullable": true,
+          "key": "",
+          "comment": "重要程度 X/Y/Z（仅考评点）\r"
+        },
+        {
+          "name": "related_knowledge",
+          "type": "text",
+          "nullable": true,
+          "key": "",
+          "comment": "相关知识要求（仅三级）\r"
+        },
+        {
+          "name": "xyz_stat",
+          "type": "varchar(20)",
+          "nullable": true,
+          "key": "",
+          "comment": "累计重要程度比例，如 80:7:3（一/二/三级）\r"
+        },
+        {
+          "name": "knowledge_id",
+          "type": "bigint",
+          "nullable": true,
+          "key": "",
+          "comment": "打通回填 exam_knowledge_structure.id\r"
+        },
+        {
+          "name": "sort_order",
+          "type": "int",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "created_at",
+          "type": "datetime",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "updated_at",
+          "type": "datetime",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "created_by",
+          "type": "bigint",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "updated_by",
+          "type": "bigint",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "deleted",
+          "type": "tinyint",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "idx_etbn_blueprint",
+          "unique": false,
+          "columns": [
+            "tenant_id\r",
+            "blueprint_id\r"
+          ]
+        },
+        {
+          "name": "idx_etbn_full_code",
+          "unique": false,
+          "columns": [
+            "tenant_id\r",
+            "blueprint_id\r",
+            "full_code\r"
+          ]
+        },
+        {
+          "name": "idx_etbn_parent",
+          "unique": false,
+          "columns": [
+            "tenant_id\r",
+            "parent_id\r"
+          ]
+        },
+        {
+          "name": "PRIMARY",
+          "unique": true,
+          "columns": [
+            "id\r"
+          ]
+        }
+      ]
+    },
+    "exam_theory_gen_batch": {
+      "columns": [
+        {
+          "name": "id",
+          "type": "bigint",
+          "nullable": false,
+          "key": "PRI",
+          "comment": "主键（雪花 ID）\r"
+        },
+        {
+          "name": "tenant_id",
+          "type": "bigint",
+          "nullable": false,
+          "key": "MUL",
+          "comment": "租户 ID\r"
+        },
+        {
+          "name": "blueprint_id",
+          "type": "bigint",
+          "nullable": false,
+          "key": "",
+          "comment": "细目表批次 exam_theory_blueprint.id\r"
+        },
+        {
+          "name": "model_config_id",
+          "type": "bigint",
+          "nullable": false,
+          "key": "",
+          "comment": "模型配置 exam_faq_model_config.id\r"
+        },
+        {
+          "name": "model_id",
+          "type": "varchar(128)",
+          "nullable": false,
+          "key": "",
+          "comment": "模型 ID 快照\r"
+        },
+        {
+          "name": "model_code",
+          "type": "varchar(64)",
+          "nullable": true,
+          "key": "",
+          "comment": "模型编码快照\r"
+        },
+        {
+          "name": "thinking",
+          "type": "varchar(16)",
+          "nullable": true,
+          "key": "",
+          "comment": "思考模式快照 enabled/disabled\r"
+        },
+        {
+          "name": "reasoning_effort",
+          "type": "varchar(8)",
+          "nullable": true,
+          "key": "",
+          "comment": "推理强度快照 low/high/max\r"
+        },
+        {
+          "name": "quota_config",
+          "type": "json",
+          "nullable": false,
+          "key": "",
+          "comment": "按题型每考评点题量配置\r"
+        },
+        {
+          "name": "status",
+          "type": "varchar(32)",
+          "nullable": false,
+          "key": "",
+          "comment": "pending/running/paused/done/failed\r"
+        },
+        {
+          "name": "total_points",
+          "type": "int",
+          "nullable": false,
+          "key": "",
+          "comment": "考评点总数\r"
+        },
+        {
+          "name": "done_points",
+          "type": "int",
+          "nullable": false,
+          "key": "",
+          "comment": "已完成考评点数\r"
+        },
+        {
+          "name": "failed_points",
+          "type": "int",
+          "nullable": false,
+          "key": "",
+          "comment": "失败考评点数\r"
+        },
+        {
+          "name": "total_questions",
+          "type": "int",
+          "nullable": false,
+          "key": "",
+          "comment": "已生成试题数\r"
+        },
+        {
+          "name": "token_usage",
+          "type": "bigint",
+          "nullable": false,
+          "key": "",
+          "comment": "token 用量累计\r"
+        },
+        {
+          "name": "prompt_tokens",
+          "type": "bigint",
+          "nullable": false,
+          "key": "",
+          "comment": "prompt_tokens 累计\r"
+        },
+        {
+          "name": "completion_tokens",
+          "type": "bigint",
+          "nullable": false,
+          "key": "",
+          "comment": "completion_tokens 累计\r"
+        },
+        {
+          "name": "cached_tokens",
+          "type": "bigint",
+          "nullable": false,
+          "key": "",
+          "comment": "缓存命中 tokens（GLM cached_tokens / DeepSeek prompt_cache_hit_tokens）\r"
+        },
+        {
+          "name": "prompt_digest",
+          "type": "varchar(200)",
+          "nullable": true,
+          "key": "",
+          "comment": "prompt 摘要\r"
+        },
+        {
+          "name": "run_id",
+          "type": "bigint",
+          "nullable": true,
+          "key": "",
+          "comment": "编排独占权：每次编排（submit/resume/retry）生成新雪花ID，逐块校验一致才继续派发\r"
+        },
+        {
+          "name": "fail_reason",
+          "type": "varchar(500)",
+          "nullable": true,
+          "key": "",
+          "comment": "失败原因\r"
+        },
+        {
+          "name": "started_at",
+          "type": "datetime",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "finished_at",
+          "type": "datetime",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "created_at",
+          "type": "datetime",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "updated_at",
+          "type": "datetime",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "created_by",
+          "type": "bigint",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "updated_by",
+          "type": "bigint",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "deleted",
+          "type": "tinyint",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "work_type_id",
+          "type": "int",
+          "nullable": true,
+          "key": "",
+          "comment": "工种 exam_work_type.id（冗余自蓝图，导出命名用）\r"
+        },
+        {
+          "name": "level",
+          "type": "tinyint",
+          "nullable": true,
+          "key": "",
+          "comment": "等级 1~5（5=五级/初级工…1=一级/高级技师，冗余自蓝图）\r"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "idx_etgb_blueprint",
+          "unique": false,
+          "columns": [
+            "tenant_id\r",
+            "blueprint_id\r"
+          ]
+        },
+        {
+          "name": "idx_etgb_status",
+          "unique": false,
+          "columns": [
+            "tenant_id\r",
+            "status\r"
+          ]
+        },
+        {
+          "name": "idx_etgb_tenant",
+          "unique": false,
+          "columns": [
+            "tenant_id\r"
+          ]
+        },
+        {
+          "name": "PRIMARY",
+          "unique": true,
+          "columns": [
+            "id\r"
+          ]
+        }
+      ]
+    },
+    "exam_theory_gen_draft": {
+      "columns": [
+        {
+          "name": "id",
+          "type": "bigint",
+          "nullable": false,
+          "key": "PRI",
+          "comment": "主键（雪花 ID）\r"
+        },
+        {
+          "name": "tenant_id",
+          "type": "bigint",
+          "nullable": false,
+          "key": "MUL",
+          "comment": "租户 ID\r"
+        },
+        {
+          "name": "batch_id",
+          "type": "bigint",
+          "nullable": false,
+          "key": "",
+          "comment": "生成批次 exam_theory_gen_batch.id\r"
+        },
+        {
+          "name": "blueprint_id",
+          "type": "bigint",
+          "nullable": false,
+          "key": "",
+          "comment": "细目表批次 exam_theory_blueprint.id\r"
+        },
+        {
+          "name": "node_id",
+          "type": "bigint",
+          "nullable": false,
+          "key": "",
+          "comment": "考评点 exam_theory_blueprint_node.id\r"
+        },
+        {
+          "name": "knowledge_id",
+          "type": "bigint",
+          "nullable": true,
+          "key": "",
+          "comment": "打通回填 exam_knowledge_structure.id\r"
+        },
+        {
+          "name": "question_type",
+          "type": "varchar(20)",
+          "nullable": false,
+          "key": "",
+          "comment": "single/multi/judge/essay/cal/draw/discuss/case_analysis\r"
+        },
+        {
+          "name": "type_code",
+          "type": "char(1)",
+          "nullable": false,
+          "key": "",
+          "comment": "指引题型代码 B单选 C判断 D多选 E简答计算绘图 F论述 I案例\r"
+        },
+        {
+          "name": "difficulty",
+          "type": "tinyint",
+          "nullable": false,
+          "key": "",
+          "comment": "难度 1易 2较易 3中 4较难 5难\r"
+        },
+        {
+          "name": "consistency",
+          "type": "tinyint",
+          "nullable": false,
+          "key": "",
+          "comment": "题目-目标一致性 1-5，默认 5\r"
+        },
+        {
+          "name": "content",
+          "type": "text",
+          "nullable": false,
+          "key": "",
+          "comment": "题干\r"
+        },
+        {
+          "name": "options",
+          "type": "json",
+          "nullable": true,
+          "key": "",
+          "comment": "客观题选项 [{label,content}]\r"
+        },
+        {
+          "name": "answer",
+          "type": "varchar(500)",
+          "nullable": false,
+          "key": "",
+          "comment": "客观题答案字母或判断题√/×\r"
+        },
+        {
+          "name": "analysis",
+          "type": "text",
+          "nullable": true,
+          "key": "",
+          "comment": "解析\r"
+        },
+        {
+          "name": "reference_answer",
+          "type": "text",
+          "nullable": true,
+          "key": "",
+          "comment": "主观题参考答案\r"
+        },
+        {
+          "name": "score_points",
+          "type": "text",
+          "nullable": true,
+          "key": "",
+          "comment": "主观题评分要点\r"
+        },
+        {
+          "name": "scoring_standard",
+          "type": "text",
+          "nullable": true,
+          "key": "",
+          "comment": "主观题评分标准\r"
+        },
+        {
+          "name": "score",
+          "type": "decimal(5,1)",
+          "nullable": true,
+          "key": "",
+          "comment": "建议分值（5/10/15 档）\r"
+        },
+        {
+          "name": "ai_model",
+          "type": "varchar(100)",
+          "nullable": true,
+          "key": "",
+          "comment": "生成模型\r"
+        },
+        {
+          "name": "ai_thinking",
+          "type": "varchar(16)",
+          "nullable": true,
+          "key": "",
+          "comment": "生成时思考模式\r"
+        },
+        {
+          "name": "gen_duration_ms",
+          "type": "int",
+          "nullable": true,
+          "key": "",
+          "comment": "生成耗时毫秒\r"
+        },
+        {
+          "name": "review_status",
+          "type": "varchar(32)",
+          "nullable": false,
+          "key": "",
+          "comment": "draft/approved/rejected\r"
+        },
+        {
+          "name": "review_by",
+          "type": "bigint",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "review_at",
+          "type": "datetime",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "publish_status",
+          "type": "tinyint",
+          "nullable": false,
+          "key": "",
+          "comment": "0未入库 1已入库\r"
+        },
+        {
+          "name": "published_task_type",
+          "type": "varchar(10)",
+          "nullable": true,
+          "key": "",
+          "comment": "exam/examsub\r"
+        },
+        {
+          "name": "published_task_id",
+          "type": "bigint",
+          "nullable": true,
+          "key": "",
+          "comment": "task_exam / task_examsub.id\r"
+        },
+        {
+          "name": "published_detail_id",
+          "type": "bigint",
+          "nullable": true,
+          "key": "",
+          "comment": "task_exam_detail / task_examsub_detail.id\r"
+        },
+        {
+          "name": "created_at",
+          "type": "datetime",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "updated_at",
+          "type": "datetime",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "created_by",
+          "type": "bigint",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "updated_by",
+          "type": "bigint",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "deleted",
+          "type": "tinyint",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "idx_etgd_batch",
+          "unique": false,
+          "columns": [
+            "tenant_id\r",
+            "batch_id\r"
+          ]
+        },
+        {
+          "name": "idx_etgd_node",
+          "unique": false,
+          "columns": [
+            "tenant_id\r",
+            "node_id\r"
+          ]
+        },
+        {
+          "name": "idx_etgd_publish",
+          "unique": false,
+          "columns": [
+            "tenant_id\r",
+            "publish_status\r"
+          ]
+        },
+        {
+          "name": "idx_etgd_review",
+          "unique": false,
+          "columns": [
+            "tenant_id\r",
+            "batch_id\r",
+            "review_status\r"
+          ]
+        },
+        {
+          "name": "idx_etgd_tenant_time",
+          "unique": false,
+          "columns": [
+            "tenant_id\r",
+            "created_at\r"
+          ]
+        },
+        {
+          "name": "PRIMARY",
+          "unique": true,
+          "columns": [
+            "id\r"
+          ]
+        }
+      ]
+    },
+    "exam_user_answer_log": {
+      "columns": [
+        {
+          "name": "id",
+          "type": "bigint",
+          "nullable": false,
+          "key": "PRI",
+          "comment": "\r"
+        },
+        {
+          "name": "user_id",
+          "type": "bigint",
+          "nullable": false,
+          "key": "",
+          "comment": "答题学员\r"
+        },
+        {
+          "name": "tenant_id",
+          "type": "bigint",
+          "nullable": false,
+          "key": "MUL",
+          "comment": "租户\r"
+        },
+        {
+          "name": "class_id",
+          "type": "bigint",
+          "nullable": true,
+          "key": "",
+          "comment": "刷题班级 train_info_class.id\r"
+        },
+        {
+          "name": "people_id",
+          "type": "bigint",
+          "nullable": true,
+          "key": "",
+          "comment": "花名册 train_people_list.id\r"
+        },
+        {
+          "name": "course_id",
+          "type": "int",
+          "nullable": true,
+          "key": "",
+          "comment": "科目 exam_course.id\r"
+        },
+        {
+          "name": "biz_date",
+          "type": "date",
+          "nullable": true,
+          "key": "",
+          "comment": "练习自然日\r"
+        },
+        {
+          "name": "question_id",
+          "type": "int",
+          "nullable": false,
+          "key": "",
+          "comment": "题目 id (exam_exam_detail.id)\r"
+        },
+        {
+          "name": "knowledge_id",
+          "type": "int",
+          "nullable": true,
+          "key": "",
+          "comment": "知识点 id (冗余，便于聚合)\r"
+        },
+        {
+          "name": "question_type",
+          "type": "varchar(16)",
+          "nullable": true,
+          "key": "",
+          "comment": "题型: single/multiple/judge/subjective\r"
+        },
+        {
+          "name": "user_answer",
+          "type": "varchar(2000)",
+          "nullable": true,
+          "key": "",
+          "comment": "学员作答\r"
+        },
+        {
+          "name": "is_right",
+          "type": "tinyint",
+          "nullable": false,
+          "key": "",
+          "comment": "1对 0错\r"
+        },
+        {
+          "name": "source",
+          "type": "varchar(32)",
+          "nullable": false,
+          "key": "",
+          "comment": "来源: mock=模考 wrong=错题重练 practice=随机练习\r"
+        },
+        {
+          "name": "paper_id",
+          "type": "int",
+          "nullable": true,
+          "key": "MUL",
+          "comment": "关联模拟考卷 id (exam_mock_paper.id)\r"
+        },
+        {
+          "name": "spend_ms",
+          "type": "bigint",
+          "nullable": false,
+          "key": "",
+          "comment": "本题耗时(毫秒)\r"
+        },
+        {
+          "name": "create_time",
+          "type": "datetime",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "idx_answer_log_class_knowledge",
+          "unique": false,
+          "columns": [
+            "tenant_id\r",
+            "class_id\r",
+            "knowledge_id\r",
+            "is_right\r"
+          ]
+        },
+        {
+          "name": "idx_answer_log_class_user_time",
+          "unique": false,
+          "columns": [
+            "tenant_id\r",
+            "class_id\r",
+            "user_id\r",
+            "create_time\r"
+          ]
+        },
+        {
+          "name": "idx_eual_knowledge",
+          "unique": false,
+          "columns": [
+            "tenant_id\r",
+            "knowledge_id\r",
+            "is_right\r"
+          ]
+        },
+        {
+          "name": "idx_eual_paper",
+          "unique": false,
+          "columns": [
+            "paper_id\r"
+          ]
+        },
+        {
+          "name": "idx_eual_user",
+          "unique": false,
+          "columns": [
+            "tenant_id\r",
+            "user_id\r",
+            "is_right\r"
+          ]
+        },
+        {
+          "name": "PRIMARY",
+          "unique": true,
+          "columns": [
+            "id\r"
+          ]
+        }
+      ]
+    },
+    "exam_user_auth_course": {
+      "columns": [
+        {
+          "name": "id",
+          "type": "int",
+          "nullable": false,
+          "key": "PRI",
+          "comment": "\r"
+        },
+        {
+          "name": "uid",
+          "type": "int",
+          "nullable": true,
+          "key": "MUL",
+          "comment": "\r"
+        },
+        {
+          "name": "realname",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "MUL",
+          "comment": "专家姓名\r"
+        },
+        {
+          "name": "course_id",
+          "type": "int",
+          "nullable": true,
+          "key": "MUL",
+          "comment": "\r"
+        },
+        {
+          "name": "course_title",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "",
+          "comment": "科目名称\r"
+        },
+        {
+          "name": "type",
+          "type": "tinyint(1)",
+          "nullable": true,
+          "key": "",
+          "comment": "0命题科目 1审题科目 2终审科目\r"
+        },
+        {
+          "name": "user_id",
+          "type": "int",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "id_card",
+          "type": "varchar(50)",
+          "nullable": true,
+          "key": "",
+          "comment": "身份证号\r"
+        },
+        {
+          "name": "status",
+          "type": "int",
+          "nullable": false,
+          "key": "",
+          "comment": "状态\r"
+        },
+        {
+          "name": "sort_number",
+          "type": "int",
+          "nullable": false,
+          "key": "",
+          "comment": "排序号\r"
+        },
+        {
+          "name": "deleted",
+          "type": "int",
+          "nullable": false,
+          "key": "",
+          "comment": "是否删除, 0否, 1是\r"
+        },
+        {
+          "name": "tenant_id",
+          "type": "bigint",
+          "nullable": false,
+          "key": "",
+          "comment": "租户id\r"
+        },
+        {
+          "name": "create_time",
+          "type": "timestamp",
+          "nullable": false,
+          "key": "",
+          "comment": "创建时间\r"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "idx_course_id",
+          "unique": false,
+          "columns": [
+            "course_id\r"
+          ]
+        },
+        {
+          "name": "idx_realname_idcard",
+          "unique": false,
+          "columns": [
+            "realname\r",
+            "id_card\r"
+          ]
+        },
+        {
+          "name": "idx_uid",
+          "unique": false,
+          "columns": [
+            "uid\r"
+          ]
+        },
+        {
+          "name": "PRIMARY",
+          "unique": true,
+          "columns": [
+            "id\r"
+          ]
+        }
+      ]
+    },
+    "exam_work_type": {
+      "columns": [
+        {
+          "name": "id",
+          "type": "int",
+          "nullable": false,
+          "key": "PRI",
+          "comment": "\r"
+        },
+        {
+          "name": "title",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "",
+          "comment": "名称\r"
+        },
+        {
+          "name": "series_no",
+          "type": "varchar(200)",
+          "nullable": true,
+          "key": "",
+          "comment": "职业编码\r"
+        },
+        {
+          "name": "levels_no",
+          "type": "varchar(200)",
+          "nullable": true,
+          "key": "",
+          "comment": "级别\r"
+        },
+        {
+          "name": "parent_id",
+          "type": "int",
+          "nullable": true,
+          "key": "MUL",
+          "comment": "上级ID\r"
+        },
+        {
+          "name": "user_id",
+          "type": "int",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "deleted",
+          "type": "int",
+          "nullable": true,
+          "key": "",
+          "comment": "1已删除，0正常\r"
+        },
+        {
+          "name": "status",
+          "type": "int",
+          "nullable": false,
+          "key": "",
+          "comment": "状态\r"
+        },
+        {
+          "name": "sort_number",
+          "type": "int",
+          "nullable": false,
+          "key": "",
+          "comment": "排序号，降序排序\r"
+        },
+        {
+          "name": "tenant_id",
+          "type": "bigint",
+          "nullable": false,
+          "key": "MUL",
+          "comment": "租户id\r"
+        },
+        {
+          "name": "create_time",
+          "type": "timestamp",
+          "nullable": false,
+          "key": "",
+          "comment": "创建时间\r"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "id",
+          "unique": false,
+          "columns": [
+            "id\r"
+          ]
+        },
+        {
+          "name": "idx_worktype_tenant_sort",
+          "unique": false,
+          "columns": [
+            "tenant_id\r",
+            "sort_number\r",
+            "id\r"
+          ]
+        },
+        {
+          "name": "parent_id",
+          "unique": false,
+          "columns": [
+            "parent_id\r"
+          ]
+        },
+        {
+          "name": "PRIMARY",
+          "unique": true,
+          "columns": [
+            "id\r"
+          ]
+        }
+      ]
+    },
+    "exam_zhenti": {
+      "columns": [
+        {
+          "name": "id",
+          "type": "bigint",
+          "nullable": false,
+          "key": "PRI",
+          "comment": "\r"
+        },
+        {
+          "name": "tenant_id",
+          "type": "bigint",
+          "nullable": false,
+          "key": "MUL",
+          "comment": "\r"
+        },
+        {
+          "name": "exam_id",
+          "type": "bigint",
+          "nullable": false,
+          "key": "MUL",
+          "comment": "考试项目 id（train_exam_list.id）\r"
+        },
+        {
+          "name": "work_type_id",
+          "type": "bigint",
+          "nullable": true,
+          "key": "",
+          "comment": "共享组：工种（exam_work_type 叶子节点）\r"
+        },
+        {
+          "name": "level_code",
+          "type": "tinyint",
+          "nullable": true,
+          "key": "",
+          "comment": "共享组：等级 0五级 1四级 2三级 3二级 4一级\r"
+        },
+        {
+          "name": "scope_key",
+          "type": "varchar(64)",
+          "nullable": false,
+          "key": "",
+          "comment": "去重键：work:{workTypeId}:{level} 或 exam:{examId}\r"
+        },
+        {
+          "name": "title",
+          "type": "varchar(200)",
+          "nullable": false,
+          "key": "",
+          "comment": "真题标题\r"
+        },
+        {
+          "name": "year",
+          "type": "varchar(10)",
+          "nullable": true,
+          "key": "",
+          "comment": "年份，允许“2024上”等写法\r"
+        },
+        {
+          "name": "file_key",
+          "type": "varchar(512)",
+          "nullable": false,
+          "key": "",
+          "comment": "存储对象键，禁止出参\r"
+        },
+        {
+          "name": "file_size",
+          "type": "bigint",
+          "nullable": false,
+          "key": "",
+          "comment": "字节数\r"
+        },
+        {
+          "name": "file_md5",
+          "type": "char(32)",
+          "nullable": false,
+          "key": "",
+          "comment": "文件 MD5，去重键\r"
+        },
+        {
+          "name": "sort",
+          "type": "int",
+          "nullable": false,
+          "key": "",
+          "comment": "同 exam 下排序，升序\r"
+        },
+        {
+          "name": "status",
+          "type": "tinyint",
+          "nullable": false,
+          "key": "",
+          "comment": "1 上架 0 下架\r"
+        },
+        {
+          "name": "meta_pending",
+          "type": "tinyint",
+          "nullable": false,
+          "key": "",
+          "comment": "1 待完善（缺年份/工种等级）\r"
+        },
+        {
+          "name": "created_by",
+          "type": "bigint",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "created_at",
+          "type": "datetime",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "updated_by",
+          "type": "bigint",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "updated_at",
+          "type": "datetime",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "deleted",
+          "type": "tinyint",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "idx_zhenti_list",
+          "unique": false,
+          "columns": [
+            "tenant_id\r",
+            "exam_id\r",
+            "status\r",
+            "deleted\r"
+          ]
+        },
+        {
+          "name": "idx_zhenti_md5",
+          "unique": false,
+          "columns": [
+            "exam_id\r",
+            "file_md5\r"
+          ]
+        },
+        {
+          "name": "idx_zhenti_scope",
+          "unique": false,
+          "columns": [
+            "tenant_id\r",
+            "work_type_id\r",
+            "level_code\r",
+            "status\r",
+            "deleted\r"
+          ]
+        },
+        {
+          "name": "PRIMARY",
+          "unique": true,
+          "columns": [
+            "id\r"
+          ]
+        },
+        {
+          "name": "uk_zhenti_scope_md5",
+          "unique": true,
+          "columns": [
+            "tenant_id\r",
+            "scope_key\r",
+            "file_md5\r",
+            "deleted\r"
+          ]
+        }
+      ]
+    },
+    "exam_zhenti_import_log": {
+      "columns": [
+        {
+          "name": "id",
+          "type": "bigint",
+          "nullable": false,
+          "key": "PRI",
+          "comment": "\r"
+        },
+        {
+          "name": "tenant_id",
+          "type": "bigint",
+          "nullable": false,
+          "key": "MUL",
+          "comment": "\r"
+        },
+        {
+          "name": "exam_id",
+          "type": "bigint",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "operator_id",
+          "type": "bigint",
+          "nullable": true,
+          "key": "",
+          "comment": "发起导入的管理员 sys_user.id\r"
+        },
+        {
+          "name": "total",
+          "type": "int",
+          "nullable": false,
+          "key": "",
+          "comment": "zip 内待处理 PDF 数\r"
+        },
+        {
+          "name": "finished",
+          "type": "int",
+          "nullable": false,
+          "key": "",
+          "comment": "已处理数（成功+失败）\r"
+        },
+        {
+          "name": "status",
+          "type": "varchar(20)",
+          "nullable": false,
+          "key": "",
+          "comment": "running/done/failed\r"
+        },
+        {
+          "name": "results_json",
+          "type": "mediumtext",
+          "nullable": true,
+          "key": "",
+          "comment": "逐文件结果 JSON\r"
+        },
+        {
+          "name": "created_by",
+          "type": "bigint",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "created_at",
+          "type": "datetime",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "updated_by",
+          "type": "bigint",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "updated_at",
+          "type": "datetime",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "deleted",
+          "type": "tinyint",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "idx_zhenti_import_log",
+          "unique": false,
+          "columns": [
+            "tenant_id\r",
+            "exam_id\r",
+            "created_at\r",
+            "deleted\r"
+          ]
+        },
+        {
+          "name": "PRIMARY",
+          "unique": true,
+          "columns": [
+            "id\r"
+          ]
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,1768 @@
+{
+  "_meta": {
+    "generated": true,
+    "source": "information_schema",
+    "schema": "gjjddb2026",
+    "generatedAt": "2026-10-20T09:10:41.737Z",
+    "notice": "仅含结构元数据，禁止写入任何数据行；迁移版本/双写对基线见 docs/agent/项目现状.md",
+    "onCheckFail": "--check 失败一律以测试库为准重新 --generate 提交（结构变化只能来自迁移）",
+    "tablesCount": 15
+  },
+  "tables": {
+    "sys_audit_log": {
+      "columns": [
+        {
+          "name": "id",
+          "type": "bigint",
+          "nullable": false,
+          "key": "PRI",
+          "comment": "主键ID（雪花ID）\r"
+        },
+        {
+          "name": "tenant_id",
+          "type": "bigint",
+          "nullable": false,
+          "key": "MUL",
+          "comment": "所属租户ID\r"
+        },
+        {
+          "name": "user_id",
+          "type": "bigint",
+          "nullable": true,
+          "key": "",
+          "comment": "操作用户ID\r"
+        },
+        {
+          "name": "module",
+          "type": "varchar(64)",
+          "nullable": false,
+          "key": "",
+          "comment": "操作模块，如 User, Role\r"
+        },
+        {
+          "name": "action",
+          "type": "varchar(64)",
+          "nullable": false,
+          "key": "",
+          "comment": "操作类型：CREATE, UPDATE, DELETE, LOGIN, LOGOUT\r"
+        },
+        {
+          "name": "target_type",
+          "type": "varchar(64)",
+          "nullable": true,
+          "key": "",
+          "comment": "目标对象类型，如 User, Role\r"
+        },
+        {
+          "name": "target_id",
+          "type": "bigint",
+          "nullable": true,
+          "key": "",
+          "comment": "目标对象ID\r"
+        },
+        {
+          "name": "request_id",
+          "type": "varchar(128)",
+          "nullable": true,
+          "key": "",
+          "comment": "请求追踪ID\r"
+        },
+        {
+          "name": "ip",
+          "type": "varchar(64)",
+          "nullable": true,
+          "key": "",
+          "comment": "请求来源IP地址\r"
+        },
+        {
+          "name": "user_agent",
+          "type": "varchar(512)",
+          "nullable": true,
+          "key": "",
+          "comment": "请求User-Agent\r"
+        },
+        {
+          "name": "detail_json",
+          "type": "text",
+          "nullable": true,
+          "key": "",
+          "comment": "操作详情JSON\r"
+        },
+        {
+          "name": "created_at",
+          "type": "datetime",
+          "nullable": false,
+          "key": "",
+          "comment": "创建时间\r"
+        },
+        {
+          "name": "deleted",
+          "type": "tinyint",
+          "nullable": false,
+          "key": "",
+          "comment": "逻辑删除：0-未删除, 1-已删除\r"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "idx_sys_audit_log_target",
+          "unique": false,
+          "columns": [
+            "tenant_id\r",
+            "target_type\r",
+            "target_id\r"
+          ]
+        },
+        {
+          "name": "idx_sys_audit_log_tenant_created",
+          "unique": false,
+          "columns": [
+            "tenant_id\r",
+            "created_at\r"
+          ]
+        },
+        {
+          "name": "PRIMARY",
+          "unique": true,
+          "columns": [
+            "id\r"
+          ]
+        }
+      ]
+    },
+    "sys_dict": {
+      "columns": [
+        {
+          "name": "id",
+          "type": "bigint",
+          "nullable": false,
+          "key": "PRI",
+          "comment": "主键ID（雪花ID）\r"
+        },
+        {
+          "name": "tenant_id",
+          "type": "bigint",
+          "nullable": false,
+          "key": "MUL",
+          "comment": "所属租户ID\r"
+        },
+        {
+          "name": "code",
+          "type": "varchar(64)",
+          "nullable": false,
+          "key": "",
+          "comment": "字典编码，租户内唯一\r"
+        },
+        {
+          "name": "name",
+          "type": "varchar(200)",
+          "nullable": false,
+          "key": "",
+          "comment": "字典名称\r"
+        },
+        {
+          "name": "status",
+          "type": "varchar(32)",
+          "nullable": false,
+          "key": "",
+          "comment": "状态：enabled-启用, disabled-停用\r"
+        },
+        {
+          "name": "created_at",
+          "type": "datetime",
+          "nullable": false,
+          "key": "",
+          "comment": "创建时间\r"
+        },
+        {
+          "name": "updated_at",
+          "type": "datetime",
+          "nullable": false,
+          "key": "",
+          "comment": "更新时间\r"
+        },
+        {
+          "name": "created_by",
+          "type": "bigint",
+          "nullable": true,
+          "key": "",
+          "comment": "创建人ID\r"
+        },
+        {
+          "name": "updated_by",
+          "type": "bigint",
+          "nullable": true,
+          "key": "",
+          "comment": "更新人ID\r"
+        },
+        {
+          "name": "deleted",
+          "type": "tinyint",
+          "nullable": false,
+          "key": "",
+          "comment": "逻辑删除：0-未删除, 1-已删除\r"
+        },
+        {
+          "name": "value",
+          "type": "varchar(1000)",
+          "nullable": true,
+          "key": "",
+          "comment": "字典值\r"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "PRIMARY",
+          "unique": true,
+          "columns": [
+            "id\r"
+          ]
+        },
+        {
+          "name": "uk_sys_dict_tenant_code",
+          "unique": true,
+          "columns": [
+            "tenant_id\r",
+            "code\r",
+            "deleted\r"
+          ]
+        }
+      ]
+    },
+    "sys_dict_item": {
+      "columns": [
+        {
+          "name": "id",
+          "type": "bigint",
+          "nullable": false,
+          "key": "PRI",
+          "comment": "主键ID（雪花ID）\r"
+        },
+        {
+          "name": "tenant_id",
+          "type": "bigint",
+          "nullable": false,
+          "key": "MUL",
+          "comment": "所属租户ID\r"
+        },
+        {
+          "name": "dict_id",
+          "type": "bigint",
+          "nullable": false,
+          "key": "",
+          "comment": "所属字典ID\r"
+        },
+        {
+          "name": "item_value",
+          "type": "text",
+          "nullable": false,
+          "key": "",
+          "comment": "字典项值，如 male\r"
+        },
+        {
+          "name": "item_label",
+          "type": "varchar(512)",
+          "nullable": false,
+          "key": "",
+          "comment": "字典项标签（申报条件全文等）\r"
+        },
+        {
+          "name": "sort_order",
+          "type": "int",
+          "nullable": false,
+          "key": "",
+          "comment": "排序号，值越小越靠前\r"
+        },
+        {
+          "name": "status",
+          "type": "varchar(32)",
+          "nullable": false,
+          "key": "",
+          "comment": "状态：enabled-启用, disabled-停用\r"
+        },
+        {
+          "name": "created_at",
+          "type": "datetime",
+          "nullable": false,
+          "key": "",
+          "comment": "创建时间\r"
+        },
+        {
+          "name": "updated_at",
+          "type": "datetime",
+          "nullable": false,
+          "key": "",
+          "comment": "更新时间\r"
+        },
+        {
+          "name": "created_by",
+          "type": "bigint",
+          "nullable": true,
+          "key": "",
+          "comment": "创建人ID\r"
+        },
+        {
+          "name": "updated_by",
+          "type": "bigint",
+          "nullable": true,
+          "key": "",
+          "comment": "更新人ID\r"
+        },
+        {
+          "name": "deleted",
+          "type": "tinyint",
+          "nullable": false,
+          "key": "",
+          "comment": "逻辑删除：0-未删除, 1-已删除\r"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "idx_sys_dict_item_dict",
+          "unique": false,
+          "columns": [
+            "tenant_id\r",
+            "dict_id\r"
+          ]
+        },
+        {
+          "name": "PRIMARY",
+          "unique": true,
+          "columns": [
+            "id\r"
+          ]
+        }
+      ]
+    },
+    "sys_file": {
+      "columns": [
+        {
+          "name": "id",
+          "type": "bigint",
+          "nullable": false,
+          "key": "PRI",
+          "comment": "主键ID（雪花ID）\r"
+        },
+        {
+          "name": "tenant_id",
+          "type": "bigint",
+          "nullable": false,
+          "key": "MUL",
+          "comment": "所属租户ID\r"
+        },
+        {
+          "name": "storage_provider",
+          "type": "varchar(32)",
+          "nullable": false,
+          "key": "",
+          "comment": "存储提供商：local-本地, minio, oss\r"
+        },
+        {
+          "name": "bucket",
+          "type": "varchar(128)",
+          "nullable": true,
+          "key": "",
+          "comment": "存储桶名称\r"
+        },
+        {
+          "name": "object_key",
+          "type": "varchar(512)",
+          "nullable": false,
+          "key": "",
+          "comment": "对象存储Key\r"
+        },
+        {
+          "name": "original_name",
+          "type": "varchar(255)",
+          "nullable": false,
+          "key": "",
+          "comment": "原始文件名\r"
+        },
+        {
+          "name": "content_type",
+          "type": "varchar(128)",
+          "nullable": true,
+          "key": "",
+          "comment": "MIME类型\r"
+        },
+        {
+          "name": "size_bytes",
+          "type": "bigint",
+          "nullable": false,
+          "key": "",
+          "comment": "文件大小（字节）\r"
+        },
+        {
+          "name": "sha256",
+          "type": "varchar(128)",
+          "nullable": true,
+          "key": "",
+          "comment": "文件SHA256哈希值\r"
+        },
+        {
+          "name": "access_policy",
+          "type": "varchar(32)",
+          "nullable": false,
+          "key": "",
+          "comment": "访问策略：private-私有, public-公开\r"
+        },
+        {
+          "name": "status",
+          "type": "varchar(32)",
+          "nullable": false,
+          "key": "",
+          "comment": "状态：uploaded-已上传\r"
+        },
+        {
+          "name": "created_at",
+          "type": "datetime",
+          "nullable": false,
+          "key": "",
+          "comment": "创建时间\r"
+        },
+        {
+          "name": "updated_at",
+          "type": "datetime",
+          "nullable": false,
+          "key": "",
+          "comment": "更新时间\r"
+        },
+        {
+          "name": "created_by",
+          "type": "bigint",
+          "nullable": true,
+          "key": "",
+          "comment": "创建人ID\r"
+        },
+        {
+          "name": "updated_by",
+          "type": "bigint",
+          "nullable": true,
+          "key": "",
+          "comment": "更新人ID\r"
+        },
+        {
+          "name": "deleted",
+          "type": "tinyint",
+          "nullable": false,
+          "key": "",
+          "comment": "逻辑删除：0-未删除, 1-已删除\r"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "idx_sys_file_created_at",
+          "unique": false,
+          "columns": [
+            "tenant_id\r",
+            "created_at\r"
+          ]
+        },
+        {
+          "name": "idx_sys_file_tenant_status",
+          "unique": false,
+          "columns": [
+            "tenant_id\r",
+            "status\r"
+          ]
+        },
+        {
+          "name": "PRIMARY",
+          "unique": true,
+          "columns": [
+            "id\r"
+          ]
+        }
+      ]
+    },
+    "sys_index_swiper": {
+      "columns": [
+        {
+          "name": "id",
+          "type": "int",
+          "nullable": false,
+          "key": "PRI",
+          "comment": "\r"
+        },
+        {
+          "name": "img",
+          "type": "varchar(500)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "sort_order",
+          "type": "int",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "is_show",
+          "type": "tinyint",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "url",
+          "type": "varchar(500)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "page_type",
+          "type": "varchar(32)",
+          "nullable": false,
+          "key": "MUL",
+          "comment": "\r"
+        },
+        {
+          "name": "param",
+          "type": "varchar(500)",
+          "nullable": true,
+          "key": "",
+          "comment": "\r"
+        },
+        {
+          "name": "tenant_id",
+          "type": "bigint",
+          "nullable": false,
+          "key": "",
+          "comment": "\r"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "idx_swiper_page_tenant",
+          "unique": false,
+          "columns": [
+            "page_type\r",
+            "tenant_id\r"
+          ]
+        },
+        {
+          "name": "PRIMARY",
+          "unique": true,
+          "columns": [
+            "id\r"
+          ]
+        }
+      ]
+    },
+    "sys_menu": {
+      "columns": [
+        {
+          "name": "id",
+          "type": "bigint",
+          "nullable": false,
+          "key": "PRI",
+          "comment": "主键ID（雪花ID）\r"
+        },
+        {
+          "name": "tenant_id",
+          "type": "bigint",
+          "nullable": false,
+          "key": "MUL",
+          "comment": "所属租户ID\r"
+        },
+        {
+          "name": "parent_id",
+          "type": "bigint",
+          "nullable": false,
+          "key": "",
+          "comment": "上级菜单ID，0表示顶级\r"
+        },
+        {
+          "name": "menu_type",
+          "type": "varchar(32)",
+          "nullable": false,
+          "key": "",
+          "comment": "菜单类型：directory-目录, menu-菜单, button-按钮\r"
+        },
+        {
+          "name": "code",
+          "type": "varchar(100)",
+          "nullable": false,
+          "key": "",
+          "comment": "菜单编码，租户内唯一\r"
+        },
+        {
+          "name": "name",
+          "type": "varchar(64)",
+          "nullable": false,
+          "key": "",
+          "comment": "菜单名称\r"
+        },
+        {
+          "name": "path",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "",
+          "comment": "前端路由路径\r"
+        },
+        {
+          "name": "component",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "",
+          "comment": "前端组件路径\r"
+        },
+        {
+          "name": "permission_code",
+          "type": "varchar(128)",
+          "nullable": true,
+          "key": "",
+          "comment": "权限标识码，如 user:view\r"
+        },
+        {
+          "name": "icon",
+          "type": "varchar(64)",
+          "nullable": true,
+          "key": "",
+          "comment": "菜单图标名称\r"
+        },
+        {
+          "name": "sort_order",
+          "type": "int",
+          "nullable": false,
+          "key": "",
+          "comment": "排序号，值越小越靠前\r"
+        },
+        {
+          "name": "visible",
+          "type": "tinyint",
+          "nullable": false,
+          "key": "",
+          "comment": "是否可见：1-可见, 0-隐藏\r"
+        },
+        {
+          "name": "expanded",
+          "type": "tinyint",
+          "nullable": false,
+          "key": "",
+          "comment": "目录默认展开(1展开 0收起)\r"
+        },
+        {
+          "name": "status",
+          "type": "varchar(32)",
+          "nullable": false,
+          "key": "",
+          "comment": "状态：enabled-启用, disabled-停用\r"
+        },
+        {
+          "name": "created_at",
+          "type": "datetime",
+          "nullable": false,
+          "key": "",
+          "comment": "创建时间\r"
+        },
+        {
+          "name": "updated_at",
+          "type": "datetime",
+          "nullable": false,
+          "key": "",
+          "comment": "更新时间\r"
+        },
+        {
+          "name": "created_by",
+          "type": "bigint",
+          "nullable": true,
+          "key": "",
+          "comment": "创建人ID\r"
+        },
+        {
+          "name": "updated_by",
+          "type": "bigint",
+          "nullable": true,
+          "key": "",
+          "comment": "更新人ID\r"
+        },
+        {
+          "name": "deleted",
+          "type": "tinyint",
+          "nullable": false,
+          "key": "",
+          "comment": "逻辑删除：0-未删除, 1-已删除\r"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "idx_sys_menu_parent",
+          "unique": false,
+          "columns": [
+            "tenant_id\r",
+            "parent_id\r"
+          ]
+        },
+        {
+          "name": "PRIMARY",
+          "unique": true,
+          "columns": [
+            "id\r"
+          ]
+        },
+        {
+          "name": "uk_sys_menu_tenant_code",
+          "unique": true,
+          "columns": [
+            "tenant_id\r",
+            "code\r",
+            "deleted\r"
+          ]
+        }
+      ]
+    },
+    "sys_org": {
+      "columns": [
+        {
+          "name": "id",
+          "type": "bigint",
+          "nullable": false,
+          "key": "PRI",
+          "comment": "主键ID（雪花ID）\r"
+        },
+        {
+          "name": "tenant_id",
+          "type": "bigint",
+          "nullable": false,
+          "key": "MUL",
+          "comment": "所属租户ID\r"
+        },
+        {
+          "name": "parent_id",
+          "type": "bigint",
+          "nullable": false,
+          "key": "",
+          "comment": "上级组织ID，0表示顶级\r"
+        },
+        {
+          "name": "org_type",
+          "type": "varchar(32)",
+          "nullable": false,
+          "key": "",
+          "comment": "组织类型：company-公司, department-部门, team-小组\r"
+        },
+        {
+          "name": "code",
+          "type": "varchar(64)",
+          "nullable": false,
+          "key": "",
+          "comment": "组织编码，租户内唯一\r"
+        },
+        {
+          "name": "name",
+          "type": "varchar(128)",
+          "nullable": false,
+          "key": "",
+          "comment": "组织名称\r"
+        },
+        {
+          "name": "organization_full_name",
+          "type": "varchar(255)",
+          "nullable": true,
+          "key": "",
+          "comment": "机构全称\r"
+        },
+        {
+          "name": "phone",
+          "type": "varchar(50)",
+          "nullable": true,
+          "key": "",
+          "comment": "联系电话\r"
+        },
+        {
+          "name": "industry",
+          "type": "varchar(100)",
+          "nullable": true,
+          "key": "",
+          "comment": "所属行业\r"
+        },
+        {
+          "name": "legal_person",
+          "type": "varchar(100)",
+          "nullable": true,
+          "key": "",
+          "comment": "法定代表人\r"
+        },
+        {
+          "name": "registered_capital",
+          "type": "decimal(18,2)",
+          "nullable": true,
+          "key": "",
+          "comment": "注册资金\r"
+        },
+        {
+          "name": "province",
+          "type": "varchar(50)",
+          "nullable": true,
+          "key": "",
+          "comment": "所在省份\r"
+        },
+        {
+          "name": "city",
+          "type": "varchar(50)",
+          "nullable": true,
+          "key": "",
+          "comment": "所在城市\r"
+        },
+        {
+          "name": "sort_order",
+          "type": "int",
+          "nullable": false,
+          "key": "",
+          "comment": "排序号，值越小越靠前\r"
+        },
+        {
+          "name": "status",
+          "type": "varchar(32)",
+          "nullable": false,
+          "key": "",
+          "comment": "状态：enabled-启用, disabled-停用\r"
+        },
+        {
+          "name": "created_at",
+          "type": "datetime",
+          "nullable": false,
+          "key": "",
+          "comment": "创建时间\r"
+        },
+        {
+          "name": "updated_at",
+          "type": "datetime",
+          "nullable": false,
+          "key": "",
+          "comment": "更新时间\r"
+        },
+        {
+          "name": "created_by",
+          "type": "bigint",
+          "nullable": true,
+          "key": "",
+          "comment": "创建人ID\r"
+        },
+        {
+          "name": "updated_by",
+          "type": "bigint",
+          "nullable": true,
+          "key": "",
+          "comment": "更新人ID\r"
+        },
+        {
+          "name": "deleted",
+          "type": "tinyint",
+          "nullable": false,
+          "key": "",
+          "comment": "逻辑删除：0-未删除, 1-已删除\r"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "idx_sys_org_parent",
+          "unique": false,
+          "columns": [
+            "tenant_id\r",
+            "parent_id\r"
+          ]
+        },
+        {
+          "name": "PRIMARY",
+          "unique": true,
+          "columns": [
+            "id\r"
+          ]
+        },
+        {
+          "name": "uk_sys_org_tenant_code",
+          "unique": true,
+          "columns": [
+            "tenant_id\r",
+            "code\r",
+            "deleted\r"
+          ]
+        }
+      ]
+    },
+    "sys_permission": {
+      "columns": [
+        {
+          "name": "id",
+          "type": "bigint",
+          "nullable": false,
+          "key": "PRI",
+          "comment": "主键ID（雪花ID）\r"
+        },
+        {
+          "name": "tenant_id",
+          "type": "bigint",
+          "nullable": false,
+          "key": "MUL",
+          "comment": "所属租户ID\r"
+        },
+        {
+          "name": "menu_id",
+          "type": "bigint",
+          "nullable": true,
+          "key": "",
+          "comment": "所属菜单ID\r"
+        },
+        {
+          "name": "code",
+          "type": "varchar(128)",
+          "nullable": false,
+          "key": "",
+          "comment": "权限编码，如 user:view\r"
+        },
+        {
+          "name": "name",
+          "type": "varchar(64)",
+          "nullable": false,
+          "key": "",
+          "comment": "权限名称\r"
+        },
+        {
+          "name": "action",
+          "type": "varchar(32)",
+          "nullable": false,
+          "key": "",
+          "comment": "操作类型：view-查看, create-创建, update-更新, delete-删除\r"
+        },
+        {
+          "name": "status",
+          "type": "varchar(32)",
+          "nullable": false,
+          "key": "",
+          "comment": "状态：enabled-启用, disabled-停用\r"
+        },
+        {
+          "name": "created_at",
+          "type": "datetime",
+          "nullable": false,
+          "key": "",
+          "comment": "创建时间\r"
+        },
+        {
+          "name": "updated_at",
+          "type": "datetime",
+          "nullable": false,
+          "key": "",
+          "comment": "更新时间\r"
+        },
+        {
+          "name": "created_by",
+          "type": "bigint",
+          "nullable": true,
+          "key": "",
+          "comment": "创建人ID\r"
+        },
+        {
+          "name": "updated_by",
+          "type": "bigint",
+          "nullable": true,
+          "key": "",
+          "comment": "更新人ID\r"
+        },
+        {
+          "name": "deleted",
+          "type": "tinyint",
+          "nullable": false,
+          "key": "",
+          "comment": "逻辑删除：0-未删除, 1-已删除\r"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "idx_sys_permission_menu",
+          "unique": false,
+          "columns": [
+            "tenant_id\r",
+            "menu_id\r"
+          ]
+        },
+        {
+          "name": "PRIMARY",
+          "unique": true,
+          "columns": [
+            "id\r"
+          ]
+        },
+        {
+          "name": "uk_sys_permission_tenant_code",
+          "unique": true,
+          "columns": [
+            "tenant_id\r",
+            "code\r",
+            "deleted\r"
+          ]
+        }
+      ]
+    },
+    "sys_post": {
+      "columns": [
+        {
+          "name": "id",
+          "type": "bigint",
+          "nullable": false,
+          "key": "PRI",
+          "comment": "主键ID（雪花ID）\r"
+        },
+        {
+          "name": "tenant_id",
+          "type": "bigint",
+          "nullable": false,
+          "key": "MUL",
+          "comment": "所属租户ID\r"
+        },
+        {
+          "name": "code",
+          "type": "varchar(64)",
+          "nullable": false,
+          "key": "",
+          "comment": "岗位编码，租户内唯一\r"
+        },
+        {
+          "name": "name",
+          "type": "varchar(128)",
+          "nullable": false,
+          "key": "",
+          "comment": "岗位名称\r"
+        },
+        {
+          "name": "sort_order",
+          "type": "int",
+          "nullable": false,
+          "key": "",
+          "comment": "排序号，值越小越靠前\r"
+        },
+        {
+          "name": "status",
+          "type": "varchar(32)",
+          "nullable": false,
+          "key": "",
+          "comment": "状态：enabled-启用, disabled-停用\r"
+        },
+        {
+          "name": "remark",
+          "type": "varchar(512)",
+          "nullable": true,
+          "key": "",
+          "comment": "备注\r"
+        },
+        {
+          "name": "created_at",
+          "type": "datetime",
+          "nullable": false,
+          "key": "",
+          "comment": "创建时间\r"
+        },
+        {
+          "name": "updated_at",
+          "type": "datetime",
+          "nullable": false,
+          "key": "",
+          "comment": "更新时间\r"
+        },
+        {
+          "name": "created_by",
+          "type": "bigint",
+          "nullable": true,
+          "key": "",
+          "comment": "创建人ID\r"
+        },
+        {
+          "name": "updated_by",
+          "type": "bigint",
+          "nullable": true,
+          "key": "",
+          "comment": "更新人ID\r"
+        },
+        {
+          "name": "deleted",
+          "type": "tinyint",
+          "nullable": false,
+          "key": "",
+          "comment": "逻辑删除：0-未删除, 1-已删除\r"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "idx_sys_post_status",
+          "unique": false,
+          "columns": [
+            "tenant_id\r",
+            "status\r"
+          ]
+        },
+        {
+          "name": "PRIMARY",
+          "unique": true,
+          "columns": [
+            "id\r"
+          ]
+        },
+        {
+          "name": "uk_sys_post_tenant_code",
+          "unique": true,
+          "columns": [
+            "tenant_id\r",
+            "code\r",
+            "deleted\r"
+          ]
+        }
+      ]
+    },
+    "sys_role": {
+      "columns": [
+        {
+          "name": "id",
+          "type": "bigint",
+          "nullable": false,
+          "key": "PRI",
+          "comment": "主键ID（雪花ID）\r"
+        },
+        {
+          "name": "tenant_id",
+          "type": "bigint",
+          "nullable": false,
+          "key": "MUL",
+          "comment": "所属租户ID\r"
+        },
+        {
+          "name": "code",
+          "type": "varchar(64)",
+          "nullable": false,
+          "key": "",
+          "comment": "角色编码，租户内唯一\r"
+        },
+        {
+          "name": "name",
+          "type": "varchar(64)",
+          "nullable": false,
+          "key": "",
+          "comment": "角色名称\r"
+        },
+        {
+          "name": "role_type",
+          "type": "varchar(32)",
+          "nullable": false,
+          "key": "",
+          "comment": "角色类型：platform-平台角色, tenant-租户角色, custom-自定义\r"
+        },
+        {
+          "name": "status",
+          "type": "varchar(32)",
+          "nullable": false,
+          "key": "",
+          "comment": "状态：enabled-启用, disabled-停用\r"
+        },
+        {
+          "name": "remark",
+          "type": "varchar(512)",
+          "nullable": true,
+          "key": "",
+          "comment": "备注\r"
+        },
+        {
+          "name": "created_at",
+          "type": "datetime",
+          "nullable": false,
+          "key": "",
+          "comment": "创建时间\r"
+        },
+        {
+          "name": "updated_at",
+          "type": "datetime",
+          "nullable": false,
+          "key": "",
+          "comment": "更新时间\r"
+        },
+        {
+          "name": "created_by",
+          "type": "bigint",
+          "nullable": true,
+          "key": "",
+          "comment": "创建人ID\r"
+        },
+        {
+          "name": "updated_by",
+          "type": "bigint",
+          "nullable": true,
+          "key": "",
+          "comment": "更新人ID\r"
+        },
+        {
+          "name": "deleted",
+          "type": "tinyint",
+          "nullable": false,
+          "key": "",
+          "comment": "逻辑删除：0-未删除, 1-已删除\r"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "PRIMARY",
+          "unique": true,
+          "columns": [
+            "id\r"
+          ]
+        },
+        {
+          "name": "uk_sys_role_tenant_code",
+          "unique": true,
+          "columns": [
+            "tenant_id\r",
+            "code\r",
+            "deleted\r"
+          ]
+        }
+      ]
+    },
+    "sys_role_menu": {
+      "columns": [
+        {
+          "name": "id",
+          "type": "bigint",
+          "nullable": false,
+          "key": "PRI",
+          "comment": "主键ID（雪花ID）\r"
+        },
+        {
+          "name": "tenant_id",
+          "type": "bigint",
+          "nullable": false,
+          "key": "MUL",
+          "comment": "所属租户ID\r"
+        },
+        {
+          "name": "role_id",
+          "type": "bigint",
+          "nullable": false,
+          "key": "",
+          "comment": "角色ID\r"
+        },
+        {
+          "name": "menu_id",
+          "type": "bigint",
+          "nullable": false,
+          "key": "",
+          "comment": "菜单ID\r"
+        },
+        {
+          "name": "created_at",
+          "type": "datetime",
+          "nullable": false,
+          "key": "",
+          "comment": "创建时间\r"
+        },
+        {
+          "name": "updated_at",
+          "type": "datetime",
+          "nullable": false,
+          "key": "",
+          "comment": "更新时间\r"
+        },
+        {
+          "name": "created_by",
+          "type": "bigint",
+          "nullable": true,
+          "key": "",
+          "comment": "创建人ID\r"
+        },
+        {
+          "name": "updated_by",
+          "type": "bigint",
+          "nullable": true,
+          "key": "",
+          "comment": "更新人ID\r"
+        },
+        {
+          "name": "deleted",
+          "type": "tinyint",
+          "nullable": false,
+          "key": "",
+          "comment": "逻辑删除：0-未删除, 1-已删除\r"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "idx_sys_role_menu_role",
+          "unique": false,
+          "columns": [
+            "tenant_id\r",
+            "role_id\r"
+          ]
+        },
+        {
+          "name": "PRIMARY",
+          "unique": true,
+          "columns": [
+            "id\r"
+          ]
+        },
+        {
+          "name": "uk_sys_role_menu",
+          "unique": true,
+          "columns": [
+            "tenant_id\r",
+            "role_id\r",
+            "menu_id\r",
+            "deleted\r"
+          ]
+        }
+      ]
+    },
+    "sys_role_permission": {
+      "columns": [
+        {
+          "name": "id",
+          "type": "bigint",
+          "nullable": false,
+          "key": "PRI",
+          "comment": "主键ID（雪花ID）\r"
+        },
+        {
+          "name": "tenant_id",
+          "type": "bigint",
+          "nullable": false,
+          "key": "MUL",
+          "comment": "所属租户ID\r"
+        },
+        {
+          "name": "role_id",
+          "type": "bigint",
+          "nullable": false,
+          "key": "",
+          "comment": "角色ID\r"
+        },
+        {
+          "name": "permission_id",
+          "type": "bigint",
+          "nullable": false,
+          "key": "",
+          "comment": "权限ID\r"
+        },
+        {
+          "name": "created_at",
+          "type": "datetime",
+          "nullable": false,
+          "key": "",
+          "comment": "创建时间\r"
+        },
+        {
+          "name": "updated_at",
+          "type": "datetime",
+          "nullable": false,
+          "key": "",
+          "comment": "更新时间\r"
+        },
+        {
+          "name": "created_by",
+          "type": "bigint",
+          "nullable": true,
+          "key": "",
+          "comment": "创建人ID\r"
+        },
+        {
+          "name": "updated_by",
+          "type": "bigint",
+          "nullable": true,
+          "key": "",
+          "comment": "更新人ID\r"
+        },
+        {
+          "name": "deleted",
+          "type": "tinyint",
+          "nullable": false,
+          "key": "",
+          "comment": "逻辑删除：0-未删除, 1-已删除\r"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "idx_sys_role_permission_role",
+          "unique": false,
+          "columns": [
+            "tenant_id\r",
+            "role_id\r"
+          ]
+        },
+        {
+          "name": "PRIMARY",
+          "unique": true,
+          "columns": [
+            "id\r"
+          ]
+        },
+        {
+          "name": "uk_sys_role_permission",
+          "unique": true,
+          "columns": [
+            "tenant_id\r",
+            "role_id\r",
+            "permission_id\r",
+            "deleted\r"
+          ]
+        }
+      ]
+    },
+    "sys_tenant": {
+      "columns": [
+        {
+          "name": "id",
+          "type": "bigint",
+          "nullable": false,
+          "key": "PRI",
+          "comment": "主键ID（雪花ID）\r"
+        },
+        {
+          "name": "code",
+          "type": "varchar(64)",
+          "nullable": false,
+          "key": "MUL",
+          "comment": "租户编码，全局唯一\r"
+        },
+        {
+          "name": "name",
+          "type": "varchar(128)",
+          "nullable": false,
+          "key": "",
+          "comment": "租户名称\r"
+        },
+        {
+          "name": "status",
+          "type": "varchar(32)",
+          "nullable": false,
+          "key": "",
+          "comment": "状态：enabled-启用, disabled-停用\r"
+        },
+        {
+          "name": "contact_name",
+          "type": "varchar(64)",
+          "nullable": true,
+          "key": "",
+          "comment": "联系人姓名\r"
+        },
+        {
+          "name": "contact_phone",
+          "type": "varchar(32)",
+          "nullable": true,
+          "key": "",
+          "comment": "联系人电话\r"
+        },
+        {
+          "name": "remark",
+          "type": "varchar(512)",
+          "nullable": true,
+          "key": "",
+          "comment": "备注\r"
+        },
+        {
+          "name": "created_at",
+          "type": "datetime",
+          "nullable": false,
+          "key": "",
+          "comment": "创建时间\r"
+        },
+        {
+          "name": "updated_at",
+          "type": "datetime",
+          "nullable": false,
+          "key": "",
+          "comment": "更新时间\r"
+        },
+        {
+          "name": "deleted",
+          "type": "tinyint",
+          "nullable": false,
+          "key": "",
+          "comment": "逻辑删除：0-未删除, 1-已删除\r"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "PRIMARY",
+          "unique": true,
+          "columns": [
+            "id\r"
+          ]
+        },
+        {
+          "name": "uk_sys_tenant_code",
+          "unique": true,
+          "columns": [
+            "code\r",
+            "deleted\r"
+          ]
+        }
+      ]
+    },
+    "sys_user": {
+      "columns": [
+        {
+          "name": "id",
+          "type": "bigint",
+          "nullable": false,
+          "key": "PRI",
+          "comment": "主键ID（雪花ID）\r"
+        },
+        {
+          "name": "tenant_id",
+          "type": "bigint",
+          "nullable": false,
+          "key": "MUL",
+          "comment": "所属租户ID\r"
+        },
+        {
+          "name": "org_id",
+          "type": "bigint",
+          "nullable": true,
+          "key": "",
+          "comment": "所属组织ID\r"
+        },
+        {
+          "name": "post_id",
+          "type": "bigint",
+          "nullable": true,
+          "key": "",
+          "comment": "所属岗位ID\r"
+        },
+        {
+          "name": "username",
+          "type": "varchar(64)",
+          "nullable": false,
+          "key": "",
+          "comment": "登录用户名，租户内唯一\r"
+        },
+        {
+          "name": "password_hash",
+          "type": "varchar(255)",
+          "nullable": false,
+          "key": "",
+          "comment": "密码哈希值\r"
+        },
+        {
+          "name": "display_name",
+          "type": "varchar(64)",
+          "nullable": false,
+          "key": "",
+          "comment": "显示姓名\r"
+        },
+        {
+          "name": "user_type",
+          "type": "varchar(32)",
+          "nullable": false,
+          "key": "",
+          "comment": "user type: platform_admin, tenant_admin, certification_admin, assessor, normal\r"
+        },
+        {
+          "name": "phone",
+          "type": "varchar(32)",
+          "nullable": true,
+          "key": "",
+          "comment": "手机号\r"
+        },
+        {
+          "name": "email",
+          "type": "varchar(128)",
+          "nullable": true,
+          "key": "",
+          "comment": "邮箱\r"
+        },
+        {
+          "name": "avatar_file_id",
+          "type": "bigint",
+          "nullable": true,
+          "key": "",
+          "comment": "头像文件ID\r"
+        },
+        {
+          "name": "status",
+          "type": "varchar(32)",
+          "nullable": false,
+          "key": "",
+          "comment": "状态：enabled-正常, locked-锁定, disabled-停用\r"
+        },
+        {
+          "name": "last_login_at",
+          "type": "datetime",
+          "nullable": true,
+          "key": "",
+          "comment": "最后登录时间\r"
+        },
+        {
+          "name": "created_at",
+          "type": "datetime",
+          "nullable": false,
+          "key": "",
+          "comment": "创建时间\r"
+        },
+        {
+          "name": "updated_at",
+          "type": "datetime",
+          "nullable": false,
+          "key": "",
+          "comment": "更新时间\r"
+        },
+        {
+          "name": "created_by",
+          "type": "bigint",
+          "nullable": true,
+          "key": "",
+          "comment": "创建人ID\r"
+        },
+        {
+          "name": "updated_by",
+          "type": "bigint",
+          "nullable": true,
+          "key": "",
+          "comment": "更新人ID\r"
+        },
+        {
+          "name": "deleted",
+          "type": "tinyint",
+          "nullable": false,
+          "key": "",
+          "comment": "逻辑删除：0-未删除, 1-已删除\r"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "idx_sys_user_org",
+          "unique": false,
+          "columns": [
+            "tenant_id\r",
+            "org_id\r"
+          ]
+        },
+        {
+          "name": "idx_sys_user_post",
+          "unique": false,
+          "columns": [
+            "tenant_id\r",
+            "post_id\r"
+          ]
+        },
+        {
+          "name": "PRIMARY",
+          "unique": true,
+          "columns": [
+            "id\r"
+          ]
+        },
+        {
+          "name": "uk_sys_user_tenant_username",
+          "unique": true,
+          "columns": [
+            "tenant_id\r",
+            "username\r",
+            "deleted\r"
+          ]
+        }
+      ]
+    },
+    "sys_user_role": {
+      "columns": [
+        {
+          "name": "id",
+          "type": "bigint",
+          "nullable": false,
+          "key": "PRI",
+          "comment": "主键ID（雪花ID）\r"
+        },
+        {
+          "name": "tenant_id",
+          "type": "bigint",
+          "nullable": false,
+          "key": "MUL",
+          "comment": "所属租户ID\r"
+        },
+        {
+          "name": "user_id",
+          "type": "bigint",
+          "nullable": false,
+          "key": "",
+          "comment": "用户ID\r"
+        },
+        {
+          "name": "role_id",
+          "type": "bigint",
+          "nullable": false,
+          "key": "",
+          "comment": "角色ID\r"
+        },
+        {
+          "name": "created_at",
+          "type": "datetime",
+          "nullable": false,
+          "key": "",
+          "comment": "创建时间\r"
+        },
+        {
+          "name": "updated_at",
+          "type": "datetime",
+          "nullable": false,
+          "key": "",
+          "comment": "更新时间\r"
+        },
+        {
+          "name": "created_by",
+          "type": "bigint",
+          "nullable": true,
+          "key": "",
+          "comment": "创建人ID\r"
+        },
+        {
+          "name": "updated_by",
+          "type": "bigint",
+          "nullable": true,
+          "key": "",
+          "comment": "更新人ID\r"
+        },
+        {
+          "name": "deleted",
+          "type": "tinyint",
+          "nullable": false,
+          "key": "",
+          "comment": "逻辑删除：0-未删除, 1-已删除\r"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "idx_sys_user_role_role",
+          "unique": false,
+          "columns": [
+            "tenant_id\r",
+            "role_id\r"
+          ]
+        },
+        {
+          "name": "idx_sys_user_role_user",
+          "unique": false,
+          "columns": [
+            "tenant_id\r",
+            "user_id\r"
+          ]
+        },
+        {
+          "name": "PRIMARY",
+          "unique": true,
+          "columns": [
+            "id\r"
+          ]
+        },
+        {
+          "name": "uk_sys_user_role",
+          "unique": true,
+          "columns": [
+            "tenant_id\r",
+            "user_id\r",
+            "role_id\r",
+            "deleted\r"
+          ]
+        }
+      ]
+    }
+  }
+}

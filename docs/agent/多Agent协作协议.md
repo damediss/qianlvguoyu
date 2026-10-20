@@ -11,6 +11,12 @@
 | **verifier** | 独立审查产物；跑 `mvn compile` / `npm run build` / `DESCRIBE table`；给 PASS/FAIL | 不要顺手改 producer 代码；不要靠"看着对"判 PASS |
 | **tester** | 跑单测 / 集成测 / 端到端 | 不要跳过手动冒烟 |
 
+## 数据事实复核（存在性断言，2026-10-20 起）
+
+- verifier 职责加一条：生产者每一条**存在性断言**（"不存在/只有/没有"，以及"在 X 表 / 由 X 提供"类肯定断言），必须按 `docs/agent/数据关系速查.md` 30 秒红线（第 0 步 `node scripts/agent/schema-find.mjs <关键词>` 或手工五步）**独立重跑并附结果**，不得由生产者自证。
+- **单 Agent 阶段口径**（本协议自述单 Agent 阶段可跳过 verifier，而 2026-10-20 真题事故恰恰发生在单 Agent 模式——规则不能在默认工作模式下空转）：无 verifier 时，producer 的存在性断言必须在方案/交付文档中附五步或 `schema-find` 输出原文；owner 评审只查证据、不查人。与 `services/platform-api/AGENTS.md` 第 6 条呼应。
+- "数据事实"要求落到 `docs/05_decisions/方案数据事实评审清单.md`：现状表每一行必须有 SQL 或 `file:line`；没有证据路径的只能标"未核实"，不得进入结论。
+
 ## 硬上限
 
 - **producer 阶段：15min（系统硬限，撞了必被 kill）**
