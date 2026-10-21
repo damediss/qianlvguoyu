@@ -7,7 +7,7 @@ export interface CompetitionPlayerDrawTask {
   stageName?: string | null;
   playerCount: number;
   drawnCount: number;
-  status: 'created' | 'ordered' | 'drawing' | 'drawn' | string;
+  status: 'created' | 'distributed' | 'drawing' | 'drawn' | string;
   createdAt?: string | null;
   slots?: CompetitionPlayerDrawSlot[];
 }

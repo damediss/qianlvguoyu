@@ -94,9 +94,8 @@ const DefenseReviewApp = React.lazy(() => import('./pages/assessor/DefenseReview
 const PracticalCollectionApp = React.lazy(() => import('./pages/practicalCollection/PracticalCollectionApp').then((m) => ({ default: m.PracticalCollectionApp })));
 const CompetitionEventManagementPage = React.lazy(() => import('./pages/competition/CompetitionEventManagementPage').then((m) => ({ default: m.CompetitionEventManagementPage })));
 const CompetitionPlayerManagementPage = React.lazy(() => import('./pages/competition/CompetitionPlayerManagementPage').then((m) => ({ default: m.CompetitionPlayerManagementPage })));
-const CompetitionPlayerSortingManagementPage = React.lazy(() => import('./pages/competition/CompetitionPlayerSortingPage').then((m) => ({ default: m.CompetitionPlayerSortingManagementPage })));
+const CompetitionPlayerDrawDistributionPage = React.lazy(() => import('./pages/competition/CompetitionPlayerDrawPage').then((m) => ({ default: m.CompetitionPlayerDrawDistributionPage })));
 const CompetitionPlayerDrawManagementPage = React.lazy(() => import('./pages/competition/CompetitionPlayerDrawPage').then((m) => ({ default: m.CompetitionPlayerDrawManagementPage })));
-const CompetitionPlayerClassifyManagementPage = React.lazy(() => import('./pages/competition/CompetitionPlayerClassifyPage').then((m) => ({ default: m.CompetitionPlayerClassifyManagementPage })));
 const CompetitionRefereeManagementPage = React.lazy(() => import('./pages/competition/CompetitionRefereeManagementPage').then((m) => ({ default: m.CompetitionRefereeManagementPage })));
 const CompetitionRefereeGroupPage = React.lazy(() => import('./pages/competition/CompetitionRefereeGroupPage').then((m) => ({ default: m.CompetitionRefereeGroupPage })));
 const CompetitionEventModulePage = React.lazy(() => import('./pages/competition/CompetitionEventModulePage').then((m) => ({ default: m.CompetitionEventModulePage })));
@@ -547,9 +546,8 @@ const pageMap: Record<string, React.ReactNode> = {
   competition_event: <CompetitionEventManagementPage />,
   competition_player: <CompetitionPlayerManagementPage />,
   competition_player_info: <CompetitionPlayerManagementPage />,
-  competition_player_sorting: <CompetitionPlayerSortingManagementPage />,
-  competition_player_draw: <CompetitionPlayerDrawManagementPage />,
-  competition_player_classify: <CompetitionPlayerClassifyManagementPage />,
+  competition_player_draw_distribution: <CompetitionPlayerDrawDistributionPage />,
+  competition_player_draw_management: <CompetitionPlayerDrawManagementPage />,
   competition_referee: <CompetitionRefereeManagementPage />,
   competition_referee_info: <CompetitionRefereeManagementPage />,
   competition_referee_group: <CompetitionRefereeGroupPage />,

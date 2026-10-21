@@ -8,6 +8,7 @@ import com.guoyu.platform.common.web.TraceIdHolder;
 import com.guoyu.platform.integration.bot.BotActorContext;
 import com.guoyu.platform.integration.bot.BotActorContextHolder;
 import com.guoyu.platform.security.PlatformUserPrincipal;
+import com.guoyu.platform.security.TenantScopedPrincipal;
 import com.guoyu.platform.system.entity.AuditLogEntity;
 import com.guoyu.platform.system.mapper.AuditLogMapper;
 import jakarta.servlet.http.HttpServletRequest;
@@ -23,6 +24,7 @@ import org.aspectj.lang.annotation.Aspect;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Component;
+import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.web.context.request.RequestContextHolder;
 import org.springframework.web.context.request.ServletRequestAttributes;
 import org.springframework.web.multipart.MultipartFile;
@@ -45,15 +47,15 @@ public class AuditLogAspect {
 
   @AfterReturning(pointcut = "@annotation(auditLog)", returning = "result")
   public void writeAuditLog(JoinPoint joinPoint, AuditLog auditLog, Object result) {
-    PlatformUserPrincipal principal = currentPrincipal();
-    if (principal == null) {
+    AuditActor actor = currentActor();
+    if (actor == null) {
       return;
     }
 
     HttpServletRequest request = currentRequest();
     AuditLogEntity entity = new AuditLogEntity();
-    entity.setTenantId(principal.getTenantId());
-    entity.setUserId(principal.getUserId());
+    entity.setTenantId(actor.tenantId());
+    entity.setUserId(actor.userId());
     entity.setModule(auditLog.module());
     entity.setAction(auditLog.action());
     entity.setTargetType(auditLog.targetType());
@@ -71,12 +73,27 @@ public class AuditLogAspect {
     }
   }
 
-  private PlatformUserPrincipal currentPrincipal() {
+  private AuditActor currentActor() {
     Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
-    if (authentication == null || !(authentication.getPrincipal() instanceof PlatformUserPrincipal principal)) {
+    if (authentication == null) {
       return null;
     }
-    return principal;
+    Object principal = authentication.getPrincipal();
+    if (principal instanceof PlatformUserPrincipal platformUser) {
+      return new AuditActor(platformUser.getTenantId(), platformUser.getUserId());
+    }
+    if (principal instanceof TenantScopedPrincipal tenantPrincipal
+        && principal instanceof UserDetails userDetails) {
+      try {
+        return new AuditActor(tenantPrincipal.getTenantId(), Long.valueOf(userDetails.getUsername()));
+      } catch (NumberFormatException ex) {
+        log.warn("Audit actor has a non-numeric user name: {}", userDetails.getUsername());
+      }
+    }
+    return null;
+  }
+
+  private record AuditActor(Long tenantId, Long userId) {
   }
 
   private HttpServletRequest currentRequest() {

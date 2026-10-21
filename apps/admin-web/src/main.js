@@ -84,9 +84,7 @@ import { DefenseReviewApp } from './pages/assessor/DefenseReviewApp';
 import { PracticalCollectionApp } from './pages/practicalCollection/PracticalCollectionApp';
 import { CompetitionEventManagementPage } from './pages/competition/CompetitionEventManagementPage';
 import { CompetitionPlayerManagementPage } from './pages/competition/CompetitionPlayerManagementPage';
-import { CompetitionPlayerSortingManagementPage } from './pages/competition/CompetitionPlayerSortingPage';
-import { CompetitionPlayerDrawManagementPage } from './pages/competition/CompetitionPlayerDrawPage';
-import { CompetitionPlayerClassifyManagementPage } from './pages/competition/CompetitionPlayerClassifyPage';
+import { CompetitionPlayerDrawDistributionPage, CompetitionPlayerDrawManagementPage } from './pages/competition/CompetitionPlayerDrawPage';
 import { CompetitionRefereeManagementPage } from './pages/competition/CompetitionRefereeManagementPage';
 import { CompetitionRefereeGroupPage } from './pages/competition/CompetitionRefereeGroupPage';
 import { CompetitionEventModulePage } from './pages/competition/CompetitionEventModulePage';
@@ -540,9 +538,8 @@ const pageMap = {
     competition_event: _jsx(CompetitionEventManagementPage, {}),
     competition_player: _jsx(CompetitionPlayerManagementPage, {}),
     competition_player_info: _jsx(CompetitionPlayerManagementPage, {}),
-    competition_player_sorting: _jsx(CompetitionPlayerSortingManagementPage, {}),
-    competition_player_draw: _jsx(CompetitionPlayerDrawManagementPage, {}),
-    competition_player_classify: _jsx(CompetitionPlayerClassifyManagementPage, {}),
+    competition_player_draw_distribution: _jsx(CompetitionPlayerDrawDistributionPage, {}),
+    competition_player_draw_management: _jsx(CompetitionPlayerDrawManagementPage, {}),
     competition_referee: _jsx(CompetitionRefereeManagementPage, {}),
     competition_referee_info: _jsx(CompetitionRefereeManagementPage, {}),
     competition_referee_group: _jsx(CompetitionRefereeGroupPage, {}),

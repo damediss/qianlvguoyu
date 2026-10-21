@@ -11,7 +11,9 @@ import com.guoyu.platform.common.exception.BusinessException;
 import com.guoyu.platform.common.exception.ErrorCode;
 import com.guoyu.platform.common.util.SensitiveMaskUtils;
 import com.guoyu.platform.competition.draw.dto.CompetitionPlayerDrawTaskSelectionReq;
+import com.guoyu.platform.competition.draw.entity.CompetitionPlayerDrawAssignmentEntity;
 import com.guoyu.platform.competition.draw.entity.CompetitionPlayerDrawTaskEntity;
+import com.guoyu.platform.competition.draw.mapper.CompetitionPlayerDrawAssignmentMapper;
 import com.guoyu.platform.competition.draw.mapper.CompetitionPlayerDrawTaskMapper;
 import com.guoyu.platform.competition.draw.service.CompetitionPlayerDrawSession.DrawStep;
 import com.guoyu.platform.competition.draw.vo.CompetitionPlayerDrawSlot;
@@ -42,8 +44,10 @@ public class CompetitionPlayerDrawApplicationService {
   private static final String PRACTICAL = "practical";
   private static final String CREATED = "created";
   private static final String ORDERED = "ordered";
+  private static final String DISTRIBUTED = "distributed";
   private static final String DRAWING = "drawing";
   private static final String DRAWN = "drawn";
+  private static final String PENDING = "pending";
   private static final int MAX_SELECTED_PLAYER_COUNT = 5000;
   private static final java.security.SecureRandom RANDOM = new java.security.SecureRandom();
   private static final TypeReference<List<String>> STRING_LIST = new TypeReference<>() {};
@@ -52,6 +56,7 @@ public class CompetitionPlayerDrawApplicationService {
   private final CompetitionStageApplicationService stageService;
   private final CompetitionStagePaperAssignmentApplicationService stagePlayerService;
   private final CompetitionPlayerDrawTaskMapper taskMapper;
+  private final CompetitionPlayerDrawAssignmentMapper assignmentMapper;
   private final CompetitionPlayerDrawWorkbookExportService workbookExportService;
   private final CompetitionPlayerIdentityMapper identityMapper;
   private final ObjectMapper objectMapper;
@@ -60,12 +65,14 @@ public class CompetitionPlayerDrawApplicationService {
       CompetitionStageApplicationService stageService,
       CompetitionStagePaperAssignmentApplicationService stagePlayerService,
       CompetitionPlayerDrawTaskMapper taskMapper,
+      CompetitionPlayerDrawAssignmentMapper assignmentMapper,
       CompetitionPlayerDrawWorkbookExportService workbookExportService,
       CompetitionPlayerIdentityMapper identityMapper,
       ObjectMapper objectMapper) {
     this.stageService = stageService;
     this.stagePlayerService = stagePlayerService;
     this.taskMapper = taskMapper;
+    this.assignmentMapper = assignmentMapper;
     this.workbookExportService = workbookExportService;
     this.identityMapper = identityMapper;
     this.objectMapper = objectMapper;
@@ -134,6 +141,8 @@ public class CompetitionPlayerDrawApplicationService {
     if (taskMapper.deleteById(taskId) != 1) {
       throw new BusinessException(ErrorCode.NOT_FOUND, "抽签任务不存在");
     }
+    assignmentMapper.delete(new LambdaQueryWrapper<CompetitionPlayerDrawAssignmentEntity>()
+        .eq(CompetitionPlayerDrawAssignmentEntity::getTaskId, taskId));
   }
 
   @Transactional
@@ -147,18 +156,65 @@ public class CompetitionPlayerDrawApplicationService {
     if (req == null || req.contestantProfileIds() == null) {
       throw new BusinessException(ErrorCode.BAD_REQUEST, "请选择参加抽签的选手");
     }
-    validateSelectedContestants(entity.getStageId(), req.contestantProfileIds());
+    Map<Long, CompetitionStagePaperAssignmentPlayerVO> candidates =
+        validateSelectedContestants(entity.getStageId(), req.contestantProfileIds());
     PlatformUserPrincipal principal = currentUser();
+    LocalDateTime now = LocalDateTime.now();
+    List<CompetitionPlayerDrawSlot> slots = new ArrayList<>(req.contestantProfileIds().size());
+    List<CompetitionPlayerDrawAssignmentEntity> assignments = new ArrayList<>();
+    Set<Long> selectedPlayerIds = new HashSet<>();
+    for (int index = 0; index < req.contestantProfileIds().size(); index++) {
+      Long profileId = req.contestantProfileIds().get(index);
+      CompetitionStagePaperAssignmentPlayerVO candidate = candidates.get(profileId);
+      Long playerId = parseId(candidate.playerId());
+      if (playerId == null) {
+        throw new BusinessException(ErrorCode.UNPROCESSABLE_ENTITY,
+            "选手“" + candidate.name() + "”尚未激活 App 账号，不能接收抽签任务");
+      }
+      if (!selectedPlayerIds.add(playerId)) {
+        throw new BusinessException(ErrorCode.BAD_REQUEST, "同一 App 选手不能在一个抽签任务中重复出现");
+      }
+      int drawOrder = index + 1;
+      slots.add(new CompetitionPlayerDrawSlot(
+          candidate.contestantProfileId(), candidate.contestantNo(), candidate.name(),
+          candidate.orgName(), null, drawOrder, null));
+
+      CompetitionPlayerDrawAssignmentEntity assignment = new CompetitionPlayerDrawAssignmentEntity();
+      assignment.setId(IdWorker.getId());
+      assignment.setTenantId(principal.getTenantId());
+      assignment.setTaskId(taskId);
+      assignment.setEventId(entity.getEventId());
+      assignment.setStageId(entity.getStageId());
+      assignment.setContestantProfileId(profileId);
+      assignment.setPlayerId(playerId);
+      assignment.setContestantNo(candidate.contestantNo());
+      assignment.setPlayerName(candidate.name());
+      assignment.setOrgName(candidate.orgName());
+      assignment.setDrawStatus(PENDING);
+      assignment.setCreatedBy(principal.getUserId());
+      assignment.setUpdatedBy(principal.getUserId());
+      assignment.setCreatedAt(now);
+      assignment.setUpdatedAt(now);
+      assignment.setDeleted(0);
+      assignments.add(assignment);
+    }
     entity.setSelectedProfileIdsJson(writeJson(
         req.contestantProfileIds().stream().map(String::valueOf).toList()));
+    entity.setResultSnapshotJson(writeJson(slots));
     entity.setPlayerCount(req.contestantProfileIds().size());
     entity.setDrawnCount(0);
+    entity.setStatus(DISTRIBUTED);
     entity.setUpdatedBy(principal.getUserId());
-    entity.setUpdatedAt(LocalDateTime.now());
+    entity.setUpdatedAt(now);
     if (taskMapper.updateById(entity) != 1) {
       throw new BusinessException(ErrorCode.INTERNAL_ERROR, "抽签任务选手保存失败");
     }
-    return toVO(entity, List.of());
+    for (CompetitionPlayerDrawAssignmentEntity assignment : assignments) {
+      if (assignmentMapper.insert(assignment) != 1) {
+        throw new BusinessException(ErrorCode.INTERNAL_ERROR, "抽签任务分发失败");
+      }
+    }
+    return toVO(entity, slots);
   }
 
   @Transactional
@@ -223,7 +279,11 @@ public class CompetitionPlayerDrawApplicationService {
   public CompetitionPlayerDrawTaskVO get(Long taskId) {
     CompetitionPlayerDrawTaskEntity entity = requireTask(taskId);
     stageService.assertCanManage(entity.getStageId());
-    return toVO(entity, withMobile(entity.getStageId(), readSlots(entity.getResultSnapshotJson())));
+    List<CompetitionPlayerDrawAssignmentEntity> assignments = assignmentMapper.selectByTaskId(taskId);
+    List<CompetitionPlayerDrawSlot> slots = assignments == null || assignments.isEmpty()
+        ? readSlots(entity.getResultSnapshotJson())
+        : assignmentSlots(assignments);
+    return toVO(entity, withMobile(entity.getStageId(), slots));
   }
 
   @Transactional(readOnly = true)
@@ -233,8 +293,11 @@ public class CompetitionPlayerDrawApplicationService {
     if (!DRAWN.equals(entity.getStatus())) {
       throw new BusinessException(ErrorCode.UNPROCESSABLE_ENTITY, "请先完成全部选手的出场抽签再导出名单");
     }
-    List<CompetitionPlayerDrawSlot> slots = withMobile(entity.getStageId(),
-        readSlots(entity.getResultSnapshotJson()));
+    List<CompetitionPlayerDrawAssignmentEntity> assignments = assignmentMapper.selectByTaskId(taskId);
+    List<CompetitionPlayerDrawSlot> source = assignments == null || assignments.isEmpty()
+        ? readSlots(entity.getResultSnapshotJson())
+        : assignmentSlots(assignments);
+    List<CompetitionPlayerDrawSlot> slots = withMobile(entity.getStageId(), source);
     if (slots.size() != entity.getPlayerCount()
         || slots.stream().anyMatch(slot -> slot.appearanceOrder() == null)) {
       throw new BusinessException(ErrorCode.UNPROCESSABLE_ENTITY, "抽签结果不完整，无法导出名单");
@@ -307,7 +370,8 @@ public class CompetitionPlayerDrawApplicationService {
     }
   }
 
-  private void validateSelectedContestants(Long stageId, List<Long> contestantProfileIds) {
+  private Map<Long, CompetitionStagePaperAssignmentPlayerVO> validateSelectedContestants(
+      Long stageId, List<Long> contestantProfileIds) {
     if (contestantProfileIds.isEmpty() || contestantProfileIds.size() > MAX_SELECTED_PLAYER_COUNT) {
       throw new BusinessException(ErrorCode.UNPROCESSABLE_ENTITY,
           "请选择 1 至 " + MAX_SELECTED_PLAYER_COUNT + " 名选手，当前已选 "
@@ -322,6 +386,20 @@ public class CompetitionPlayerDrawApplicationService {
       throw new BusinessException(ErrorCode.UNPROCESSABLE_ENTITY,
           "所选选手中包含不属于当前赛段的选手，请刷新名单后重试");
     }
+    return candidateById;
+  }
+
+  private List<CompetitionPlayerDrawSlot> assignmentSlots(
+      List<CompetitionPlayerDrawAssignmentEntity> assignments) {
+    List<CompetitionPlayerDrawSlot> result = new ArrayList<>(assignments.size());
+    for (int index = 0; index < assignments.size(); index++) {
+      CompetitionPlayerDrawAssignmentEntity assignment = assignments.get(index);
+      result.add(new CompetitionPlayerDrawSlot(
+          String.valueOf(assignment.getContestantProfileId()), assignment.getContestantNo(),
+          assignment.getPlayerName(), assignment.getOrgName(), null, index + 1,
+          assignment.getAppearanceOrder()));
+    }
+    return result;
   }
 
   private Map<Long, CompetitionStagePaperAssignmentPlayerVO> candidateMap(Long stageId) {

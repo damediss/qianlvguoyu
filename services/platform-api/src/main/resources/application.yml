@@ -201,6 +201,9 @@ platform:
         daily-limit-per-player: ${COMPETITION_PLAYER_SMS_DAILY_LIMIT_PER_PLAYER:5}
         max-failed-attempts: ${COMPETITION_PLAYER_SMS_MAX_FAILED_ATTEMPTS:5}
         lock-seconds: ${COMPETITION_PLAYER_SMS_LOCK_SECONDS:1800}
+        # 仅本地/自动化测试使用；生产 profile 配置后会拒绝启动。
+        # 固定码仍需先申请 challenge，并继续受手机号匹配、有效期、频控和失败锁定约束。
+        development-test-code: ${COMPETITION_PLAYER_SMS_DEVELOPMENT_TEST_CODE:}
         aliyun:
           enabled: ${COMPETITION_PLAYER_SMS_ALIYUN_ENABLED:false}
           endpoint: ${COMPETITION_PLAYER_SMS_ALIYUN_ENDPOINT:dysmsapi.aliyuncs.com}

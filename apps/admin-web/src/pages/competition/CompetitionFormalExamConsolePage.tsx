@@ -2,6 +2,7 @@ import { ReloadOutlined, SettingOutlined } from '@ant-design/icons';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Alert, Button, Card, Empty, Result, Select, Space, Spin, Tag, Typography, message } from 'antd';
 import { useEffect, useMemo, useState } from 'react';
+import type { ReactNode } from 'react';
 import {
   getCompetitionFormalExamSessionByStage,
   pageCompetitionStages,
@@ -31,11 +32,13 @@ export function CompetitionFormalExamConsolePage({
   eventWorkTypeId,
   eventWorkTypeLevelCode,
   initialStageId,
+  scopeControls,
 }: {
   eventId: string;
   eventWorkTypeId?: string;
   eventWorkTypeLevelCode?: string;
   initialStageId?: string;
+  scopeControls?: ReactNode[];
 }) {
   const canView = useAuthStore((state) => state.permissionCodes.includes('competition:exam-session:view'));
   const canPrepare = useAuthStore((state) => state.permissionCodes.includes('competition:exam-session:prepare'));
@@ -86,6 +89,15 @@ export function CompetitionFormalExamConsolePage({
     && idValue(sessionQuery.data.stageId) === selectedStageId
     ? sessionQuery.data
     : undefined;
+  const refreshStageScope = async () => {
+    const result = await stagesQuery.refetch();
+    const selectedStageStillAvailable = result.data?.items.some(
+      (stage) => idValue(stage.id) === selectedStageId,
+    );
+    if (!result.isError && selectedStageId && selectedStageStillAvailable) {
+      await sessionQuery.refetch();
+    }
+  };
   const prepareMutation = useMutation({
     mutationFn: () => prepareCompetitionFormalExamSession(selectedStageId!),
     onSuccess: (session: CompetitionFormalExamSession) => {
@@ -93,7 +105,7 @@ export function CompetitionFormalExamConsolePage({
         ['competition-formal-exam-console-session', eventId, selectedStageId],
         session,
       );
-      message.success('正式比赛运行实例已初始化');
+      message.success('初始化成功');
     },
     onError: (error) => message.error(errorText(error, '初始化正式比赛失败，请先完成选手试卷配置')),
   });
@@ -101,14 +113,11 @@ export function CompetitionFormalExamConsolePage({
   if (!canView) {
     return <Result status="403" title="暂无理论比赛控制台查看权限" />;
   }
-  if (stagesQuery.isError) {
-    return <Result status="error" title="赛段列表加载失败" extra={<Button onClick={() => stagesQuery.refetch()}>重新加载</Button>} />;
-  }
-
   return (
-    <Space direction="vertical" size={16} style={{ width: '100%', marginTop: 16 }}>
-      <Card size="small" bordered={false}>
-        <Space wrap align="center" style={{ width: '100%' }}>
+    <Space direction="vertical" size={16} style={{ width: '100%', marginTop: scopeControls ? 0 : 16 }}>
+      <Card size="small" bordered={false} className={scopeControls ? 'competition-filter-card--compact' : undefined}>
+        <Space wrap align="center" size={12} style={{ width: '100%' }}>
+          {scopeControls}
           <SettingOutlined />
           <Typography.Text type="secondary">选择赛段</Typography.Text>
           <Select
@@ -122,12 +131,15 @@ export function CompetitionFormalExamConsolePage({
             options={stages.map((stage) => ({ value: idValue(stage.id), label: stageLabel(stage) }))}
             onChange={setSelectedStageId}
           />
-          <Button icon={<ReloadOutlined />} loading={stagesQuery.isFetching} onClick={() => stagesQuery.refetch()}>
+          <Button
+            icon={<ReloadOutlined />}
+            loading={stagesQuery.isFetching || sessionQuery.isFetching}
+            onClick={() => void refreshStageScope()}
+          >
             刷新赛段
           </Button>
           {selectedStage ? (
             <Space size={8}>
-              <Typography.Text type="secondary">当前控制范围：{stageLabel(selectedStage)}</Typography.Text>
               {sessionQuery.isFetching && !selectedSession ? <Tag>正在读取比赛状态</Tag> : null}
               {!sessionQuery.isFetching && selectedSession ? <Tag color="success">已初始化</Tag> : null}
               {!sessionQuery.isFetching && !selectedSession && !sessionQuery.isError ? <Tag color="warning">未初始化</Tag> : null}
@@ -136,13 +148,15 @@ export function CompetitionFormalExamConsolePage({
         </Space>
       </Card>
 
+      {stagesQuery.isError ? <Result status="error" title="赛段列表加载失败" /> : null}
+
       {!scopeReady ? (
         <Card bordered={false}>
           <Empty description="请先选择工种和技能等级。正式比赛只读取该工种+等级下的赛段，只刷新赛事列表不会带出已配置的赛段。" />
         </Card>
       ) : null}
 
-      {scopeReady && !stagesQuery.isFetching && stages.length === 0 ? (
+      {scopeReady && !stagesQuery.isFetching && !stagesQuery.isError && stages.length === 0 ? (
         <Card bordered={false}>
           <Empty description="当前工种等级下暂无可控制的赛段。请确认已在「赛段编排」配置该工种等级的赛段，再点「刷新赛段」。" />
         </Card>
@@ -183,12 +197,6 @@ export function CompetitionFormalExamConsolePage({
 
       {selectedSession ? (
         <Space direction="vertical" size={12} style={{ width: '100%' }} data-testid="formal-exam-console-initialized">
-          <Alert
-            type="success"
-            showIcon
-            message="正式比赛已初始化"
-            description="当前页面保留并展示该比赛的控制台数据面板，可继续查看实时状态和执行控制。"
-          />
           <CompetitionFormalExamSessionPanel
             key={idValue(selectedSession.id)}
             open
