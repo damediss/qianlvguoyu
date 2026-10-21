@@ -64,7 +64,7 @@ public class AppReviewSyncController {
     return LegacyAppResponse.ok("成功", reviewService.questions(userId, examId(body), questionIds));
   }
 
-  /** 7.4 单题作答（主观题支持自评兜底入参 selfAssessed/selfCorrect，可选） */
+  /** 7.4 单题作答（主观题支持自评兜底入参 selfAssessed/selfCorrect、giveUp 主动放弃看解析，可选） */
   @PostMapping("/answer")
   public LegacyAppResponse answer(@RequestBody Map<String, Object> body) {
     long userId = requireUserId();
@@ -78,7 +78,8 @@ public class AppReviewSyncController {
         intValue(body.get("useTimeSec")),
         TenantContextHolder.getTenantId(),
         intValueOrNull(body.get("selfAssessed")),
-        intValueOrNull(body.get("selfCorrect"))));
+        intValueOrNull(body.get("selfCorrect")),
+        intValueOrNull(body.get("giveUp"))));
   }
 
   /** 7.5 开始模考 */

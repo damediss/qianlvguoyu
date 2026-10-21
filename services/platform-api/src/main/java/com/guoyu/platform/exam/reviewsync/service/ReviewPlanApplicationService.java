@@ -304,6 +304,20 @@ public class ReviewPlanApplicationService {
   public Map<String, Object> answer(long platformUserId, long examId, long dayId, long questionId,
       String roundType, String userAnswer, Integer useTimeSec, Long tenantId,
       Integer selfAssessed, Integer selfCorrect) {
+    return answer(platformUserId, examId, dayId, questionId, roundType, userAnswer, useTimeSec,
+        tenantId, selfAssessed, selfCorrect, null);
+  }
+
+  /**
+   * 单题作答入口（本身不开事务）：查题后按题型分流——
+   * 客观题走原大事务路径（{@link #answerObjectiveInTx}，自注入代理开启，判分/落库逻辑一行未动）；
+   * 白名单主观题走 {@link #answerSubjective}（AI 判分在事务外完成，落库另开短事务，
+   * LLM 调用期间禁止持有 DB 事务——《简答题作答与AI判分方案》§3.4）。
+   * giveUp=1：学员主动放弃本题（「查看解析」），记 0 分落库 gradeSource=skip，不调 LLM（拦截方案 §3.3）。
+   */
+  public Map<String, Object> answer(long platformUserId, long examId, long dayId, long questionId,
+      String roundType, String userAnswer, Integer useTimeSec, Long tenantId,
+      Integer selfAssessed, Integer selfCorrect, Integer giveUp) {
     gateGrayRelease(examId, platformUserId, tenantId);
     AiReviewPlanEntity plan = requirePlan(platformUserId, examId);
     AiReviewPlanDayEntity day = requireDay(plan.getId(), dayId);
@@ -313,7 +327,7 @@ public class ReviewPlanApplicationService {
     }
     if (AiGradeApplicationService.isSubjective(detail.type())) {
       return answerSubjective(plan, day, detail, platformUserId, examId, dayId, questionId,
-          roundType, userAnswer, useTimeSec, tenantId, selfAssessed, selfCorrect);
+          roundType, userAnswer, useTimeSec, tenantId, selfAssessed, selfCorrect, giveUp);
     }
     return self.answerObjectiveInTx(plan, day, detail, platformUserId, examId, dayId, questionId,
         roundType, userAnswer, useTimeSec, tenantId);
@@ -436,13 +450,22 @@ public class ReviewPlanApplicationService {
   private Map<String, Object> answerSubjective(AiReviewPlanEntity plan, AiReviewPlanDayEntity day,
       ReviewQuestionDetail detail, long platformUserId, long examId, long dayId, long questionId,
       String roundType, String userAnswer, Integer useTimeSec, Long tenantId,
-      Integer selfAssessed, Integer selfCorrect) {
+      Integer selfAssessed, Integer selfCorrect, Integer giveUp) {
     String reference = SubjectiveAnswerExtractor.extract(detail.answerJson());
 
     // 幂等预检（无事务）：同答案或此前已答对 → 纯回放，不调 LLM
     AiReviewAnswerEntity existing = findLatestAnswer(plan.getId(), dayId, questionId, roundType);
     if (existing != null && (sameAnswer(existing, userAnswer) || wasCorrect(existing))) {
       return subjectiveReplayView(existing, reference, detail.resolve());
+    }
+
+    // 「查看解析」主动放弃（拦截方案 §3.3）：记 0 分落库 gradeSource=skip、恒返回参考答案、
+    // 不调 LLM/不计限流；置于自评通道与"无参考答案"早退之前（放弃不依赖参考答案是否存在）
+    if (giveUp != null && giveUp == 1) {
+      SubjectiveGradeResult skipped = new SubjectiveGradeResult(true, 0, false,
+          "本题已主动放弃，记 0 分。参考答案见下方，看懂后可以随时重新作答。", "skip");
+      return persistSubjectiveWithDupReplay(plan, day, detail, platformUserId, examId, dayId,
+          questionId, roundType, userAnswer, useTimeSec, skipped, reference);
     }
 
     // 自评通道优先于"无参考答案"早退：自评不需要参考答案且必须落库——否则无参考答案题
@@ -545,6 +568,7 @@ public class ReviewPlanApplicationService {
     answer.setRoundType(roundType);
     answer.setUserAnswer(userAnswer);
     answer.setIsCorrect(graded.correct() ? 1 : 0);
+    answer.setGradeSource(graded.gradeSource());
     answer.setUseTimeSec(useTimeSec != null ? useTimeSec : 0);
     answer.setAttemptSeq(attemptSeq);
     // 单库化：exam_result 同事务同步直写成功即置 1（与客观题同口径）
@@ -618,17 +642,22 @@ public class ReviewPlanApplicationService {
     return item.getScore() != null ? item.getScore().intValue() : 0;
   }
 
-  /** 主观题作答回放视图：已存结果 + 恒返回参考答案；aiComment/gradeSource 未落库，回放为 null（口径见交棒说明） */
+  /**
+   * 主观题作答回放视图：已存结果 + 恒返回参考答案；aiComment 未落库回放为 null；
+   * gradeSource 自 grade_source 列回显（存量 NULL 行按 'ai' 默认——V20261021_004 前未落库）。
+   */
   private Map<String, Object> subjectiveReplayView(AiReviewAnswerEntity existing, String reference,
       String resolve) {
+    String gradeSource = existing.getGradeSource() != null ? existing.getGradeSource() : "ai";
     return subjectiveAnswerView(existing.getIsCorrect() != null && existing.getIsCorrect() == 1,
-        reference, resolve, null, null, null, 0);
+        reference, resolve, null, null, gradeSource, 0);
   }
 
   /**
    * 主观题作答响应视图（在现有结构上扩展，前端已按此对齐）：
    * correctAnswer 恒返回（答对也返回，不可判分为 null）；aiComment=AI 点评；
-   * gradeSource=ai/self；ungradeable=1 表示无参考答案不可判分（前端走自评）。
+   * gradeSource=ai/self/rule/skip（rule=无意义作答拦截，skip=主动放弃看解析）；
+   * ungradeable=1 表示无参考答案不可判分（前端走自评）。
    */
   private Map<String, Object> subjectiveAnswerView(boolean correct, String reference, String resolve,
       Map<String, Object> cardChange, String aiComment, String gradeSource, int ungradeable) {

@@ -13,6 +13,7 @@ import com.guoyu.platform.common.exception.ErrorCode;
 import com.guoyu.platform.exam.entity.ExamFaqModelConfigEntity;
 import com.guoyu.platform.exam.reviewsync.support.QuestionTypes;
 import com.guoyu.platform.exam.reviewsync.support.SubjectiveAnswerExtractor;
+import com.guoyu.platform.exam.reviewsync.support.SubjectiveAnswerGuard;
 import com.guoyu.platform.exam.service.FaqModelConfigApplicationService;
 import com.guoyu.platform.system.entity.DictEntity;
 import com.guoyu.platform.system.mapper.DictMapper;
@@ -42,6 +43,12 @@ public class AiGradeApplicationService {
   private static final String DEFAULT_MODEL_CODE = "deepseek-review";
   private static final String DICT_PASS_RATE = "ai_review_grade_pass_rate";
   private static final int DEFAULT_PASS_RATE = 60;
+  private static final String DICT_GUARD_ENABLED = "ai_review_grade_guard_enabled";
+  private static final String DICT_GUARD_MIN_HANZI = "ai_review_grade_guard_min_hanzi";
+  private static final int DEFAULT_GUARD_MIN_HANZI = 4;
+  private static final String GRADE_SOURCE_RULE = "rule";
+  private static final String GUARD_COMMENT =
+      "系统未识别到有效作答，本题记 0 分。想看答案可以点下方「查看解析」；愿意动手可以重新作答。";
   private static final String DRAFT_TYPE = "ai_review_grade";
   private static final String GRADE_SOURCE = "ai";
   /** 调用级输出预算（Q7：判分输出是小 JSON，强制 thinking=off，max_tokens ≥1024 取 2048） */
@@ -116,6 +123,18 @@ public class AiGradeApplicationService {
     if (reference == null) {
       log.info("[AI判分] 参考答案提取为空，不可判分：tenantId={} questionId={}", tenantId, questionId);
       return SubjectiveGradeResult.ungradable();
+    }
+
+    // 无意义作答闸口（拦截方案 §3.1）：命中记 0 分返回，不调 LLM、不计限流、不写 draft、不写缓存
+    if (dictInt(DICT_GUARD_ENABLED, 1) != 0) {
+      int minHanzi = dictInt(DICT_GUARD_MIN_HANZI, DEFAULT_GUARD_MIN_HANZI);
+      SubjectiveAnswerGuard.Verdict verdict = SubjectiveAnswerGuard.check(userAnswer, reference, minHanzi);
+      if (verdict.meaningless()) {
+        log.info("[AI判分] 无意义作答拦截（不调 LLM）：tenantId={} userId={} questionId={} reason={} answerLen={}",
+            tenantId, userId, questionId, verdict.reason(),
+            userAnswer == null ? 0 : userAnswer.trim().length());
+        return new SubjectiveGradeResult(true, 0, false, GUARD_COMMENT, GRADE_SOURCE_RULE);
+      }
     }
 
     String cacheKey = "grade:" + tenantId + ":" + questionId + ":" + md5(normalize(userAnswer));

@@ -34,6 +34,8 @@ public class AiReviewAnswerEntity extends BaseEntity {
   /** 作答内容（单/判：选项内容；多选：内容数组 JSON） */
   private String userAnswer;
   private Integer isCorrect;
+  /** 判分来源：ai/self/rule/skip（rule=无意义作答拦截，skip=主动放弃看解析；存量 NULL 按 ai） */
+  private String gradeSource;
   private Integer useTimeSec;
   /** 该题第几次作答 */
   private Integer attemptSeq;
