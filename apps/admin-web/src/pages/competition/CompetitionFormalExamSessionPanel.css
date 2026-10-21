@@ -30,18 +30,6 @@
   font-weight: 600;
 }
 
-.competition-formal-exam-session-panel__stats {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 12px;
-}
-
-.competition-formal-exam-session-panel__papers {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-  gap: 12px;
-}
-
 .competition-formal-exam-session-panel__toolbar {
   display: flex;
   flex-wrap: wrap;

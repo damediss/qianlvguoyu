@@ -68,6 +68,27 @@ class CompetitionPlayerSmsChallengeServiceTest {
   }
 
   @Test
+  void usesConfiguredTestCodeWithNormalChallengeLifecycle() {
+    properties.setDevelopmentTestCode("123456");
+    mockChallengePersistence();
+
+    var result = service.requestChallenge(
+        TENANT_ID, PLAYER_ID, MOBILE, CompetitionPlayerSmsPurpose.ACTIVATION, null, null);
+
+    assertThat(sentMessage.get().code()).isEqualTo("123456");
+    CompetitionPlayerSmsChallengeEntity challenge = insertedChallenge.get();
+    when(challengeMapper.selectForUpdate(
+        result.challengeId(), PLAYER_ID, CompetitionPlayerSmsPurpose.ACTIVATION.getCode()))
+        .thenReturn(challenge);
+
+    service.verifyChallenge(
+        PLAYER_ID, result.challengeId(), CompetitionPlayerSmsPurpose.ACTIVATION, "123456");
+
+    assertThat(challenge.getStatus()).isEqualTo(CompetitionPlayerSmsChallengeStatus.VERIFIED.getCode());
+    assertThat(challenge.getConsumedAt()).isNotNull();
+  }
+
+  @Test
   void rejectsWrongCodeAndTracksFailedAttempt() {
     properties.setDevelopmentTestCode("123456");
     mockChallengePersistence();

@@ -26,7 +26,7 @@ public class CompetitionPlayerDrawWorkbookExportService {
       title.createCell(0).setCellValue(
           (stageName == null || stageName.isBlank() ? "抽签" : stageName.trim()) + " 抽签出场名单");
       Row header = sheet.createRow(1);
-      String[] columns = {"出场顺序", "抽签顺序", "考生姓名", "所属企业", "手机号", "选手编号"};
+      String[] columns = {"出场顺序", "考生姓名", "所属企业", "手机号", "选手编号"};
       for (int index = 0; index < columns.length; index++) {
         header.createCell(index).setCellValue(columns[index]);
       }
@@ -34,11 +34,10 @@ public class CompetitionPlayerDrawWorkbookExportService {
       for (CompetitionPlayerDrawSlot slot : ordered) {
         Row row = sheet.createRow(rowIndex++);
         row.createCell(0).setCellValue(slot.appearanceOrder());
-        row.createCell(1).setCellValue(slot.drawOrder());
-        row.createCell(2).setCellValue(text(slot.name()));
-        row.createCell(3).setCellValue(text(slot.orgName()));
-        row.createCell(4).setCellValue(text(slot.mobile()));
-        row.createCell(5).setCellValue(text(slot.contestantNo()));
+        row.createCell(1).setCellValue(text(slot.name()));
+        row.createCell(2).setCellValue(text(slot.orgName()));
+        row.createCell(3).setCellValue(text(slot.mobile()));
+        row.createCell(4).setCellValue(text(slot.contestantNo()));
       }
       for (int index = 0; index < columns.length; index++) {
         sheet.setColumnWidth(index, 18 * 256);

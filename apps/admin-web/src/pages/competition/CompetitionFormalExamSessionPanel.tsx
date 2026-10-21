@@ -12,7 +12,6 @@ import {
   Select,
   Space,
   Spin,
-  Statistic,
   Table,
   Tag,
   Tooltip,
@@ -111,13 +110,6 @@ const candidateStatusOptions = Object.entries(candidateStatusMeta).map(([value, 
 function durationLabel(seconds?: number | null) {
   if (!seconds || seconds <= 0) return '-';
   return `${Math.round(seconds / 60)} 分钟`;
-}
-
-function examTypeLabel(value?: string | null) {
-  if (value === 'theory') return '理论考试';
-  if (value === 'practical') return '实操考试';
-  if (value === 'simulation') return '仿真考试';
-  return value || '-';
 }
 
 function formatDateTime(value?: string | null) {
@@ -525,10 +517,6 @@ export function CompetitionFormalExamSessionPanel({
 
           <div className="competition-formal-exam-session-panel__hero">
             <div>
-              <Typography.Title level={4}>理论考试 · 正式比赛</Typography.Title>
-              <Typography.Text type="secondary">
-                {currentSession.eventName || '-'} / {currentSession.stageName || '-'}
-              </Typography.Text>
               {currentSession.status === 'running' || currentSession.status === 'finished' ? (
                 <div className="competition-formal-exam-session-panel__times">
                   <span>实际开始：{formatClockTime(currentSession.actualStartTime)}</span>
@@ -541,12 +529,6 @@ export function CompetitionFormalExamSessionPanel({
               ) : null}
             </div>
             <div className="competition-formal-exam-session-panel__hero-actions">
-              <Tag color={sessionStatus.color}>{sessionStatus.label}</Tag>
-              {currentSession.status === 'finished' ? (
-                <Tag color={(scoringStatusMeta[currentSession.scoringStatus || 'not_started'] || scoringStatusMeta.not_started).color}>
-                  {(scoringStatusMeta[currentSession.scoringStatus || 'not_started'] || scoringStatusMeta.not_started).label}
-                </Tag>
-              ) : null}
               {currentSession.status === 'finished'
                 && canScore
                 && (currentSession.scoringStatus === 'failed' || currentSession.scoringStatus === 'not_started') ? (
@@ -579,28 +561,6 @@ export function CompetitionFormalExamSessionPanel({
           </div>
 
           <Descriptions size="small" column={3} bordered>
-            <Descriptions.Item label="赛事">{currentSession.eventName || '-'}</Descriptions.Item>
-            <Descriptions.Item label="赛段">{currentSession.stageName || '-'}</Descriptions.Item>
-            <Descriptions.Item label="工种">{currentSession.workTypeName || '-'}</Descriptions.Item>
-            <Descriptions.Item label="技能等级">
-              {currentSession.levelName ? `${currentSession.levelName}（${currentSession.levelCode || '-'}）` : '-'}
-            </Descriptions.Item>
-            <Descriptions.Item label="考试类型">{examTypeLabel(currentSession.examType)}</Descriptions.Item>
-            <Descriptions.Item label="ExamSession ID">
-              <Typography.Text copyable={{ text: String(currentSession.id) }}>{String(currentSession.id)}</Typography.Text>
-            </Descriptions.Item>
-            <Descriptions.Item label="平板端地址" span={3}>
-              <Typography.Text
-                copyable={{ text: 'http://192.168.137.1:8080/formal-exam' }}
-              >
-                http://192.168.137.1:8080/formal-exam
-              </Typography.Text>
-              <div>
-                <Typography.Text type="secondary">
-                  平板 App 打开固定入口即可，不必随竞赛更换 sessionId。选手登录后进入当前可参加的理论考试。请连本机热点，不要用 localhost。
-                </Typography.Text>
-              </div>
-            </Descriptions.Item>
             <Descriptions.Item label="比赛状态">
               <Tag color={sessionStatus.color}>{sessionStatus.label}</Tag>
             </Descriptions.Item>
@@ -619,26 +579,6 @@ export function CompetitionFormalExamSessionPanel({
             <Descriptions.Item label="试卷套数">{currentSession.paperCount ?? 0}</Descriptions.Item>
           </Descriptions>
 
-          <div className="competition-formal-exam-session-panel__stats">
-            <Card size="small" className="competition-formal-exam-session-panel__stat-waiting">
-              <Statistic title="待进入" value={currentSession.waitingEnterCount ?? 0} suffix="人" />
-            </Card>
-            <Card size="small" className="competition-formal-exam-session-panel__stat-ready">
-              <Statistic title="已候考" value={currentSession.readyCount ?? 0} suffix="人" />
-            </Card>
-            <Card size="small"><Statistic title="考试中" value={currentSession.runningCount ?? 0} suffix="人" /></Card>
-            <Card size="small"><Statistic title="已交卷" value={currentSession.submittedCount ?? 0} suffix="人" /></Card>
-            <Card size="small"><Statistic title="自动交卷" value={currentSession.autoSubmittedCount ?? 0} suffix="人" /></Card>
-            <Card size="small"><Statistic title="强制交卷" value={currentSession.forcedSubmittedCount ?? 0} suffix="人" /></Card>
-            <Card size="small"><Statistic title="缺考" value={currentSession.absentCount ?? 0} suffix="人" /></Card>
-            {currentSession.status === 'finished' ? (
-              <>
-                <Card size="small"><Statistic title="已评分" value={currentSession.scoredCount ?? 0} suffix="人" /></Card>
-                <Card size="small"><Statistic title="缺考结果" value={currentSession.scoringAbsentCount ?? 0} suffix="人" /></Card>
-                <Card size="small"><Statistic title="评分失败" value={currentSession.scoringFailedCount ?? 0} suffix="人" /></Card>
-              </>
-            ) : null}
-          </div>
           {currentSession.status === 'finished' && currentSession.scoringStatus === 'failed' && currentSession.scoringError ? (
             <Alert type="error" showIcon message={currentSession.scoringError} />
           ) : null}
@@ -664,21 +604,6 @@ export function CompetitionFormalExamSessionPanel({
             )}
           </Card>
           ) : null}
-
-          <Card size="small" title="试卷分布">
-            <div className="competition-formal-exam-session-panel__papers">
-              {(currentSession.papers || []).map((paper) => (
-                <Card key={String(paper.id)} size="small">
-                  <Statistic
-                    title={paperLabel(paper.paperCode, paper.paperName)}
-                    value={paper.candidateCount}
-                    suffix="人"
-                  />
-                </Card>
-              ))}
-              {!currentSession.papers?.length ? <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无正式试卷快照" /> : null}
-            </div>
-          </Card>
 
           <Card size="small" title="选手">
             <div className="competition-formal-exam-session-panel__toolbar">

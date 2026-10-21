@@ -2,6 +2,7 @@ import { ReloadOutlined } from '@ant-design/icons';
 import { Button, Card, Result, Select, Space, Spin, Typography } from 'antd';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useMemo, useState } from 'react';
+import type { ReactNode } from 'react';
 import {
   listCompetitionEventWorkTypeLevels,
   listCompetitionEventWorkTypes,
@@ -56,7 +57,7 @@ const moduleMeta: Record<CompetitionEventModule, {
     title: '理论考试正式比赛控制台',
     description: '选择赛事、工种和技能等级后，进入对应赛段的理论考试正式比赛运行控制台，初始化运行实例并执行开考、监考和成绩处理。',
     permission: ['competition:exam-session:view'],
-    eventLabel: (event) => `${event.code} · ${event.name}`,
+    eventLabel: (event) => `${event.name} · ${event.code}`,
   },
   'practical-exam-console': {
     title: '实操比赛控制台',
@@ -173,6 +174,72 @@ export function CompetitionEventModulePage({
   const effectiveEventWorkTypeLevelCode = levelOptions.some(
     (level) => level.value === selectedEventWorkTypeLevelCode,
   ) ? selectedEventWorkTypeLevelCode : undefined;
+  const scopeControls: ReactNode[] = [
+    <Typography.Text key="event-label" type="secondary">选择赛事</Typography.Text>,
+    <Select
+      key="event-select"
+      showSearch
+      optionFilterProp="label"
+      value={selectedEventId}
+      loading={eventsQuery.isFetching}
+      disabled={!eventsQuery.isFetching && events.length === 0}
+      placeholder="请选择赛事"
+      style={{ width: 280, maxWidth: '100%' }}
+      options={events.map((event) => ({
+        value: String(event.id),
+        label: meta.eventLabel(event),
+      }))}
+      onChange={async (eventId) => {
+        if (!(await confirmNavigation())) return;
+        setSelectedEventWorkTypeId(undefined);
+        setSelectedEventWorkTypeLevelCode(undefined);
+        setSelectedEventId(eventId || undefined);
+      }}
+    />,
+    ...(needsWorkTypeScope ? [
+      <Typography.Text key="work-type-label" type="secondary">选择工种</Typography.Text>,
+      <Select
+        key="work-type-select"
+        showSearch
+        optionFilterProp="label"
+        value={effectiveEventWorkTypeId}
+        loading={eventWorkTypesQuery.isFetching}
+        disabled={!selectedEventId || (!eventWorkTypesQuery.isFetching && activeEventWorkTypes.length === 0)}
+        placeholder="请选择工种"
+        style={{ width: 160, maxWidth: '100%' }}
+        options={activeEventWorkTypes.map((workType) => ({
+          value: String(workType.id),
+          label: workType.displayName || workType.workTypeName || String(workType.id),
+        }))}
+        onChange={async (workTypeId) => {
+          if (!(await confirmNavigation())) return;
+          setSelectedEventWorkTypeLevelCode(undefined);
+          setSelectedEventWorkTypeId(workTypeId || undefined);
+        }}
+      />,
+      <Typography.Text key="level-label" type="secondary">选择等级</Typography.Text>,
+      <Select
+        key="level-select"
+        showSearch
+        optionFilterProp="label"
+        value={effectiveEventWorkTypeLevelCode}
+        disabled={!effectiveEventWorkTypeId || levelOptions.length === 0}
+        loading={eventWorkTypeLevelsQuery.isFetching}
+        placeholder={levelOptions.length ? '请选择等级' : '请先在赛事总览选择等级'}
+        style={{ width: 180, maxWidth: '100%' }}
+        options={levelOptions}
+        onChange={async (levelCode) => {
+          if (!(await confirmNavigation())) return;
+          setSelectedEventWorkTypeLevelCode(levelCode || undefined);
+        }}
+      />,
+      effectiveEventWorkTypeId && !eventWorkTypeLevelsQuery.isFetching && levelOptions.length === 0 ? (
+        <Typography.Text key="level-warning" type="warning">请先在赛事总览为当前工种选择参赛等级</Typography.Text>
+      ) : null,
+    ] : []),
+  ];
+  const mergeFormalExamControls = module === 'formal-exam-console'
+    && Boolean(effectiveEventWorkTypeId && effectiveEventWorkTypeLevelCode);
 
   if (!canView) {
     return <Result status="403" title={`暂无${meta.title}查看权限`} />;
@@ -183,10 +250,12 @@ export function CompetitionEventModulePage({
   return (
     <div className="competition-page">
       <section className="competition-page-heading">
-        <div>
-          <Typography.Title level={2}>{meta.title}</Typography.Title>
-          <Typography.Paragraph type="secondary">{meta.description}</Typography.Paragraph>
-        </div>
+        {module !== 'formal-exam-console' ? (
+          <div>
+            <Typography.Title level={2}>{meta.title}</Typography.Title>
+            <Typography.Paragraph type="secondary">{meta.description}</Typography.Paragraph>
+          </div>
+        ) : null}
         <Button
           icon={<ReloadOutlined />}
           onClick={() => {
@@ -195,83 +264,18 @@ export function CompetitionEventModulePage({
               void queryClient.invalidateQueries({ queryKey: ['competition-event-work-types'] });
               void queryClient.invalidateQueries({ queryKey: ['competition-event-work-type-levels'] });
             }
-            if (module === 'formal-exam-console') {
-              void queryClient.invalidateQueries({ queryKey: ['competition-formal-exam-console-stages'] });
-              void queryClient.invalidateQueries({ queryKey: ['competition-formal-exam-console-session'] });
-            }
           }}
         >
           刷新赛事
         </Button>
       </section>
-      <Card
-        bordered={false}
-        className="competition-filter-card competition-filter-card--compact"
-      >
-        <Space align="center" size={12} wrap style={{ width: '100%' }}>
-          <Typography.Text type="secondary">选择赛事</Typography.Text>
-          <Select
-            showSearch
-            optionFilterProp="label"
-            value={selectedEventId}
-            loading={eventsQuery.isFetching}
-            disabled={!eventsQuery.isFetching && events.length === 0}
-            placeholder="请选择赛事"
-            style={{ width: 280, maxWidth: '100%' }}
-            options={events.map((event) => ({
-              value: String(event.id),
-              label: meta.eventLabel(event),
-            }))}
-            onChange={async (eventId) => {
-              if (!(await confirmNavigation())) return;
-              setSelectedEventWorkTypeId(undefined);
-              setSelectedEventWorkTypeLevelCode(undefined);
-              setSelectedEventId(eventId || undefined);
-            }}
-          />
-          {needsWorkTypeScope && (
-            <>
-              <Typography.Text type="secondary">选择工种</Typography.Text>
-              <Select
-                showSearch
-                optionFilterProp="label"
-                value={effectiveEventWorkTypeId}
-                loading={eventWorkTypesQuery.isFetching}
-                disabled={!selectedEventId || (!eventWorkTypesQuery.isFetching && activeEventWorkTypes.length === 0)}
-                placeholder="请选择工种"
-                style={{ width: 240, maxWidth: '100%' }}
-                options={activeEventWorkTypes.map((workType) => ({
-                  value: String(workType.id),
-                  label: workType.displayName || workType.workTypeName || String(workType.id),
-                }))}
-                onChange={async (workTypeId) => {
-                  if (!(await confirmNavigation())) return;
-                  setSelectedEventWorkTypeLevelCode(undefined);
-                  setSelectedEventWorkTypeId(workTypeId || undefined);
-                }}
-              />
-              <Typography.Text type="secondary">选择等级</Typography.Text>
-              <Select
-                showSearch
-                optionFilterProp="label"
-                value={effectiveEventWorkTypeLevelCode}
-                disabled={!effectiveEventWorkTypeId || levelOptions.length === 0}
-                loading={eventWorkTypeLevelsQuery.isFetching}
-                placeholder={levelOptions.length ? '请选择等级' : '请先在赛事总览选择等级'}
-                style={{ width: 180, maxWidth: '100%' }}
-                options={levelOptions}
-                onChange={async (levelCode) => {
-                  if (!(await confirmNavigation())) return;
-                  setSelectedEventWorkTypeLevelCode(levelCode || undefined);
-                }}
-              />
-              {effectiveEventWorkTypeId && !eventWorkTypeLevelsQuery.isFetching && levelOptions.length === 0 && (
-                <Typography.Text type="warning">请先在赛事总览为当前工种选择参赛等级</Typography.Text>
-              )}
-            </>
-          )}
-        </Space>
-      </Card>
+      {!mergeFormalExamControls ? (
+        <Card bordered={false} className="competition-filter-card competition-filter-card--compact">
+          <Space align="center" size={12} wrap style={{ width: '100%' }}>
+            {scopeControls}
+          </Space>
+        </Card>
+      ) : null}
       {selectedEvent && module === 'notices' && <CompetitionNoticePage eventId={String(selectedEvent.id)} onNavigate={onNavigate} embedded />}
       {selectedEvent && module === 'stages' && effectiveEventWorkTypeId && effectiveEventWorkTypeLevelCode ? (
         <CompetitionStagePlanningPage
@@ -307,6 +311,7 @@ export function CompetitionEventModulePage({
           eventWorkTypeId={effectiveEventWorkTypeId}
           eventWorkTypeLevelCode={effectiveEventWorkTypeLevelCode}
           initialStageId={initialStageId}
+          scopeControls={scopeControls}
         />
       ) : selectedEvent && module === 'formal-exam-console' ? (
         <Card bordered={false} style={{ marginTop: 16 }}>
