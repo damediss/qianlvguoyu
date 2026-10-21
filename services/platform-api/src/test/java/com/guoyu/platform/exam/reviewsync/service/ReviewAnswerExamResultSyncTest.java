@@ -12,6 +12,8 @@ import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 import static org.mockito.Mockito.mock;
 
+import com.baomidou.mybatisplus.core.MybatisConfiguration;
+import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.guoyu.platform.exam.reviewsync.dto.ReviewQuestionDetail;
 import com.guoyu.platform.exam.reviewsync.entity.AiReviewAnswerEntity;
@@ -29,6 +31,8 @@ import com.guoyu.platform.system.mapper.DictMapper;
 import java.math.BigDecimal;
 import java.util.List;
 import java.util.Map;
+import org.apache.ibatis.builder.MapperBuilderAssistant;
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -78,8 +82,21 @@ class ReviewAnswerExamResultSyncTest {
 
   private ReviewPlanApplicationService service;
 
+  @BeforeAll
+  static void initMpTableInfo() {
+    // dictInt 的 LambdaQueryWrapper.getSqlSegment() 需要 DictEntity 的 MyBatis-Plus 表信息缓存
+    MapperBuilderAssistant assistant = new MapperBuilderAssistant(new MybatisConfiguration(), "");
+    TableInfoHelper.initTableInfo(assistant, com.guoyu.platform.system.entity.DictEntity.class);
+  }
+
   private static final String SINGLE_ANSWER_JSON =
       "[{\"content\":\"对\",\"isCorrect\":true},{\"content\":\"错\",\"isCorrect\":false}]";
+
+  private static final String MULTI_ANSWER_JSON =
+      "[{\"content\":\"甲\",\"isCorrect\":true,\"score\":\"0.5\"},"
+          + "{\"content\":\"乙\",\"isCorrect\":true,\"score\":\"0.5\"},"
+          + "{\"content\":\"丙\",\"isCorrect\":false,\"score\":0},"
+          + "{\"content\":\"丁\",\"isCorrect\":false,\"score\":0}]";
 
   @BeforeEach
   void setUp() {
@@ -103,6 +120,8 @@ class ReviewAnswerExamResultSyncTest {
 
     when(reviewQuery.loadQuestionDetail(900L)).thenReturn(new ReviewQuestionDetail(
         900L, 7L, "single", 1, new BigDecimal("2"), "题干", SINGLE_ANSWER_JSON, "解析"));
+    when(reviewQuery.loadQuestionDetail(901L)).thenReturn(new ReviewQuestionDetail(
+        901L, 7L, "multi", 2, new BigDecimal("1"), "多选题干", MULTI_ANSWER_JSON, "解析"));
     // 83a8d076 起作答前校验名单（isUserInExam），Mockito 对 boolean 默认返回 false 会直接业务拒绝；
     // 本测试关注 exam_result 直写/幂等语义，默认桩为在册
     when(reviewQuery.isUserInExam(anyLong(), anyLong())).thenReturn(true);
@@ -151,6 +170,59 @@ class ReviewAnswerExamResultSyncTest {
 
     assertThatThrownBy(() -> service.answer(42L, 440L, 500L, 900L, "new", "对", 5, 10159L))
         .isInstanceOf(DuplicateKeyException.class);
+  }
+
+  // ---------- 同步练习多选严格判分（ai_review_sync_strict_judge，默认开） ----------
+
+  @Test
+  void strictMultiFullSelectionJudgedCorrect() {
+    Map<String, Object> result = service.answer(42L, 440L, 500L, 901L, "new", "[\"甲\",\"乙\"]", 5, 10159L);
+
+    assertThat(result.get("correct")).isEqualTo(1);
+    verify(examResultWriteRepository).insertExamResult(
+        "multi", 440L, 901L, 42L, "[\"甲\",\"乙\"]", new BigDecimal("1"));
+  }
+
+  @Test
+  void strictMultiPartialSelectionJudgedWrongAndEntersWrongBook() {
+    // 少选（正确项甲乙只选甲，没有错选）→ 严格口径判错、进错题本（O7 关闭）
+    Map<String, Object> result = service.answer(42L, 440L, 500L, 901L, "new", "[\"甲\"]", 5, 10159L);
+
+    assertThat(result.get("correct")).isEqualTo(0);
+    verify(examResultWriteRepository).insertExamResult(
+        "multi", 440L, 901L, 42L, "[\"甲\"]", BigDecimal.ZERO);
+    verify(wrongMapper).insert(any(com.guoyu.platform.exam.reviewsync.entity.AiReviewWrongItemEntity.class));
+  }
+
+  @Test
+  void strictMultiWrongSelectionJudgedWrong() {
+    // 错选（选中丙）→ 判错
+    Map<String, Object> result = service.answer(42L, 440L, 500L, 901L, "new", "[\"甲\",\"丙\"]", 5, 10159L);
+
+    assertThat(result.get("correct")).isEqualTo(0);
+    verify(examResultWriteRepository).insertExamResult(
+        "multi", 440L, 901L, 42L, "[\"甲\",\"丙\"]", BigDecimal.ZERO);
+  }
+
+  @Test
+  void lenientMultiFallsBackWhenStrictDictOff() {
+    // sys_dict ai_review_sync_strict_judge=0 → 回退 PHP trainsave 宽松口径（少选也判对）
+    com.guoyu.platform.system.entity.DictEntity off = new com.guoyu.platform.system.entity.DictEntity();
+    off.setCode("ai_review_sync_strict_judge");
+    off.setValue("0");
+    // 按查询参数值精准桩（MP 3.5.x 参数对在首次生成 SQL 段时才归集，故先取 getSqlSegment）
+    when(dictMapper.selectList(any())).thenAnswer(inv -> {
+      com.baomidou.mybatisplus.core.conditions.AbstractWrapper<?, ?, ?> aw = inv.getArgument(0);
+      aw.getSqlSegment();
+      if (aw.getParamNameValuePairs().values().contains("ai_review_sync_strict_judge")) {
+        return List.of(off);
+      }
+      return List.of();
+    });
+
+    Map<String, Object> result = service.answer(42L, 440L, 500L, 901L, "new", "[\"甲\"]", 5, 10159L);
+
+    assertThat(result.get("correct")).isEqualTo(1);
   }
 
   @Test

@@ -345,9 +345,15 @@ public class ReviewPlanApplicationService {
       correction = true;
     }
 
-    // 判分
-    AnswerJudgeDomainService.JudgeResult judged = AnswerJudgeDomainService.judge(
-        detail.type(), options, userAnswer, parseUserMultiAnswer(userAnswer));
+    // 判分：多选默认严格口径（O7 关闭：错选/少选均计错进错题本，与模考一致）；
+    // sys_dict ai_review_sync_strict_judge=0 回退 PHP trainsave 宽松口径（未错选含少选即判对）
+    boolean strictMulti = "multi".equals(detail.type())
+        && dictInt("ai_review_sync_strict_judge", 1, tenantId) == 1;
+    AnswerJudgeDomainService.JudgeResult judged = strictMulti
+        ? AnswerJudgeDomainService.judgeStrictMulti(options, parseUserMultiAnswer(userAnswer),
+            detail.score())
+        : AnswerJudgeDomainService.judge(detail.type(), options, userAnswer,
+            parseUserMultiAnswer(userAnswer));
 
     // 写作答记录
     int attemptSeq = countAttempts(plan.getId(), questionId) + 1;
