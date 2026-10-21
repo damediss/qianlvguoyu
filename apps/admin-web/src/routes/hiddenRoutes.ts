@@ -12,6 +12,8 @@ const HIDDEN_ROUTE_MATCHERS: RegExp[] = [
   /^\/training\/graduation\/classes\/\d+\/?$/,
   // 采集管理（main.tsx CollectionManageShell）
   /^\/certification\/practical-collection\/[^/]+\/manage\/?$/,
+  // 教材大纲编辑（main.tsx TextbookOutlineShell）
+  /^\/textbook\/outline\/[^/]+\/?$/,
 ];
 
 function normalizePathname(pathname: string) {

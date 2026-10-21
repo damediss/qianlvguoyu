@@ -38,6 +38,12 @@ public class DocxStandardParser {
   private static final Pattern LEVEL_WORD = Pattern.compile("[五四三二一]");
   private static final Pattern DIRECTION_LEVEL_LINE =
       Pattern.compile("^(?<direction>.+?)工种分别为[:：]\\s*(?<levels>.+)$");
+  /** 1.4 的另一种写法：「电解槽计算机监控工设三个等级，分别为：…」「A、B、C 均设四个等级，分别为：…」 */
+  private static final Pattern DIRECTION_LEVEL_LINE_2 =
+      Pattern.compile("^(?<directions>.+?)(?:均)?设[一二三四五六七八九]个等级[,，]?\\s*分别为[:：]\\s*(?<levels>.+)$");
+  /** 1.8 培训参考学时：「五级/初级工 40 标准学时」；levelWord 与数值间允许任意非分隔文本 */
+  private static final Pattern TRAINING_HOURS_LINE =
+      Pattern.compile("([五四三二一])\\s*级[^，。；;、]*?(\\d{1,4})\\s*标准学时");
   private static final Pattern NUMERIC_CELL = Pattern.compile("^\\d{1,3}(\\.\\d+)?$");
   /** 权重表头中的等级列标记（"五级/初级工"，或重冶备料工式"初级（%）/技师（%）"），用于定位数值列起点 */
   private static final Pattern LEVEL_HEADER =
@@ -103,11 +109,27 @@ public class DocxStandardParser {
           ctx.result.setSeriesNo(no);
         }
       }
-      // 1.4 职业技能等级：连续多段（每工种一行），保持 expect 继续收集
-      if (ctx.sectionOneSub == 4 && !text.isBlank()) {
+      // 1.4 职业技能等级：连续多段（每工种一行），保持 expect 继续收集。
+      // 页脚注段落（① 起头）不收——铝电解工 1.4 的方向列表被脚注拦腰截断，混进拼接
+      // 文本会把半句方向表整个吞掉；但脚注不是值段落，仍要保持收集链让后续段继续入列。
+      String trimmed = text.trim();
+      boolean footnotePara = trimmed.matches("^[①②③④⑤⑥⑦⑧⑨⑩].*$");
+      if (ctx.sectionOneSub == 4 && (!trimmed.isEmpty() || footnotePara)) {
         ctx.expectSectionOneValue = true;
-        ctx.sectionOneFourParagraphs.add(text);
+        if (!footnotePara) {
+          ctx.sectionOneFourParagraphs.add(text);
+        }
       }
+      // 1.8 培训参考学时：单段（各等级一行），教材总字数换算用
+      if (ctx.sectionOneSub == 8 && !text.isBlank()) {
+        ctx.sectionOneEightParagraphs.add(text);
+      }
+      return;
+    }
+    // 普通段落：等级节正文首段（3.x 标题之后、第一张工作要求表之前），教材方向映射用
+    if (ctx.mainSection == 3 && ctx.currentLevel != null
+        && ctx.currentLevel.getWorkFunctions().isEmpty() && !text.isBlank()) {
+      ctx.currentLevel.getIntroParagraphs().add(text);
       return;
     }
     // 普通段落：基本要求节内的（n）列举项
@@ -157,6 +179,18 @@ public class DocxStandardParser {
       // 1.1 职业名称 / 1.2 职业编码 → 由 captureSectionOneValue 处理
       ctx.sectionOneSub = h.n2;
       ctx.expectSectionOneValue = true;
+      // 「1.1 职业名称铝电解工」式粘连标题（名称值与标题同段，其后无独立值段落）：
+      // 从标题尾部提取职业名称兜底，剩余部分像另一小节名（含"定义/等级"等词）时放弃
+      if (h.n2 == 1
+          && (ctx.result.getWorkTypeTitle() == null || ctx.result.getWorkTypeTitle().isBlank())
+          && h.title.contains("职业名称")) {
+        String name = h.title.substring(h.title.indexOf("职业名称") + "职业名称".length())
+            .replaceAll("[①②③④⑤⑥⑦⑧⑨⑩]", "")
+            .replaceAll("[\\s。．，,、；;：:.·]+$", "").trim();
+        if (!name.isEmpty() && !name.matches(".*(概况|定义|编码|等级|条件|特征|程度|学时|要求|环境).*")) {
+          ctx.result.setWorkTypeTitle(name);
+        }
+      }
       return;
     }
     if (ctx.mainSection == 2 && h.depth == 2) {
@@ -709,6 +743,8 @@ public class DocxStandardParser {
     }
     // 1.4 职业技能等级 → 每个工种允许等级范围（权威约束）
     parseDirectionLevels(ctx);
+    // 1.8 培训参考学时 → 等级 → 标准学时（教材总字数换算基准）
+    parseTrainingHours(ctx);
     if (result.getTheoryWeights() != null && result.getTheoryWeights().getRows().isEmpty()) {
       result.setTheoryWeights(null);
     }
@@ -731,30 +767,44 @@ public class DocxStandardParser {
 
   /**
    * 解析 1.4「职业技能等级」收集到的段落 → 方向 → 允许等级代码列表。
-   * 匹配形如「气焊工工种分别为：五级/初级工、四级/中级工、三级/高级工。」
-   * 的句子/段落；「本职业共设五个等级…」等无方向句子自动忽略。
+   * 匹配两类句式：
+   * <ul>
+   *   <li>「气焊工工种分别为：五级/初级工、…」（老格式，优先匹配）；</li>
+   *   <li>「电解槽计算机监控工设三个等级，分别为：…」「A、B、C 均设四个等级，分别为：…」
+   *       （铝电解工等新格式，一句多工种时所有工种共用该句等级列表）。</li>
+   * </ul>
+   * 段落先无分隔拼接再按句切分——铝电解工 1.4 的方向列表会被页脚注拦腰断成两段
+   * （「…炭极生产工、物料输送」+「及烟气净化工、…」），逐段独立匹配会丢方向。
+   * 「本职业共设五个等级…」等无方向句子自动忽略。
    */
   private void parseDirectionLevels(ParserContext ctx) {
     Map<String, List<Integer>> map = ctx.result.getDirectionLevels();
-    for (String paragraph : ctx.sectionOneFourParagraphs) {
-      // 单段落可能含多句（软换行/分号分隔），逐句匹配
-      for (String sentence : paragraph.split("[。；;\\r\\n]+")) {
-        Matcher m = DIRECTION_LEVEL_LINE.matcher(sentence.trim());
-        if (!m.matches()) {
+    String joined = String.join("", ctx.sectionOneFourParagraphs);
+    for (String sentence : joined.split("[。；;\\r\\n]+")) {
+      // 段内联脚注（如「炭极生产工， ① 本职业包含…」）从标记处截断，防止半句污染匹配
+      String s = sentence.replaceAll("[①②③④⑤⑥⑦⑧⑨⑩].*$", "").trim();
+      if (s.isEmpty()) {
+        continue;
+      }
+      Matcher m = DIRECTION_LEVEL_LINE.matcher(s);
+      if (m.matches()) {
+        putDirectionLevels(ctx, map, List.of(m.group("direction")), m.group("levels"), s);
+        continue;
+      }
+      Matcher m2 = DIRECTION_LEVEL_LINE_2.matcher(s);
+      if (m2.matches()) {
+        List<String> directions = new ArrayList<>();
+        for (String fragment : m2.group("directions").split("[、，,]")) {
+          // 断段续接的 fragment 可能带前导「及」；「本职业」等非方向句在此被过滤
+          String direction = fragment.replaceAll("^[及，,\\s　]+", "").trim();
+          if (direction.endsWith("工")) {
+            directions.add(direction);
+          }
+        }
+        if (directions.isEmpty()) {
           continue;
         }
-        String direction = m.group("direction").trim();
-        List<Integer> codes = new ArrayList<>();
-        Matcher lm = LEVEL_WORD.matcher(m.group("levels"));
-        while (lm.find()) {
-          codes.add(levelWordCode(lm.group()));
-        }
-        if (codes.isEmpty()) {
-          ctx.result.getParseWarnings().add(
-              "WARN: 1.4 工种等级句未识别到等级字：" + sentence);
-          continue;
-        }
-        map.put(direction, codes);
+        putDirectionLevels(ctx, map, directions, m2.group("levels"), s);
       }
     }
     if (map.isEmpty()) {
@@ -766,6 +816,41 @@ public class DocxStandardParser {
               .map(e -> e.getKey() + "[" + e.getValue().stream()
                   .map(n -> LEVEL_NAMES[n]).toList() + "]")
               .toList());
+    }
+  }
+
+  /** 一句「X（、Y、Z）…等级：levels」→ 每个方向各自登记等级列表（去重保留先出现者） */
+  private void putDirectionLevels(ParserContext ctx, Map<String, List<Integer>> map,
+      List<String> directions, String levelsText, String sentence) {
+    List<Integer> codes = new ArrayList<>();
+    Matcher lm = LEVEL_WORD.matcher(levelsText);
+    while (lm.find()) {
+      codes.add(levelWordCode(lm.group()));
+    }
+    if (codes.isEmpty()) {
+      ctx.result.getParseWarnings().add(
+          "WARN: 1.4 工种等级句未识别到等级字：" + sentence);
+      return;
+    }
+    for (String direction : directions) {
+      map.putIfAbsent(direction, List.copyOf(codes));
+    }
+  }
+
+  /** 解析 1.8「培训参考学时」段落 → levelCode（0=五级…4=一级）→ 标准学时 */
+  private void parseTrainingHours(ParserContext ctx) {
+    if (ctx.sectionOneEightParagraphs.isEmpty()) {
+      return;
+    }
+    Map<Integer, Integer> hours = ctx.result.getTrainingHoursByLevel();
+    String joined = String.join("", ctx.sectionOneEightParagraphs);
+    Matcher m = TRAINING_HOURS_LINE.matcher(joined);
+    while (m.find()) {
+      hours.put(levelWordCode(m.group(1)), Integer.valueOf(m.group(2)));
+    }
+    if (hours.isEmpty()) {
+      ctx.result.getParseWarnings()
+          .add("WARN: 1.8 培训参考学时未识别到「X级 N 标准学时」句式");
     }
   }
 
@@ -803,6 +888,8 @@ public class DocxStandardParser {
     private boolean expectSectionOneValue = false;
     /** 1.4 职业技能等级节的段落收集（每个工种允许等级范围） */
     private final List<String> sectionOneFourParagraphs = new ArrayList<>();
+    /** 1.8 培训参考学时段落收集（各等级标准学时） */
+    private final List<String> sectionOneEightParagraphs = new ArrayList<>();
     private StandardNodeDoc currentBasicL1;
     private StandardNodeDoc currentBasicL2;
     private StandardLevelDoc currentLevel;

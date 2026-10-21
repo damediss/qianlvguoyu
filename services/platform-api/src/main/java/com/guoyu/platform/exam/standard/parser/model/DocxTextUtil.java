@@ -310,13 +310,14 @@ public final class DocxTextUtil {
     return stripped.isEmpty() ? trimmed : stripped;
   }
 
-  /** 权重表项目名归一化：去空格、去（必选）/（必选）后缀 */
+  /** 权重表项目名归一化：去空格、去（必选）/（必选）后缀、去可选项星标（∗/★/☆，标准脚注"标∗为可选项"） */
   public static String normalizeItemName(String name) {
     if (name == null) {
       return "";
     }
     String s = name.replaceAll("[\\s　]+", "");
     s = s.replaceAll("[（(](必选|任选)[)）]$", "");
+    s = s.replaceAll("[∗★☆]", "");
     return s;
   }
 

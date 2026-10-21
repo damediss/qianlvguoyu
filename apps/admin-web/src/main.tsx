@@ -24,6 +24,8 @@ const XiMuBiaoGuanLiPage = React.lazy(() => import('./pages/zhi_neng_ke_cheng_ca
 const TheoryQuestionGenPage = React.lazy(() => import('./pages/zhi_neng_ke_cheng_cai_liao_guan_li/TheoryQuestionGenPage'));
 const SkillQuestionGenPage = React.lazy(() => import('./pages/zhi_neng_ke_cheng_cai_liao_guan_li/SkillQuestionGenPage'));
 const AiCoursewarePage = React.lazy(() => import('./pages/zhi_neng_ke_cheng_cai_liao_guan_li/AiCoursewarePage'));
+const TextbookProjectPage = React.lazy(() => import('./pages/zhi_neng_ke_cheng_cai_liao_guan_li/TextbookProjectPage').then((m) => ({ default: m.TextbookProjectPage })));
+const TextbookOutlinePage = React.lazy(() => import('./pages/zhi_neng_ke_cheng_cai_liao_guan_li/TextbookOutlinePage').then((m) => ({ default: m.TextbookOutlinePage })));
 const RencaishibieEmbedPage = React.lazy(() => import('./pages/knowledge/RencaishibieEmbedPage').then((m) => ({ default: m.RencaishibieEmbedPage })));
 const WorkTypePage = React.lazy(() => import('./pages/exam/WorkTypePage').then((m) => ({ default: m.WorkTypePage })));
 const CoursePage = React.lazy(() => import('./pages/exam/CoursePage').then((m) => ({ default: m.CoursePage })));
@@ -171,6 +173,8 @@ const pageMap: Record<string, React.ReactNode> = {
   skill_question_gen: <SkillQuestionGenPage />,
   // 智能课程材料管理 > AI课件生成管理
   ai_courseware_gen: <AiCoursewarePage />,
+  // 智能课程材料管理 > 教材生成管理
+  textbook_project: <TextbookProjectPage />,
   exam_work_type: <WorkTypePage />,
   dev_task_detail: <DevTaskDetailPage />,
   // 题库审核指派(管理端 3 子菜单,挂在开发任务下)
@@ -731,6 +735,39 @@ function GraduationClassDetailShell({ pathname }: { pathname: string }) {
   );
 }
 
+/** 教材大纲编辑隐藏路由：/textbook/outline/:projectId（不进菜单，教材工程列表页行内"大纲"进入；
+ *  《职业标准驱动教材生成·一期实施设计》v1.0 §3.1，照 ReviewSyncStatsShell 覆盖态模式） */
+function isTextbookOutlinePath(pathname: string) {
+  return /^\/textbook\/outline\/[^/]+\/?$/.test(pathname);
+}
+
+function TextbookOutlineShell({ pathname }: { pathname: string }) {
+  const [outlineActive, setOutlineActive] = React.useState(true);
+  const match = pathname.match(/^\/textbook\/outline\/([^/]+)\/?$/);
+  const projectId = match ? decodeURIComponent(match[1]) : '';
+
+  React.useEffect(() => {
+    setOutlineActive(true);
+    // §3.7 覆盖态标签（D1）：先取当前完整 URL 再入 store，原子记录 overridePath 不触碰 URL
+    const overrideUrl = window.location.pathname + window.location.search;
+    useTabStore.getState().openOverrideTab('textbook_project', undefined, overrideUrl);
+  }, [pathname]);
+
+  return (
+    <AppShell
+      pageMap={pageMap}
+      selectedMenuKeyOverride={outlineActive ? 'textbook_project' : undefined}
+      contentOverride={outlineActive ? (
+        <React.Fragment key={pathname}>
+          <TextbookOutlinePage projectId={projectId} />
+        </React.Fragment>
+      ) : undefined}
+      onMenuNavigate={() => setOutlineActive(false)}
+      hideBreadcrumb={outlineActive}
+    />
+  );
+}
+
 function App() {
   const pathname = useBrowserPathname();
   const formalExamMode = pathname === '/formal-exam' || pathname.startsWith('/formal-exam/');
@@ -744,6 +781,7 @@ function App() {
   const competitionEventMode = isCompetitionPath(pathname);
   const reviewSyncStatsMode = isReviewSyncStatsPath(pathname);
   const graduationClassDetailMode = isGraduationClassDetailPath(pathname);
+  const textbookOutlineMode = isTextbookOutlinePath(pathname);
 
   return (
     <NavigationBlockerProvider>
@@ -769,6 +807,8 @@ function App() {
             <GraduationClassDetailShell pathname={pathname} />
           ) : reviewSyncStatsMode ? (
             <ReviewSyncStatsShell pathname={pathname} />
+          ) : textbookOutlineMode ? (
+            <TextbookOutlineShell pathname={pathname} />
           ) : competitionEventMode ? (
             <CompetitionEventShell pathname={pathname} />
           ) : (

@@ -26,6 +26,8 @@ public class ParsedStandard {
   private StandardWeightTable theoryWeights;
   /** 技能要求权重表（文档级，可能为 null——个别标准只有理论权重表） */
   private StandardWeightTable skillWeights;
+  /** 1.8 培训参考学时：levelCode（0=五级 … 4=一级）→ 标准学时数；未解析到为空 */
+  private final Map<Integer, Integer> trainingHoursByLevel = new LinkedHashMap<>();
   private final List<String> parseWarnings = new ArrayList<>();
   /** 统计：识别到的工作要求表格数 */
   private int workTableCount;
@@ -92,6 +94,10 @@ public class ParsedStandard {
 
   public List<String> getParseWarnings() {
     return parseWarnings;
+  }
+
+  public Map<Integer, Integer> getTrainingHoursByLevel() {
+    return trainingHoursByLevel;
   }
 
   public StandardLevelDoc levelOf(int levelCode) {
