@@ -14,6 +14,8 @@ public class StandardLevelDoc {
   private String levelName;
   /** 工作要求 L1（职业功能）列表，含 L2（工作内容）children */
   private final List<StandardNodeDoc> workFunctions = new ArrayList<>();
+  /** 等级节正文首段（3.x 标题之后、第一张工作要求表之前的段落），如"铝电解槽操作工考核职业功能 1、2、12 项" */
+  private final List<String> introParagraphs = new ArrayList<>();
 
   public int getLevelCode() {
     return levelCode;
@@ -33,5 +35,14 @@ public class StandardLevelDoc {
 
   public List<StandardNodeDoc> getWorkFunctions() {
     return workFunctions;
+  }
+
+  public List<String> getIntroParagraphs() {
+    return introParagraphs;
+  }
+
+  /** 等级正文首段拼接（换行分隔）；无则空串 */
+  public String getIntroText() {
+    return String.join("\n", introParagraphs);
   }
 }

@@ -1073,7 +1073,7 @@ export function TrainingClassPeoplePage() {
       message.success('删除成功');
       queryClient.invalidateQueries({ queryKey: ['info-classes'] });
     },
-    onError: () => message.error('删除失败'),
+    onError: (e: Error) => message.error(e.message || '删除失败'),
   });
 
   const createTrainInfoMu = useMutation({
@@ -1492,14 +1492,17 @@ export function TrainingClassPeoplePage() {
         <div>
           <p>确定删除班级「{row.title}」吗？将同时：</p>
           <ul style={{ margin: '8px 0 0', paddingLeft: 20 }}>
-            <li>删除本班花名册、培训任务、资料收集记录</li>
+            <li>删除本班花名册、培训任务、资料收集、班级角色</li>
+            <li>删除本班课表、考勤、跟班相关记录，并从同步学试卷名单摘人</li>
             <li>把对应名单人员回滚为「待分班」，便于重新分班</li>
-            <li>解绑排课记录中的班级关联</li>
+            <li>解绑排课算法记录中的班级关联；清理练习范围与同步学配置</li>
           </ul>
-          <p style={{ marginTop: 8, color: '#666' }}>不会删除学员 App 账号（学员信息仍保留）。</p>
+          <p style={{ marginTop: 8, color: '#666' }}>
+            不会删除学员 App 账号。若本班已有证书、补贴单或结业归档/典礼通知，将禁止删除。
+          </p>
         </div>
       ),
-      onOk: () => deleteMu.mutate(row.id),
+      onOk: () => deleteMu.mutateAsync(row.id),
     });
   };
 

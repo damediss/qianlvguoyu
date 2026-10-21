@@ -20,7 +20,8 @@ public class MybatisPlusConfig {
   @Bean
   public MybatisPlusInterceptor mybatisPlusInterceptor() {
     MybatisPlusInterceptor interceptor = new MybatisPlusInterceptor();
-    interceptor.addInnerInterceptor(new PaginationInnerInterceptor(DbType.MYSQL));
+    // 顺序敏感：多租户插件必须先于分页插件（MP 推荐顺序）。分页在前时 count 查询
+    // 由分页插件内嵌执行，租户条件来不及拼上，导致分页 total 跨租户泄漏（教材集成测试实证）。
     interceptor.addInnerInterceptor(new TenantLineInnerInterceptor(new TenantLineHandler() {
       @Override
       public Expression getTenantId() {
@@ -64,6 +65,7 @@ public class MybatisPlusConfig {
             || "train_subsidy_material_template".equalsIgnoreCase(tableName);
       }
     }));
+    interceptor.addInnerInterceptor(new PaginationInnerInterceptor(DbType.MYSQL));
     return interceptor;
   }
 

@@ -20,7 +20,9 @@
     "test:admin-tabs": "vitest run --config vitest.config.ts tests/adminTabsStore.test.ts tests/adminTabsUrl.test.tsx",
     "test:e2e:stage-planning": "playwright test e2e/competition-stage-planning.spec.ts",
     "test:e2e:admin-tabs": "playwright test e2e/adminTabs.spec.ts",
-    "test:e2e:courseware": "playwright test e2e/courseware.spec.ts"
+    "test:e2e:courseware": "playwright test e2e/courseware.spec.ts",
+    "test:e2e:textbook": "playwright test --config playwright.chrome.config.ts e2e/textbook-outline.spec.ts",
+    "test:textbook": "vitest run --config vitest.config.ts tests/textbookProjectPage.test.tsx tests/textbookOutlinePage.test.tsx"
   },
   "dependencies": {
     "@ant-design/icons": "^5.6.1",

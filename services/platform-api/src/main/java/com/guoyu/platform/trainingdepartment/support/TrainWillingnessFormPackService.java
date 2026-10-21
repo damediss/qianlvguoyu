@@ -81,9 +81,7 @@ public class TrainWillingnessFormPackService {
       classLevel = trainInfo.getWorkTypeLevel();
     }
 
-    Map<String, TrainSignUpPeopleSelfEntity> signUpByIdCard = loadSignUps(students);
-    Map<String, PlatformUserDetailEntity> detailByIdCard = loadDetails(students);
-    Map<Long, TrainUserInfoEntity> userInfoByUserId = loadUserInfos(students);
+    ProfileSources sources = loadProfileSources(students);
 
     List<Map.Entry<String, byte[]>> entries = new ArrayList<>();
     Set<String> usedNames = new HashSet<>();
@@ -98,9 +96,7 @@ public class TrainWillingnessFormPackService {
             workTypeTitle,
             classLevel,
             clazz.getCompanyId() != null,
-            signUpByIdCard,
-            detailByIdCard,
-            userInfoByUserId);
+            sources);
         byte[] filled = TrainWillingnessFormFiller.fill(template, input);
         String fileName = uniqueName(
             sanitize(firstNonBlank(input.name(), "学员"))
@@ -148,29 +144,22 @@ public class TrainWillingnessFormPackService {
       String workTypeTitle,
       Integer classLevel,
       boolean classHasCompany,
-      Map<String, TrainSignUpPeopleSelfEntity> signUpByIdCard,
-      Map<String, PlatformUserDetailEntity> detailByIdCard,
-      Map<Long, TrainUserInfoEntity> userInfoByUserId) {
-    String idCard = trim(student.getIdCard());
-    TrainSignUpPeopleSelfEntity signUp = StringUtils.hasText(idCard) ? signUpByIdCard.get(idCard) : null;
-    PlatformUserDetailEntity detail = StringUtils.hasText(idCard) ? detailByIdCard.get(idCard) : null;
-    TrainUserInfoEntity userInfo = null;
-    if (student.getUserId() != null) {
-      userInfo = userInfoByUserId.get(student.getUserId());
-    }
-    if (userInfo == null && student.getPlatformUserId() != null) {
-      userInfo = userInfoByUserId.get(student.getPlatformUserId());
-    }
+      ProfileSources sources) {
+    String idCard = normalizeIdCard(student.getIdCard());
+    TrainSignUpPeopleSelfEntity signUp = sources.resolveSignUp(student);
+    PlatformUserDetailEntity detail = sources.resolveDetail(student);
+    TrainUserInfoEntity userInfo = sources.resolveUserInfo(student);
 
+    // 资料优先报名人员/平台详情（与「报名人员编辑」一致），花名册仅作兜底
     String name = firstNonBlank(
-        student.getRealname(),
         signUp != null ? signUp.getName() : null,
         detail != null ? detail.getRealname() : null,
+        student.getRealname(),
         "学员");
     String phone = firstNonBlank(
-        student.getPhone(),
         signUp != null ? signUp.getPhone() : null,
-        detail != null ? detail.getPhone() : null);
+        detail != null ? detail.getPhone() : null,
+        student.getPhone());
     String address = firstNonBlank(
         signUp != null ? signUp.getAddress() : null,
         detail != null ? detail.getAddress() : null);
@@ -179,6 +168,11 @@ public class TrainWillingnessFormPackService {
         detail != null ? detail.getNation() : null);
     if (StringUtils.hasText(nation) && !nation.endsWith("族") && nation.length() <= 5) {
       nation = nation + "族";
+    }
+    if (!StringUtils.hasText(idCard)) {
+      idCard = firstNonBlank(
+          signUp != null ? normalizeIdCard(signUp.getIdCardNumber()) : null,
+          detail != null ? normalizeIdCard(detail.getIdcard()) : null);
     }
 
     String gender = resolveGender(signUp, detail, idCard);
@@ -195,6 +189,7 @@ public class TrainWillingnessFormPackService {
         userInfo != null ? userInfo.getPersonType() : null,
         userInfo != null ? userInfo.getPersonSupplementary() : null,
         signUp != null ? signUp.getHouseType() : null,
+        detail != null ? detail.getHouseType() : null,
         signUp != null ? signUp.getComments() : null);
 
     String companyName = firstNonBlank(signUp != null ? signUp.getCompanyName() : null);
@@ -262,43 +257,189 @@ public class TrainWillingnessFormPackService {
     return wt != null ? nullToEmpty(wt.getTitle()) : "";
   }
 
-  private Map<String, TrainSignUpPeopleSelfEntity> loadSignUps(List<TrainPeopleListEntity> students) {
+  private ProfileSources loadProfileSources(List<TrainPeopleListEntity> students) {
     List<String> idCards = idCardsOf(students);
-    Map<String, TrainSignUpPeopleSelfEntity> map = new HashMap<>();
-    if (idCards.isEmpty()) {
-      return map;
-    }
-    List<TrainSignUpPeopleSelfEntity> rows = signUpPeopleMapper.selectList(
-        new LambdaQueryWrapper<TrainSignUpPeopleSelfEntity>()
-            .in(TrainSignUpPeopleSelfEntity::getIdCardNumber, idCards)
-            .eq(TrainSignUpPeopleSelfEntity::getDeleted, 0));
-    for (TrainSignUpPeopleSelfEntity row : rows) {
-      if (StringUtils.hasText(row.getIdCardNumber())) {
-        map.putIfAbsent(row.getIdCardNumber().trim(), row);
+    Set<Long> userIds = userIdsOf(students);
+
+    Map<String, TrainSignUpPeopleSelfEntity> signUpByIdCard = new HashMap<>();
+    Map<Long, TrainSignUpPeopleSelfEntity> signUpByUserId = new HashMap<>();
+    if (!idCards.isEmpty() || !userIds.isEmpty()) {
+      LambdaQueryWrapper<TrainSignUpPeopleSelfEntity> q =
+          new LambdaQueryWrapper<TrainSignUpPeopleSelfEntity>()
+              .eq(TrainSignUpPeopleSelfEntity::getDeleted, 0);
+      q.and(w -> {
+        if (!idCards.isEmpty()) {
+          w.in(TrainSignUpPeopleSelfEntity::getIdCardNumber, idCards);
+        }
+        if (!userIds.isEmpty()) {
+          if (!idCards.isEmpty()) {
+            w.or();
+          }
+          w.and(u -> u.in(TrainSignUpPeopleSelfEntity::getPlatformUserId, userIds)
+              .or()
+              .in(TrainSignUpPeopleSelfEntity::getUserId, userIds));
+        }
+      });
+      for (TrainSignUpPeopleSelfEntity row : signUpPeopleMapper.selectList(q)) {
+        indexSignUp(signUpByIdCard, signUpByUserId, row);
       }
     }
-    return map;
-  }
 
-  private Map<String, PlatformUserDetailEntity> loadDetails(List<TrainPeopleListEntity> students) {
-    List<String> idCards = idCardsOf(students);
-    Map<String, PlatformUserDetailEntity> map = new HashMap<>();
-    if (idCards.isEmpty()) {
-      return map;
-    }
-    List<PlatformUserDetailEntity> rows = platformUserDetailMapper.selectList(
-        new LambdaQueryWrapper<PlatformUserDetailEntity>()
-            .in(PlatformUserDetailEntity::getIdcard, idCards)
-            .eq(PlatformUserDetailEntity::getDeleted, 0));
-    for (PlatformUserDetailEntity row : rows) {
-      if (StringUtils.hasText(row.getIdcard())) {
-        map.putIfAbsent(row.getIdcard().trim(), row);
+    Map<String, PlatformUserDetailEntity> detailByIdCard = new HashMap<>();
+    Map<Long, PlatformUserDetailEntity> detailByUserId = new HashMap<>();
+    if (!idCards.isEmpty() || !userIds.isEmpty()) {
+      LambdaQueryWrapper<PlatformUserDetailEntity> q =
+          new LambdaQueryWrapper<PlatformUserDetailEntity>()
+              .eq(PlatformUserDetailEntity::getDeleted, 0);
+      q.and(w -> {
+        if (!idCards.isEmpty()) {
+          w.in(PlatformUserDetailEntity::getIdcard, idCards);
+        }
+        if (!userIds.isEmpty()) {
+          if (!idCards.isEmpty()) {
+            w.or();
+          }
+          w.in(PlatformUserDetailEntity::getUserId, userIds);
+        }
+      });
+      for (PlatformUserDetailEntity row : platformUserDetailMapper.selectList(q)) {
+        indexDetail(detailByIdCard, detailByUserId, row);
       }
     }
-    return map;
+
+    Map<Long, TrainUserInfoEntity> userInfoByUserId = new LinkedHashMap<>();
+    if (!userIds.isEmpty()) {
+      try {
+        List<TrainUserInfoEntity> rows = trainUserInfoMapper.selectList(
+            new LambdaQueryWrapper<TrainUserInfoEntity>()
+                .in(TrainUserInfoEntity::getUserId, userIds)
+                .eq(TrainUserInfoEntity::getDeleted, 0));
+        for (TrainUserInfoEntity row : rows) {
+          if (row.getUserId() != null) {
+            userInfoByUserId.putIfAbsent(row.getUserId(), row);
+          }
+        }
+      } catch (Exception ex) {
+        log.debug("加载 train_user_info 人员类别失败，将使用默认勾选: {}", ex.getMessage());
+      }
+    }
+
+    return new ProfileSources(
+        signUpByIdCard, signUpByUserId, detailByIdCard, detailByUserId, userInfoByUserId);
   }
 
-  private Map<Long, TrainUserInfoEntity> loadUserInfos(List<TrainPeopleListEntity> students) {
+  private static void indexSignUp(
+      Map<String, TrainSignUpPeopleSelfEntity> byIdCard,
+      Map<Long, TrainSignUpPeopleSelfEntity> byUserId,
+      TrainSignUpPeopleSelfEntity row) {
+    String key = normalizeIdCard(row.getIdCardNumber());
+    if (StringUtils.hasText(key)) {
+      byIdCard.merge(key, row, TrainWillingnessFormPackService::preferRicherSignUp);
+    }
+    if (row.getPlatformUserId() != null) {
+      byUserId.merge(row.getPlatformUserId(), row, TrainWillingnessFormPackService::preferRicherSignUp);
+    }
+    if (row.getUserId() != null) {
+      byUserId.merge(row.getUserId(), row, TrainWillingnessFormPackService::preferRicherSignUp);
+    }
+  }
+
+  private static void indexDetail(
+      Map<String, PlatformUserDetailEntity> byIdCard,
+      Map<Long, PlatformUserDetailEntity> byUserId,
+      PlatformUserDetailEntity row) {
+    String key = normalizeIdCard(row.getIdcard());
+    if (StringUtils.hasText(key)) {
+      byIdCard.merge(key, row, TrainWillingnessFormPackService::preferRicherDetail);
+    }
+    if (row.getUserId() != null) {
+      byUserId.merge(row.getUserId(), row, TrainWillingnessFormPackService::preferRicherDetail);
+    }
+  }
+
+  /** 同身份证多条报名时，优先保留地址/民族等资料更完整的一条。 */
+  static TrainSignUpPeopleSelfEntity preferRicherSignUp(
+      TrainSignUpPeopleSelfEntity a, TrainSignUpPeopleSelfEntity b) {
+    if (a == null) {
+      return b;
+    }
+    if (b == null) {
+      return a;
+    }
+    return signUpRichness(b) > signUpRichness(a) ? b : a;
+  }
+
+  static PlatformUserDetailEntity preferRicherDetail(
+      PlatformUserDetailEntity a, PlatformUserDetailEntity b) {
+    if (a == null) {
+      return b;
+    }
+    if (b == null) {
+      return a;
+    }
+    return detailRichness(b) > detailRichness(a) ? b : a;
+  }
+
+  private static int signUpRichness(TrainSignUpPeopleSelfEntity e) {
+    if (e == null) {
+      return -1;
+    }
+    int score = 0;
+    if (StringUtils.hasText(e.getAddress())) {
+      score += 8;
+    }
+    if (StringUtils.hasText(e.getNation())) {
+      score += 2;
+    }
+    if (StringUtils.hasText(e.getPhone())) {
+      score += 1;
+    }
+    if (StringUtils.hasText(e.getName())) {
+      score += 1;
+    }
+    if (StringUtils.hasText(e.getHouseType())) {
+      score += 1;
+    }
+    return score;
+  }
+
+  private static int detailRichness(PlatformUserDetailEntity e) {
+    if (e == null) {
+      return -1;
+    }
+    int score = 0;
+    if (StringUtils.hasText(e.getAddress())) {
+      score += 8;
+    }
+    if (StringUtils.hasText(e.getNation())) {
+      score += 2;
+    }
+    if (StringUtils.hasText(e.getPhone())) {
+      score += 1;
+    }
+    if (StringUtils.hasText(e.getRealname())) {
+      score += 1;
+    }
+    return score;
+  }
+
+  private static List<String> idCardsOf(List<TrainPeopleListEntity> students) {
+    List<String> idCards = new ArrayList<>();
+    for (TrainPeopleListEntity s : students) {
+      if (!StringUtils.hasText(s.getIdCard())) {
+        continue;
+      }
+      String raw = s.getIdCard().trim();
+      idCards.add(raw);
+      String normalized = normalizeIdCard(raw);
+      if (StringUtils.hasText(normalized) && !normalized.equals(raw)) {
+        idCards.add(normalized);
+      }
+    }
+    return idCards.stream().distinct().toList();
+  }
+
+  private static Set<Long> userIdsOf(List<TrainPeopleListEntity> students) {
     Set<Long> userIds = new HashSet<>();
     for (TrainPeopleListEntity s : students) {
       if (s.getUserId() != null) {
@@ -308,34 +449,64 @@ public class TrainWillingnessFormPackService {
         userIds.add(s.getPlatformUserId());
       }
     }
-    Map<Long, TrainUserInfoEntity> map = new LinkedHashMap<>();
-    if (userIds.isEmpty()) {
-      return map;
-    }
-    try {
-      List<TrainUserInfoEntity> rows = trainUserInfoMapper.selectList(
-          new LambdaQueryWrapper<TrainUserInfoEntity>()
-              .in(TrainUserInfoEntity::getUserId, userIds)
-              .eq(TrainUserInfoEntity::getDeleted, 0));
-      for (TrainUserInfoEntity row : rows) {
-        if (row.getUserId() != null) {
-          map.putIfAbsent(row.getUserId(), row);
-        }
-      }
-    } catch (Exception ex) {
-      log.debug("加载 train_user_info 人员类别失败，将使用默认勾选: {}", ex.getMessage());
-    }
-    return map;
+    return userIds;
   }
 
-  private static List<String> idCardsOf(List<TrainPeopleListEntity> students) {
-    List<String> idCards = new ArrayList<>();
-    for (TrainPeopleListEntity s : students) {
-      if (StringUtils.hasText(s.getIdCard())) {
-        idCards.add(s.getIdCard().trim());
-      }
+  /** 身份证归一：去空白、末位 x→X，避免匹配丢失。 */
+  static String normalizeIdCard(String idCard) {
+    if (!StringUtils.hasText(idCard)) {
+      return "";
     }
-    return idCards.stream().distinct().toList();
+    return idCard.trim().toUpperCase();
+  }
+
+  private record ProfileSources(
+      Map<String, TrainSignUpPeopleSelfEntity> signUpByIdCard,
+      Map<Long, TrainSignUpPeopleSelfEntity> signUpByUserId,
+      Map<String, PlatformUserDetailEntity> detailByIdCard,
+      Map<Long, PlatformUserDetailEntity> detailByUserId,
+      Map<Long, TrainUserInfoEntity> userInfoByUserId) {
+
+    TrainSignUpPeopleSelfEntity resolveSignUp(TrainPeopleListEntity student) {
+      String idCard = normalizeIdCard(student.getIdCard());
+      TrainSignUpPeopleSelfEntity byCard =
+          StringUtils.hasText(idCard) ? signUpByIdCard.get(idCard) : null;
+      TrainSignUpPeopleSelfEntity byPlatform =
+          student.getPlatformUserId() != null ? signUpByUserId.get(student.getPlatformUserId()) : null;
+      TrainSignUpPeopleSelfEntity byUser =
+          student.getUserId() != null ? signUpByUserId.get(student.getUserId()) : null;
+      TrainSignUpPeopleSelfEntity best = byCard;
+      best = preferRicherSignUp(best, byPlatform);
+      best = preferRicherSignUp(best, byUser);
+      return best;
+    }
+
+    PlatformUserDetailEntity resolveDetail(TrainPeopleListEntity student) {
+      String idCard = normalizeIdCard(student.getIdCard());
+      PlatformUserDetailEntity byCard =
+          StringUtils.hasText(idCard) ? detailByIdCard.get(idCard) : null;
+      PlatformUserDetailEntity byPlatform =
+          student.getPlatformUserId() != null ? detailByUserId.get(student.getPlatformUserId()) : null;
+      PlatformUserDetailEntity byUser =
+          student.getUserId() != null ? detailByUserId.get(student.getUserId()) : null;
+      PlatformUserDetailEntity best = byCard;
+      best = preferRicherDetail(best, byPlatform);
+      best = preferRicherDetail(best, byUser);
+      return best;
+    }
+
+    TrainUserInfoEntity resolveUserInfo(TrainPeopleListEntity student) {
+      if (student.getUserId() != null) {
+        TrainUserInfoEntity hit = userInfoByUserId.get(student.getUserId());
+        if (hit != null) {
+          return hit;
+        }
+      }
+      if (student.getPlatformUserId() != null) {
+        return userInfoByUserId.get(student.getPlatformUserId());
+      }
+      return null;
+    }
   }
 
   private byte[] loadTemplate() throws Exception {

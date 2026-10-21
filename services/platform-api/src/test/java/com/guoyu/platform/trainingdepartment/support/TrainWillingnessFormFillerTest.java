@@ -43,7 +43,12 @@ class TrainWillingnessFormFillerTest {
       String r0 = table.getRow(0).getCell(1).getText();
       assertTrue(r0.contains("张三"), r0);
       assertTrue(table.getRow(0).getCell(3).getText().contains("男"));
+      assertTrue(table.getRow(0).getCell(5).getText().contains("壮族"));
       assertTrue(table.getRow(1).getCell(1).getText().contains("450103199801011234"));
+      assertTrue(table.getRow(1).getCell(3).getText().contains("13800138000"));
+      assertTrue(
+          table.getRow(2).getCell(1).getText().contains("南宁市青秀区某某路1号"),
+          table.getRow(2).getCell(1).getText());
       String category = table.getRow(3).getCell(1).getText();
       assertTrue(category.contains("\u2611企业在岗职工") || category.contains("\u2611其他人员"), category);
       String employment = table.getRow(5).getCell(1).getText();
