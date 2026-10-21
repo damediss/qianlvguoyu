@@ -203,7 +203,7 @@ platform:
         lock-seconds: ${COMPETITION_PLAYER_SMS_LOCK_SECONDS:1800}
         aliyun:
           enabled: ${COMPETITION_PLAYER_SMS_ALIYUN_ENABLED:false}
-          endpoint: ${COMPETITION_PLAYER_SMS_ALIYUN_ENDPOINT:https://dysmsapi.aliyuncs.com}
+          endpoint: ${COMPETITION_PLAYER_SMS_ALIYUN_ENDPOINT:dysmsapi.aliyuncs.com}
           region-id: ${COMPETITION_PLAYER_SMS_ALIYUN_REGION_ID:cn-hangzhou}
           sign-name: ${COMPETITION_PLAYER_SMS_ALIYUN_SIGN_NAME:}
           template-code: ${COMPETITION_PLAYER_SMS_ALIYUN_TEMPLATE_CODE:}

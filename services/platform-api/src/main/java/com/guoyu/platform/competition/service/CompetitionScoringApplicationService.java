@@ -13,6 +13,7 @@ import com.guoyu.platform.competition.domain.CompetitionRankingAllocator;
 import com.guoyu.platform.competition.domain.CompetitionScoreRuleReferenceValidator;
 import com.guoyu.platform.competition.domain.CompetitionScoringSystemBCalculator;
 import com.guoyu.platform.competition.dto.CompetitionRankingSnapshotGenerateReq;
+import com.guoyu.platform.competition.dto.CompetitionCalculatedRankingPublishReq;
 import com.guoyu.platform.competition.dto.CompetitionScoreSourceRevisionReq;
 import com.guoyu.platform.competition.dto.CompetitionTotalScoreCalculateReq;
 import com.guoyu.platform.competition.entity.CompetitionRankingEntryEntity;
@@ -582,11 +583,19 @@ public class CompetitionScoringApplicationService {
 
   @Transactional
   public CompetitionRankingSnapshotVO publishRankingSnapshot(Long snapshotId, String correctionReason) {
+    return publishRankingSnapshot(snapshotId, correctionReason, false);
+  }
+
+  private CompetitionRankingSnapshotVO publishRankingSnapshot(
+      Long snapshotId, String correctionReason, boolean allowDraft) {
     PlatformUserPrincipal principal = currentUser();
     CompetitionRankingSnapshotEntity snapshot = requireRankingSnapshot(snapshotId, principal);
     if ("published".equals(snapshot.getStatus())) return CompetitionScoringConverter.toVO(snapshot);
-    if (!"confirmed".equals(snapshot.getStatus())) {
-      throw new BusinessException(ErrorCode.CONFLICT, "排名必须先复核确认后才能发布");
+    if (!"confirmed".equals(snapshot.getStatus())
+        && !(allowDraft && "draft".equals(snapshot.getStatus()))) {
+      throw new BusinessException(
+          ErrorCode.CONFLICT,
+          allowDraft ? "只有排名草稿可以直接发布" : "排名草稿必须先经复核确认后才能发布");
     }
     assertRankingInputsCurrent(snapshot);
     CompetitionRankingSnapshotEntity previous = rankingSnapshotMapper.selectOne(
@@ -605,12 +614,38 @@ public class CompetitionScoringApplicationService {
       snapshot.setSupersedesSnapshotId(previous.getId());
       snapshot.setCorrectionReason(correctionReason.trim());
     }
+    if (allowDraft && "draft".equals(snapshot.getStatus())) {
+      snapshot.setConfirmedAt(now);
+      snapshot.setConfirmedBy(principal.getUserId());
+    }
     snapshot.setStatus("published");
     snapshot.setPublishedAt(now);
     snapshot.setPublishedBy(principal.getUserId());
     snapshot.setUpdatedBy(principal.getUserId());
     ensureSingleRow(rankingSnapshotMapper.updateById(snapshot), "排名快照发布失败");
     return CompetitionScoringConverter.toVO(snapshot);
+  }
+
+  @Transactional
+  public CompetitionRankingSnapshotVO publishCalculatedRanking(
+      Long eventId, CompetitionCalculatedRankingPublishReq request) {
+    PlatformUserPrincipal principal = currentUser();
+    scoreRuleApplicationService.accessibleEvent(principal, eventId);
+    scoreRuleReferenceValidator.validatePublishedRule(
+        principal.getTenantId(), eventId, request.stageId(), request.eventWorkTypeId(),
+        request.eventWorkTypeLevelId(), null);
+    if (automaticScorePipelineService == null) {
+      throw new BusinessException(ErrorCode.INTERNAL_ERROR, "成绩计算流水线未就绪");
+    }
+    CompetitionRankingSnapshotEntity snapshot =
+        automaticScorePipelineService.ensureCurrentContentRankingDraft(
+            principal.getTenantId(), eventId, request.stageId(), request.eventWorkTypeId(),
+            request.eventWorkTypeLevelId(), principal.getUserId());
+    if (snapshot == null) {
+      throw new BusinessException(
+          ErrorCode.CONFLICT, "当前范围尚无可发布的完整成绩排名，请确认选手成绩已计算且考试状态已结束");
+    }
+    return publishRankingSnapshot(snapshot.getId(), request.correctionReason(), true);
   }
 
   private CompetitionRankingSnapshotEntity requireRankingSnapshot(
@@ -624,7 +659,9 @@ public class CompetitionScoringApplicationService {
   }
 
   private void assertRankingInputsCurrent(CompetitionRankingSnapshotEntity snapshot) {
-    if (automaticScorePipelineService != null
+    if (snapshot.getInputFingerprint() != null
+        && !snapshot.getInputFingerprint().isBlank()
+        && automaticScorePipelineService != null
         && !automaticScorePipelineService.isRankingFingerprintCurrent(snapshot)) {
       throw new BusinessException(ErrorCode.CONFLICT, "名单或成绩输入已变化，请使用最新排名草稿");
     }
@@ -632,15 +669,40 @@ public class CompetitionScoringApplicationService {
         new LambdaQueryWrapper<CompetitionRankingEntryEntity>()
             .eq(CompetitionRankingEntryEntity::getRankingSnapshotId, snapshot.getId())
             .eq(CompetitionRankingEntryEntity::getDeleted, 0));
-    for (CompetitionRankingEntryEntity entry : safeList(entries, "ranking entries",
-        currentUser(), snapshot.getEventId())) {
-      if (entry.getTotalScoreSnapshotId() == null) continue;
+    List<CompetitionRankingEntryEntity> safeEntries = safeList(
+        entries, "ranking entries", currentUser(), snapshot.getEventId());
+    if (safeEntries.isEmpty()) {
+      throw new BusinessException(ErrorCode.CONFLICT, "排名快照没有选手，不能发布");
+    }
+    boolean hasCompletedContestant = false;
+    for (CompetitionRankingEntryEntity entry : safeEntries) {
+      if ("absent".equals(entry.getContestantStatus())) {
+        if (entry.getTotalScoreSnapshotId() != null) {
+          throw new BusinessException(ErrorCode.CONFLICT, "缺考选手不能关联综合成绩");
+        }
+        continue;
+      }
+      if (!"completed".equals(entry.getContestantStatus())
+          || entry.getTotalScoreSnapshotId() == null) {
+        throw new BusinessException(ErrorCode.CONFLICT, "所有完赛选手都必须完成综合成绩计算");
+      }
+      hasCompletedContestant = true;
       CompetitionTotalScoreSnapshotEntity total =
           totalScoreSnapshotMapper.selectById(entry.getTotalScoreSnapshotId());
       if (total == null || !Integer.valueOf(1).equals(total.getCurrentFlag())
-          || !CURRENT_CONFIRMED.equals(total.getConfirmationStatus())) {
+          || !CURRENT_CONFIRMED.equals(total.getConfirmationStatus())
+          || !Objects.equals(snapshot.getEventId(), total.getEventId())
+          || !Objects.equals(snapshot.getStageId(), total.getStageId())
+          || !Objects.equals(snapshot.getEventWorkTypeId(), total.getEventWorkTypeId())
+          || !Objects.equals(snapshot.getEventWorkTypeLevelId(), total.getEventWorkTypeLevelId())
+          || !Objects.equals(snapshot.getScoreRuleId(), total.getScoreRuleId())
+          || !Objects.equals(entry.getContestantMemberId(), total.getContestantMemberId())
+          || !Objects.equals(entry.getTotalScore(), total.getTotalScore())) {
         throw new BusinessException(ErrorCode.CONFLICT, "成绩输入已变化，请使用最新排名草稿");
       }
+    }
+    if (!hasCompletedContestant) {
+      throw new BusinessException(ErrorCode.CONFLICT, "至少需要一名选手完成综合成绩计算后才能发布");
     }
   }
 

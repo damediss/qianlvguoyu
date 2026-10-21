@@ -1,0 +1,4 @@
+<resources>
+    <string name="app_name">竞赛理论机考（测试版）</string>
+    <string name="default_web_url">http://127.0.0.1:5173/formal-exam</string>
+</resources>

@@ -128,7 +128,8 @@ public class CompetitionPlayerManagementService {
     applyQueryScope(principal, req);
     Page<CompetitionPlayerQueryRow> page = registrationMapper.selectPlayerPage(
         new Page<>(req.getPage(), req.getPageSize()), principal.getTenantId(), req.getEventId(),
-        req.getOrgId(), req.getEventWorkTypeId(), req.getKeyword(), req.getName(), req.getStatus());
+        req.getOrgId(), req.getEventWorkTypeId(), req.getEventWorkTypeLevelId(),
+        req.getKeyword(), req.getName(), req.getStatus());
     if (page == null) {
       log.warn("Competition player mapper returned null page, tenantId={}", principal.getTenantId());
       page = new Page<>(req.getPage(), req.getPageSize());

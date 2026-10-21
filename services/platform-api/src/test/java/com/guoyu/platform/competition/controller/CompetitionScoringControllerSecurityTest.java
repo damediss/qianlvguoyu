@@ -1,5 +1,8 @@
 package com.guoyu.platform.competition.controller;
 
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
 import static org.springframework.security.test.web.servlet.setup.SecurityMockMvcConfigurers.springSecurity;
@@ -96,6 +99,40 @@ class CompetitionScoringControllerSecurityTest {
                 """))
         .andExpect(status().isForbidden());
     verifyNoInteractions(service);
+  }
+
+  @Test
+  void calculatedRankingPublishRequiresReviewAndPublishPermissions() throws Exception {
+    String body = """
+        {"stageId":2001,"eventWorkTypeId":3001}
+        """;
+
+    mockMvc.perform(post("/competition/events/1001/ranking-snapshots/publish-calculated")
+            .with(user("publisher").authorities(() -> "competition:ranking:publish"))
+            .contentType("application/json")
+            .content(body))
+        .andExpect(status().isForbidden());
+    mockMvc.perform(post("/competition/events/1001/ranking-snapshots/publish-calculated")
+            .with(user("reviewer").authorities(() -> "competition:score:review"))
+            .contentType("application/json")
+            .content(body))
+        .andExpect(status().isForbidden());
+
+    verifyNoInteractions(service);
+  }
+
+  @Test
+  void calculatedRankingPublishAcceptsUserWithBothPermissions() throws Exception {
+    mockMvc.perform(post("/competition/events/1001/ranking-snapshots/publish-calculated")
+            .with(user("reviewer-publisher").authorities(
+                () -> "competition:ranking:publish", () -> "competition:score:review"))
+            .contentType("application/json")
+            .content("""
+                {"stageId":2001,"eventWorkTypeId":3001}
+                """))
+        .andExpect(status().isOk());
+
+    verify(service).publishCalculatedRanking(eq(1001L), any());
   }
 
   @Test

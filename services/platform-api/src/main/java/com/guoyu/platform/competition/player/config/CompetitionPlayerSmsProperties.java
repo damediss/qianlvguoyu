@@ -38,7 +38,7 @@ public class CompetitionPlayerSmsProperties {
 
   public static class Aliyun {
     private boolean enabled;
-    private String endpoint = "https://dysmsapi.aliyuncs.com";
+    private String endpoint = "dysmsapi.aliyuncs.com";
     private String regionId = "cn-hangzhou";
     private String signName;
     private String templateCode;

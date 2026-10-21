@@ -12,10 +12,14 @@ import static org.mockito.Mockito.when;
 import com.guoyu.platform.common.exception.BusinessException;
 import com.guoyu.platform.common.exception.ErrorCode;
 import com.guoyu.platform.competition.domain.CompetitionScoreRuleReferenceValidator;
+import com.guoyu.platform.competition.dto.CompetitionCalculatedRankingPublishReq;
 import com.guoyu.platform.competition.dto.CompetitionRankingSnapshotGenerateReq;
 import com.guoyu.platform.competition.dto.CompetitionScoreSourceRevisionReq;
 import com.guoyu.platform.competition.dto.CompetitionTotalScoreCalculateReq;
+import com.guoyu.platform.competition.entity.CompetitionRankingEntryEntity;
+import com.guoyu.platform.competition.entity.CompetitionRankingSnapshotEntity;
 import com.guoyu.platform.competition.entity.CompetitionScoreSourceEntity;
+import com.guoyu.platform.competition.entity.CompetitionTotalScoreSnapshotEntity;
 import com.guoyu.platform.competition.mapper.CompetitionRankingEntryMapper;
 import com.guoyu.platform.competition.mapper.CompetitionRankingSnapshotMapper;
 import com.guoyu.platform.competition.mapper.CompetitionScoreSourceMapper;
@@ -124,6 +128,57 @@ class CompetitionScoringApplicationServiceTest {
     verify(scoreSourceMapper).insert(any(CompetitionScoreSourceEntity.class));
   }
 
+  @Test
+  void genericPublishRejectsUnreviewedRankingDraft() {
+    CompetitionRankingSnapshotEntity draft = rankingSnapshot("draft");
+    when(rankingSnapshotMapper.selectById(draft.getId())).thenReturn(draft);
+
+    assertThatThrownBy(() -> service.publishRankingSnapshot(draft.getId(), null))
+        .isInstanceOf(BusinessException.class)
+        .hasMessageContaining("必须先经复核确认");
+
+    verify(rankingSnapshotMapper, never()).selectOne(any());
+    verify(rankingSnapshotMapper, never())
+        .updateById(any(CompetitionRankingSnapshotEntity.class));
+  }
+
+  @Test
+  void calculatedPublishConfirmsAndPublishesCurrentDraft() {
+    CompetitionRankingSnapshotEntity draft = rankingSnapshot("draft");
+    CompetitionAutomaticScorePipelineService pipeline =
+        Mockito.mock(CompetitionAutomaticScorePipelineService.class);
+    service.setAutomaticScorePipelineService(pipeline);
+    when(pipeline.ensureCurrentContentRankingDraft(
+        1L, EVENT_ID, STAGE_A_ID, EVENT_WORK_TYPE_ID, null, 9001L)).thenReturn(draft);
+    when(rankingSnapshotMapper.selectById(draft.getId())).thenReturn(draft);
+    CompetitionRankingEntryEntity entry = new CompetitionRankingEntryEntity();
+    entry.setRankingSnapshotId(draft.getId());
+    entry.setContestantMemberId(CONTESTANT_MEMBER_ID);
+    entry.setTotalScoreSnapshotId(8001L);
+    entry.setTotalScore(new BigDecimal("88"));
+    entry.setContestantStatus("completed");
+    when(rankingEntryMapper.selectList(any())).thenReturn(List.of(entry));
+    CompetitionTotalScoreSnapshotEntity total = new CompetitionTotalScoreSnapshotEntity();
+    total.setEventId(EVENT_ID);
+    total.setStageId(STAGE_A_ID);
+    total.setEventWorkTypeId(EVENT_WORK_TYPE_ID);
+    total.setContestantMemberId(CONTESTANT_MEMBER_ID);
+    total.setTotalScore(new BigDecimal("88"));
+    total.setConfirmationStatus("confirmed");
+    total.setCurrentFlag(1);
+    when(totalScoreSnapshotMapper.selectById(8001L)).thenReturn(total);
+    when(rankingSnapshotMapper.updateById(draft)).thenReturn(1);
+
+    var result = service.publishCalculatedRanking(
+        EVENT_ID, new CompetitionCalculatedRankingPublishReq(
+            STAGE_A_ID, EVENT_WORK_TYPE_ID, null, null));
+
+    assertThat(result.status()).isEqualTo("published");
+    assertThat(draft.getConfirmedBy()).isEqualTo(9001L);
+    assertThat(draft.getPublishedBy()).isEqualTo(9001L);
+    verify(rankingSnapshotMapper).updateById(draft);
+  }
+
   private void rejectCurrentScope() {
     doThrow(new BusinessException(ErrorCode.UNPROCESSABLE_ENTITY,
         "contestant is assigned to another stage and cannot write current stage scores"))
@@ -173,5 +228,16 @@ class CompetitionScoringApplicationServiceTest {
         "fix-01",
         List.of(new CompetitionRankingSnapshotGenerateReq.Candidate(
             CONTESTANT_MEMBER_ID, 8001L, "88", "completed")));
+  }
+
+  private CompetitionRankingSnapshotEntity rankingSnapshot(String status) {
+    CompetitionRankingSnapshotEntity snapshot = new CompetitionRankingSnapshotEntity();
+    snapshot.setId(7001L);
+    snapshot.setTenantId(1L);
+    snapshot.setEventId(EVENT_ID);
+    snapshot.setStageId(STAGE_A_ID);
+    snapshot.setEventWorkTypeId(EVENT_WORK_TYPE_ID);
+    snapshot.setStatus(status);
+    return snapshot;
   }
 }

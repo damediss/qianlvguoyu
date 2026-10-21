@@ -494,10 +494,29 @@ public class CompetitionAutomaticScorePipelineService {
     return currentFingerprint.equals(snapshot.getInputFingerprint());
   }
 
-  private void tryGenerateRankingDraft(CompetitionScoreSourceEntity source,
+  /** Builds or returns the ranking draft for the current stage-content score inputs. */
+  @Transactional
+  public CompetitionRankingSnapshotEntity ensureCurrentContentRankingDraft(
+      Long tenantId,
+      Long eventId,
+      Long stageId,
+      Long eventWorkTypeId,
+      Long eventWorkTypeLevelId,
+      Long operatorId) {
+    CompetitionScoreSourceEntity scope = new CompetitionScoreSourceEntity();
+    scope.setTenantId(tenantId);
+    scope.setEventId(eventId);
+    scope.setStageId(stageId);
+    scope.setEventWorkTypeId(eventWorkTypeId);
+    scope.setEventWorkTypeLevelId(eventWorkTypeLevelId);
+    scope.setScoreRuleId(null);
+    return tryGenerateRankingDraft(scope, null, operatorId, LocalDateTime.now());
+  }
+
+  private CompetitionRankingSnapshotEntity tryGenerateRankingDraft(CompetitionScoreSourceEntity source,
       CompetitionScoreRuleEntity rule, Long operatorId, LocalDateTime now) {
     List<RankRow> rows = loadRankingRows(source);
-    if (rows == null || rows.isEmpty()) return;
+    if (rows == null || rows.isEmpty()) return null;
     rows.sort(rankingComparator());
     String fingerprint = sha256(rows.stream().map(RankRow::fingerprint)
         .collect(Collectors.joining("|")) + ":rule:" + (rule == null ? null : rule.getId()));
@@ -505,7 +524,7 @@ public class CompetitionAutomaticScorePipelineService {
         new LambdaQueryWrapper<CompetitionRankingSnapshotEntity>()
             .eq(CompetitionRankingSnapshotEntity::getInputFingerprint, fingerprint)
             .eq(CompetitionRankingSnapshotEntity::getDeleted, 0).last("LIMIT 1"));
-    if (existing != null) return;
+    if (existing != null) return existing;
     CompetitionRankingSnapshotEntity latest = rankingMapper.selectOne(rankingScope(source)
         .orderByDesc(CompetitionRankingSnapshotEntity::getSnapshotVersion).last("LIMIT 1"));
     CompetitionRankingSnapshotEntity snapshot = new CompetitionRankingSnapshotEntity();
@@ -514,7 +533,8 @@ public class CompetitionAutomaticScorePipelineService {
     snapshot.setEventWorkTypeId(source.getEventWorkTypeId());
     snapshot.setEventWorkTypeLevelId(source.getEventWorkTypeLevelId());
     snapshot.setScoreRuleId(rule == null ? null : rule.getId());
-    snapshot.setSnapshotVersion(latest == null ? 1 : latest.getSnapshotVersion() + 1);
+    snapshot.setSnapshotVersion(latest == null || latest.getSnapshotVersion() == null
+        ? 1 : latest.getSnapshotVersion() + 1);
     snapshot.setInputFingerprint(fingerprint); snapshot.setStatus("draft");
     snapshot.setGenerationReason(rule == null ? "赛段内容权重计分后自动生成" : "三类成绩齐备后自动生成");
     snapshot.setGeneratedAt(now);
@@ -563,6 +583,7 @@ public class CompetitionAutomaticScorePipelineService {
       entry.setTiedFlag(entry.getTieKey() != null && tieCounts.get(entry.getTieKey()) > 1 ? 1 : 0);
       entryMapper.insert(entry);
     }
+    return snapshot;
   }
 
   private List<RankRow> loadRankingRows(CompetitionScoreSourceEntity source) {

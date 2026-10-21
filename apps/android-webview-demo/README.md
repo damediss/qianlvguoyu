@@ -36,14 +36,15 @@ Android 模拟器访问宿主机服务时使用 `10.0.2.2`。真机访问局域�
 
 ## 构建变体
 
-| 变体 | 用途 | 包名 | 默认 H5（信息采集平板端） |
+| 变体 | 用途 | 包名 | 默认 H5 地址 |
 |---|---|---|---|
 | `prodDebug` | 正式环境 | `com.example.webviewshelldemo` | `https://java.app.gjjd168.com/practical-collection` |
 | `localTestDebug` | 本机联调 | `com.example.webviewshelldemo.localtest` | `192.168.1.98:5173/practical-collection/workbench/{taskId}` |
 | `competitionJudgeDebug` | 竞赛实操裁判正式版 | `com.example.webviewshelldemo.competitionjudge` | `https://java.app.gjjd168.com/competition-practical-judge` |
 | `competitionJudgeLocalDebug` | 竞赛实操裁判联调版 | `com.example.webviewshelldemo.competitionjudge.local` | `127.0.0.1:5173/competition-practical-judge`（ADB reverse；失败回退 `192.168.137.1` / `192.168.1.120`） |
+| `competitionTheoryLocalDebug` | 竞赛理论机考本地测试版 | `com.example.webviewshelldemo.competitiontheory.local` | `http://127.0.0.1:5173/formal-exam`（ADB reverse） |
 
-两个变体可同时安装，互不影响。
+不同变体可同时安装，互不影响。
 
 ## 构建
 
@@ -60,6 +61,12 @@ cd apps/android-webview-demo
 .\gradlew.bat :app:assembleCompetitionJudgeDebug
 .\gradlew.bat :app:assembleCompetitionJudgeLocalDebug
 
+# 竞赛理论机考本地测试版（ADB reverse）
+.\gradlew.bat :app:assembleCompetitionTheoryLocalDebug
+
+# ADB reverse 后安装并启动竞赛理论机考本地版
+.\wired-debug.ps1 -CompetitionTheory
+
 # 竞赛裁判本地联调（自动 reverse 5173/8080、安装、打开评分端）
 .\wired-debug.ps1 -CompetitionJudge
 ```
@@ -69,7 +76,7 @@ cd apps/android-webview-demo
 前提：本机已启动 `admin-web`（5173）和 `platform-api`（8080），且平板与电脑在同一局域网。
 
 平板有线 ADB 联调时，脚本会做 `adb reverse tcp:5173/8080`，H5 默认走 `http://127.0.0.1:5173/...`。
-本机热点网段是 `192.168.137.1`，有线网卡是 `192.168.1.120`；不要再用过期地址 `192.168.1.98`。
+本地竞赛机考和裁判联调变体默认通过 ADB reverse 访问 `127.0.0.1`，无需把开发电脑的局域网 IP 写进资源文件。
 Windows 热点默认会拦平板访问主机端口，未放行防火墙时请继续用 ADB reverse，不要只依赖局域网 IP。
 
 ```powershell

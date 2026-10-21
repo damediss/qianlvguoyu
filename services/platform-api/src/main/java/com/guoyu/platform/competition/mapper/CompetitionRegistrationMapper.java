@@ -162,6 +162,7 @@ public interface CompetitionRegistrationMapper extends BaseMapper<CompetitionReg
       "<if test='eventId != null'> AND r.event_id = #{eventId}</if>",
       "<if test='orgId != null'> AND r.org_id = #{orgId}</if>",
       "<if test='eventWorkTypeId != null'> AND COALESCE(p.event_work_type_id, r.event_work_type_id, i.event_work_type_id) = #{eventWorkTypeId}</if>",
+      "<if test='eventWorkTypeLevelId != null'> AND l.id = #{eventWorkTypeLevelId}</if>",
       "<if test='keyword != null and keyword != \"\"'> AND i.name LIKE CONCAT('%', #{keyword}, '%')</if>",
       "<if test='name != null and name != \"\"'> AND i.name LIKE CONCAT('%', #{name}, '%')</if>",
       "<if test='status != null and status != \"\"'> AND r.status = #{status}</if>",
@@ -174,6 +175,7 @@ public interface CompetitionRegistrationMapper extends BaseMapper<CompetitionReg
       @Param("eventId") Long eventId,
       @Param("orgId") Long orgId,
       @Param("eventWorkTypeId") Long eventWorkTypeId,
+      @Param("eventWorkTypeLevelId") Long eventWorkTypeLevelId,
       @Param("keyword") String keyword,
       @Param("name") String name,
       @Param("status") String status);
