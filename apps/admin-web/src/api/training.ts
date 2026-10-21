@@ -3618,6 +3618,22 @@ export function startResearchCollection(researchOrgId: number) {
   );
 }
 
+export function getResearchCollectionWxQrcode(researchOrgId: number, generate = false) {
+  return unwrap<{
+    researchOrgId: number;
+    signUpId: number;
+    title: string;
+    qrcode: string;
+    qrcodeDataUrl?: string;
+    pagePath: string;
+    generated: boolean;
+  }>(
+    apiClient.get(`${BASE}/research-orgs/${researchOrgId}/collection/wx-qrcode`, {
+      params: { generate },
+    }),
+  );
+}
+
 export function pageResearchPeople(researchOrgId: number, params: TrainResearchPersonQuery) {
   return unwrap<PageResponse<TrainResearchPerson>>(
     apiClient.get(`${BASE}/research-orgs/${researchOrgId}/collection/people`, { params }),

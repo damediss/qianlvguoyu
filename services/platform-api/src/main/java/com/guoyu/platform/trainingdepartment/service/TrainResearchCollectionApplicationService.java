@@ -32,6 +32,7 @@ import com.guoyu.platform.trainingdepartment.support.ResearchCollectionFieldOpti
 import com.guoyu.platform.trainingdepartment.support.ResearchCollectionTemplateExportService;
 import com.guoyu.platform.trainingdepartment.support.ResearchOrgStatusSupport;
 import com.guoyu.platform.trainingdepartment.support.SignUpLevelSupport;
+import com.guoyu.platform.trainingdepartment.support.TrainingWxMiniQrcodeClient;
 import com.guoyu.platform.trainingdepartment.vo.PublicResearchCollectionSubmitResultVO;
 import com.guoyu.platform.trainingdepartment.vo.PublicResearchCollectionVO;
 import com.guoyu.platform.trainingdepartment.vo.TrainResearchCollectionVO;
@@ -40,9 +41,13 @@ import com.guoyu.platform.trainingdepartment.vo.TrainResearchPersonVO;
 import com.guoyu.platform.trainingdepartment.vo.TrainThreeYearPlanVO;
 import com.guoyu.platform.trainingdepartment.vo.CertVerifyBatchResultVO;
 import com.guoyu.platform.trainingdepartment.vo.CertVerifyDetail;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
+import java.util.Base64;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -75,6 +80,9 @@ public class TrainResearchCollectionApplicationService {
   private final ObjectMapper objectMapper;
   private final ChazhengCertQueryService chazhengCertQueryService;
   private final ResearchCertBackfillService researchCertBackfillService;
+  private final TrainingWxMiniQrcodeClient wxMiniQrcodeClient;
+  private final String cdnPath;
+  private final String cdnUrl;
 
   @Value("${platform.h5.base-url:https://h5.gjjd168.com}")
   private String h5BaseUrl;
@@ -90,7 +98,10 @@ public class TrainResearchCollectionApplicationService {
       ResearchCollectionFieldOptionsSupport fieldOptionsSupport,
       ObjectMapper objectMapper,
       ChazhengCertQueryService chazhengCertQueryService,
-      ResearchCertBackfillService researchCertBackfillService) {
+      ResearchCertBackfillService researchCertBackfillService,
+      TrainingWxMiniQrcodeClient wxMiniQrcodeClient,
+      @Value("${platform.cdn.path:./data/cdn}") String cdnPath,
+      @Value("${platform.cdn.url:http://localhost:8080/api/exam/files}") String cdnUrl) {
     this.researchOrgMapper = researchOrgMapper;
     this.signUpMapper = signUpMapper;
     this.peopleMapper = peopleMapper;
@@ -102,6 +113,9 @@ public class TrainResearchCollectionApplicationService {
     this.objectMapper = objectMapper;
     this.chazhengCertQueryService = chazhengCertQueryService;
     this.researchCertBackfillService = researchCertBackfillService;
+    this.wxMiniQrcodeClient = wxMiniQrcodeClient;
+    this.cdnPath = cdnPath;
+    this.cdnUrl = cdnUrl.endsWith("/") ? cdnUrl.substring(0, cdnUrl.length() - 1) : cdnUrl;
   }
 
   @Transactional(readOnly = true)
@@ -110,6 +124,34 @@ public class TrainResearchCollectionApplicationService {
     OrgEntity targetOrg = resolveTargetOrg(research);
     TrainSignUpSelfEntity signUp = resolveActiveSignUp(research, false);
     return toCollectionVO(research, targetOrg, signUp);
+  }
+
+  @Transactional(readOnly = true)
+  public Map<String, Object> getWxQrcode(Long researchOrgId, boolean generate) {
+    TrainSignUpSelfEntity signUp = requireActiveSignUp(researchOrgId);
+    String token = signUp.getQrcodeToken();
+    if (!StringUtils.hasText(token)) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST, "采集二维码未就绪");
+    }
+    Path file = wxQrcodeFilePath(signUp.getId());
+    if (!Files.exists(file) && generate) {
+      byte[] png = wxMiniQrcodeClient.createResearchCollectQrcode(token);
+      try {
+        Files.createDirectories(file.getParent());
+        Files.write(file, png);
+      } catch (Exception e) {
+        throw new BusinessException(ErrorCode.INTERNAL_ERROR, "保存微信小程序码失败");
+      }
+    }
+    Map<String, Object> result = new LinkedHashMap<>();
+    result.put("researchOrgId", researchOrgId);
+    result.put("signUpId", signUp.getId());
+    result.put("title", signUp.getTitle());
+    result.put("qrcode", Files.exists(file) ? wxQrcodePublicUrl(signUp.getId()) : "");
+    result.put("qrcodeDataUrl", Files.exists(file) ? readQrcodeDataUrl(file) : "");
+    result.put("pagePath", "pages/research/collect?token=" + token);
+    result.put("generated", Files.exists(file));
+    return result;
   }
 
   @Transactional
@@ -796,6 +838,31 @@ public class TrainResearchCollectionApplicationService {
 
   private static String asString(Object value) {
     return value != null ? String.valueOf(value) : "";
+  }
+
+  private Path wxQrcodeFilePath(Long signUpId) {
+    return Paths.get(cdnPath).resolve("wxqrcode/research_collect_" + signUpId + ".png");
+  }
+
+  private String wxQrcodePublicUrl(Long signUpId) {
+    return cdnUrl + "/wxqrcode/research_collect_" + signUpId + ".png";
+  }
+
+  private String readQrcodeDataUrl(Path file) {
+    try {
+      byte[] bytes = Files.readAllBytes(file);
+      if (bytes.length == 0) {
+        return "";
+      }
+      String mime = "image/png";
+      if (bytes.length >= 2 && (bytes[0] & 0xFF) == 0xFF && (bytes[1] & 0xFF) == 0xD8) {
+        mime = "image/jpeg";
+      }
+      return "data:" + mime + ";base64," + Base64.getEncoder().encodeToString(bytes);
+    } catch (Exception e) {
+      log.warn("读取调研采集小程序码失败: {}", file, e);
+      return "";
+    }
   }
 
   private static final class InMemoryMultipartFile implements MultipartFile {

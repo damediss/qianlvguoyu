@@ -3,7 +3,6 @@ package com.guoyu.platform.trainingdepartment.service;
 import lombok.extern.slf4j.Slf4j;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
-import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.guoyu.platform.common.exception.BusinessException;
 import com.guoyu.platform.common.exception.ErrorCode;
@@ -16,11 +15,6 @@ import com.guoyu.platform.trainingdepartment.entity.TrainFileTempEntity;
 import com.guoyu.platform.trainingdepartment.entity.TrainInfoClassEntity;
 import com.guoyu.platform.trainingdepartment.entity.TrainInfoListEntity;
 import com.guoyu.platform.trainingdepartment.entity.TrainPeopleListEntity;
-import com.guoyu.platform.trainingdepartment.entity.TrainPlanRosterEntity;
-import com.guoyu.platform.trainingdepartment.entity.TrainShiftAssignRecordEntity;
-import com.guoyu.platform.trainingdepartment.entity.TrainSignUpPeopleSelfEntity;
-import com.guoyu.platform.trainingdepartment.entity.TrainSignUpSelfEntity;
-import com.guoyu.platform.trainingdepartment.entity.TrainTaskLogEntity;
 import com.guoyu.platform.exam.entity.ExamWorkTypeEntity;
 import com.guoyu.platform.system.entity.OrgEntity;
 import com.guoyu.platform.trainingdepartment.mapper.TrainCertificateMapper;
@@ -28,13 +22,9 @@ import com.guoyu.platform.trainingdepartment.mapper.TrainFileTempMapper;
 import com.guoyu.platform.trainingdepartment.mapper.TrainInfoClassMapper;
 import com.guoyu.platform.trainingdepartment.mapper.TrainInfoListMapper;
 import com.guoyu.platform.trainingdepartment.mapper.TrainPeopleListMapper;
-import com.guoyu.platform.trainingdepartment.mapper.TrainPlanRosterMapper;
-import com.guoyu.platform.trainingdepartment.mapper.TrainShiftAssignRecordMapper;
-import com.guoyu.platform.trainingdepartment.mapper.TrainSignUpPeopleSelfMapper;
-import com.guoyu.platform.trainingdepartment.mapper.TrainSignUpSelfMapper;
-import com.guoyu.platform.trainingdepartment.mapper.TrainTaskLogMapper;
 import com.guoyu.platform.system.mapper.OrgMapper;
 import com.guoyu.platform.exam.mapper.ExamWorkTypeMapper;
+import com.guoyu.platform.trainingdepartment.support.TrainClassDeleteCascadeSupport;
 import com.guoyu.platform.trainingdepartment.vo.TrainInfoClassVO;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -66,18 +56,12 @@ public class TrainInfoClassApplicationService {
   private final TrainFileTempMapper trainFileTempMapper;
   private final TrainPeopleListMapper peopleListMapper;
   private final TrainCertificateMapper certificateMapper;
-  private final TrainPlanRosterMapper planRosterMapper;
-  private final TrainSignUpSelfMapper signUpSelfMapper;
-  private final TrainSignUpPeopleSelfMapper signUpPeopleSelfMapper;
-  private final TrainTaskLogMapper taskLogMapper;
-  private final TrainShiftAssignRecordMapper shiftAssignRecordMapper;
   private final OrgMapper orgMapper;
   private final ExamWorkTypeMapper examWorkTypeMapper;
   private final TrainingOperatorScopeService operatorScopeService;
   private final ObjectMapper objectMapper = new ObjectMapper();
   private final ClassCollectionApplicationService classCollectionApplicationService;
-  private final ClassPracticeScopeApplicationService classPracticeScopeApplicationService;
-  private final ClassReviewSyncApplicationService classReviewSyncApplicationService;
+  private final TrainClassDeleteCascadeSupport classDeleteCascadeSupport;
   private static final DateTimeFormatter ADD_TIME_FMT =
       DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss").withZone(ZoneId.of("Asia/Shanghai"));
 
@@ -86,33 +70,21 @@ public class TrainInfoClassApplicationService {
       TrainFileTempMapper trainFileTempMapper,
       TrainPeopleListMapper peopleListMapper,
       TrainCertificateMapper certificateMapper,
-      TrainPlanRosterMapper planRosterMapper,
-      TrainSignUpSelfMapper signUpSelfMapper,
-      TrainSignUpPeopleSelfMapper signUpPeopleSelfMapper,
-      TrainTaskLogMapper taskLogMapper,
-      TrainShiftAssignRecordMapper shiftAssignRecordMapper,
       OrgMapper orgMapper,
       ExamWorkTypeMapper examWorkTypeMapper,
       TrainingOperatorScopeService operatorScopeService,
       ClassCollectionApplicationService classCollectionApplicationService,
-      ClassPracticeScopeApplicationService classPracticeScopeApplicationService,
-      ClassReviewSyncApplicationService classReviewSyncApplicationService) {
+      TrainClassDeleteCascadeSupport classDeleteCascadeSupport) {
     this.mapper = mapper;
     this.trainInfoListMapper = trainInfoListMapper;
     this.trainFileTempMapper = trainFileTempMapper;
     this.peopleListMapper = peopleListMapper;
     this.certificateMapper = certificateMapper;
-    this.planRosterMapper = planRosterMapper;
-    this.signUpSelfMapper = signUpSelfMapper;
-    this.signUpPeopleSelfMapper = signUpPeopleSelfMapper;
-    this.taskLogMapper = taskLogMapper;
-    this.shiftAssignRecordMapper = shiftAssignRecordMapper;
     this.orgMapper = orgMapper;
     this.examWorkTypeMapper = examWorkTypeMapper;
     this.operatorScopeService = operatorScopeService;
     this.classCollectionApplicationService = classCollectionApplicationService;
-    this.classPracticeScopeApplicationService = classPracticeScopeApplicationService;
-    this.classReviewSyncApplicationService = classReviewSyncApplicationService;
+    this.classDeleteCascadeSupport = classDeleteCascadeSupport;
   }
 
   @Transactional(readOnly = true)
@@ -319,12 +291,14 @@ public class TrainInfoClassApplicationService {
       throw new BusinessException(ErrorCode.BAD_REQUEST, "请选择要删除的班级");
     }
     int count = 0;
-    Map<String, Object> cascadeTotal = emptyCascadeStats();
+    Map<String, Object> cascadeTotal = TrainClassDeleteCascadeSupport.emptyStats();
     for (Long id : ids) {
       TrainInfoClassEntity entity = mapper.selectById(id);
       if (entity != null && entity.getDeleted() == 0) {
         operatorScopeService.assertClassAccessible(entity);
-        mergeCascadeStats(cascadeTotal, cleanupRelatedOnClassDelete(entity.getId()));
+        classDeleteCascadeSupport.assertDeletable(entity.getId());
+        TrainClassDeleteCascadeSupport.mergeStats(
+            cascadeTotal, classDeleteCascadeSupport.cleanup(entity.getId()));
         entity.setDeleted(1);
         mapper.deleteById(entity.getId());
         count++;
@@ -380,95 +354,10 @@ public class TrainInfoClassApplicationService {
   public void delete(Long id) {
     TrainInfoClassEntity entity = getExisting(id);
     operatorScopeService.assertClassAccessible(entity);
-    cleanupRelatedOnClassDelete(entity.getId());
+    classDeleteCascadeSupport.assertDeletable(entity.getId());
+    classDeleteCascadeSupport.cleanup(entity.getId());
     entity.setDeleted(1);
     mapper.deleteById(entity.getId());
-  }
-
-  /**
-   * 删除班级时的关联清理（保留 platform_user 学员账号）：
-   * 1) 花名册软删 2) 名单池回滚待分 3) 本班资料收集计划+人员软删
-   * 4) 培训任务软删 5) 排课记录解绑班级
-   */
-  private Map<String, Object> cleanupRelatedOnClassDelete(Long classId) {
-    Map<String, Object> stats = emptyCascadeStats();
-    if (classId == null) {
-      return stats;
-    }
-    LocalDateTime now = LocalDateTime.now();
-
-    List<TrainPeopleListEntity> people = peopleListMapper.selectList(new LambdaQueryWrapper<TrainPeopleListEntity>()
-        .eq(TrainPeopleListEntity::getTrainClassId, classId));
-    for (TrainPeopleListEntity row : people) {
-      peopleListMapper.deleteById(row.getId());
-    }
-    stats.put("peopleRemoved", people.size());
-
-    int rosterReset = planRosterMapper.update(null, new LambdaUpdateWrapper<TrainPlanRosterEntity>()
-        .eq(TrainPlanRosterEntity::getTrainClassId, classId)
-        .eq(TrainPlanRosterEntity::getAssignStatus, 1)
-        .set(TrainPlanRosterEntity::getAssignStatus, 0)
-        .set(TrainPlanRosterEntity::getTrainClassId, null)
-        .set(TrainPlanRosterEntity::getUpdateTime, now));
-    stats.put("rosterReset", rosterReset);
-
-    List<TrainSignUpSelfEntity> plans = signUpSelfMapper.selectList(new LambdaQueryWrapper<TrainSignUpSelfEntity>()
-        .eq(TrainSignUpSelfEntity::getTrainClassId, classId)
-        .eq(TrainSignUpSelfEntity::getCollectionSource, ClassCollectionApplicationService.SOURCE_CLASS_PREP));
-    int collectionPeople = 0;
-    for (TrainSignUpSelfEntity plan : plans) {
-      List<TrainSignUpPeopleSelfEntity> collectionRows = signUpPeopleSelfMapper.selectList(
-          new LambdaQueryWrapper<TrainSignUpPeopleSelfEntity>()
-              .eq(TrainSignUpPeopleSelfEntity::getSignUpId, plan.getId()));
-      for (TrainSignUpPeopleSelfEntity person : collectionRows) {
-        signUpPeopleSelfMapper.deleteById(person.getId());
-      }
-      collectionPeople += collectionRows.size();
-      signUpSelfMapper.deleteById(plan.getId());
-    }
-    stats.put("collectionPlansRemoved", plans.size());
-    stats.put("collectionPeopleRemoved", collectionPeople);
-
-    List<TrainTaskLogEntity> tasks = taskLogMapper.selectList(new LambdaQueryWrapper<TrainTaskLogEntity>()
-        .eq(TrainTaskLogEntity::getTrainClassId, classId));
-    for (TrainTaskLogEntity task : tasks) {
-      taskLogMapper.deleteById(task.getId());
-    }
-    stats.put("tasksRemoved", tasks.size());
-
-    int shiftUnbound = shiftAssignRecordMapper.update(null, new LambdaUpdateWrapper<TrainShiftAssignRecordEntity>()
-        .eq(TrainShiftAssignRecordEntity::getTrainClassId, classId)
-        .set(TrainShiftAssignRecordEntity::getTrainClassId, null));
-    stats.put("shiftRecordsUnbound", shiftUnbound);
-
-    int practiceScopeRemoved = classPracticeScopeApplicationService.cleanupByClassId(classId);
-    stats.put("practiceScopeRemoved", practiceScopeRemoved);
-    int reviewSyncRemoved = classReviewSyncApplicationService.cleanupByClassId(classId);
-    stats.put("reviewSyncRemoved", reviewSyncRemoved);
-
-    log.info("class delete cascade classId={} stats={}", classId, stats);
-    return stats;
-  }
-
-  private static Map<String, Object> emptyCascadeStats() {
-    Map<String, Object> stats = new LinkedHashMap<>();
-    stats.put("peopleRemoved", 0);
-    stats.put("rosterReset", 0);
-    stats.put("collectionPlansRemoved", 0);
-    stats.put("collectionPeopleRemoved", 0);
-    stats.put("tasksRemoved", 0);
-    stats.put("shiftRecordsUnbound", 0);
-    stats.put("practiceScopeRemoved", 0);
-    stats.put("reviewSyncRemoved", 0);
-    return stats;
-  }
-
-  private static void mergeCascadeStats(Map<String, Object> total, Map<String, Object> one) {
-    for (Map.Entry<String, Object> e : one.entrySet()) {
-      int cur = total.get(e.getKey()) instanceof Number n ? n.intValue() : 0;
-      int add = e.getValue() instanceof Number n ? n.intValue() : 0;
-      total.put(e.getKey(), cur + add);
-    }
   }
 
   /**

@@ -76,6 +76,8 @@ export function ResearchCollectionDrawer({ open, researchOrg, onClose }: Researc
   const [editingPerson, setEditingPerson] = useState<TrainResearchPerson | null>(null);
   const [personForm] = Form.useForm<TrainResearchPersonCreateReq>();
   const [qrDataUrl, setQrDataUrl] = useState('');
+  const [wxQrDataUrl, setWxQrDataUrl] = useState('');
+  const [wxQrLoading, setWxQrLoading] = useState(false);
   const [selectedPeopleIds, setSelectedPeopleIds] = useState<number[]>([]);
   const [verifyResultModal, setVerifyResultModal] = useState<CertVerifyBatchResultVO | null>(null);
 
@@ -101,18 +103,38 @@ export function ResearchCollectionDrawer({ open, researchOrg, onClose }: Researc
   useEffect(() => {
     if (!open) {
       setQrDataUrl('');
+      setWxQrDataUrl('');
       return;
     }
     const token = collection?.qrcodeToken;
     if (!token || collection?.collectionStatus !== 'active') {
       setQrDataUrl('');
+      setWxQrDataUrl('');
       return;
     }
     const pageUrl = buildCollectPageUrl(token, collection.collectionPageUrl);
     QRCode.toDataURL(pageUrl, { width: 180, margin: 1, errorCorrectionLevel: 'M' })
       .then(setQrDataUrl)
       .catch(() => setQrDataUrl(''));
-  }, [open, collection?.qrcodeToken, collection?.collectionPageUrl, collection?.collectionStatus]);
+    let cancelled = false;
+    setWxQrLoading(true);
+    trainApi.getResearchCollectionWxQrcode(researchOrgId!, false)
+      .then((res) => {
+        if (cancelled) return;
+        if (res.qrcodeDataUrl || res.qrcode) {
+          setWxQrDataUrl(res.qrcodeDataUrl || res.qrcode);
+        } else {
+          setWxQrDataUrl('');
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setWxQrDataUrl('');
+      })
+      .finally(() => {
+        if (!cancelled) setWxQrLoading(false);
+      });
+    return () => { cancelled = true; };
+  }, [open, researchOrgId, collection?.qrcodeToken, collection?.collectionPageUrl, collection?.collectionStatus]);
 
   useEffect(() => {
     if (!open) {
@@ -122,9 +144,29 @@ export function ResearchCollectionDrawer({ open, researchOrg, onClose }: Researc
       setEditingPerson(null);
       setSelectedPeopleIds([]);
       setVerifyResultModal(null);
+      setWxQrDataUrl('');
       personForm.resetFields();
     }
   }, [open, personForm]);
+
+  const fetchWxMiniQrcode = async () => {
+    if (!researchOrgId) return;
+    setWxQrLoading(true);
+    try {
+      const res = await trainApi.getResearchCollectionWxQrcode(researchOrgId, true);
+      const url = res.qrcodeDataUrl || res.qrcode;
+      if (url) {
+        setWxQrDataUrl(url);
+        message.success('小程序码已生成');
+      } else {
+        message.warning('小程序码生成失败');
+      }
+    } catch (err) {
+      message.error(err instanceof Error ? err.message : '获取小程序码失败');
+    } finally {
+      setWxQrLoading(false);
+    }
+  };
 
   const startMu = useMutation({
     mutationFn: () => trainApi.startResearchCollection(researchOrgId!),
@@ -316,39 +358,87 @@ export function ResearchCollectionDrawer({ open, researchOrg, onClose }: Researc
         <Divider />
 
         <div style={{ display: 'flex', gap: 24, marginBottom: 24, flexWrap: 'wrap' }}>
-          <div
-            style={{
-              width: 200,
-              height: 200,
-              border: '1px dashed #d9d9d9',
-              borderRadius: 8,
-              display: 'flex',
-              flexDirection: 'column',
-              alignItems: 'center',
-              justifyContent: 'center',
-              background: readOnly ? '#f5f5f5' : '#fafafa',
-              flexShrink: 0,
-              overflow: 'hidden',
-              opacity: readOnly ? 0.65 : 1,
-            }}
-          >
-            {readOnly && collectionActive ? (
-              <>
-                <QrcodeOutlined style={{ fontSize: 48, color: '#bfbfbf', marginBottom: 12 }} />
-                <Text type="secondary" style={{ textAlign: 'center', padding: '0 12px' }}>
-                  采集已结束
-                </Text>
-              </>
-            ) : collectionActive && qrDataUrl ? (
-              <img src={qrDataUrl} alt="人员采集二维码" style={{ width: 180, height: 180 }} />
-            ) : (
-              <>
-                <QrcodeOutlined style={{ fontSize: 48, color: '#bfbfbf', marginBottom: 12 }} />
-                <Text type="secondary" style={{ textAlign: 'center', padding: '0 12px' }}>
-                  {collectionActive ? '二维码生成中' : '开启采集后显示二维码'}
-                </Text>
-              </>
-            )}
+          <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', flexShrink: 0 }}>
+            <div style={{ textAlign: 'center' }}>
+              <div
+                style={{
+                  width: 200,
+                  height: 200,
+                  border: '1px dashed #d9d9d9',
+                  borderRadius: 8,
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  background: readOnly ? '#f5f5f5' : '#fafafa',
+                  overflow: 'hidden',
+                  opacity: readOnly ? 0.65 : 1,
+                }}
+              >
+                {readOnly && collectionActive ? (
+                  <>
+                    <QrcodeOutlined style={{ fontSize: 48, color: '#bfbfbf', marginBottom: 12 }} />
+                    <Text type="secondary" style={{ textAlign: 'center', padding: '0 12px' }}>
+                      采集已结束
+                    </Text>
+                  </>
+                ) : collectionActive && qrDataUrl ? (
+                  <img src={qrDataUrl} alt="APP人员采集二维码" style={{ width: 180, height: 180 }} />
+                ) : (
+                  <>
+                    <QrcodeOutlined style={{ fontSize: 48, color: '#bfbfbf', marginBottom: 12 }} />
+                    <Text type="secondary" style={{ textAlign: 'center', padding: '0 12px' }}>
+                      {collectionActive ? '二维码生成中' : '开启采集后显示二维码'}
+                    </Text>
+                  </>
+                )}
+              </div>
+              <Text type="secondary" style={{ display: 'block', marginTop: 8 }}>APP扫</Text>
+            </div>
+
+            <div style={{ textAlign: 'center' }}>
+              <div
+                style={{
+                  width: 200,
+                  height: 200,
+                  border: '1px dashed #d9d9d9',
+                  borderRadius: 8,
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  background: readOnly ? '#f5f5f5' : '#fafafa',
+                  overflow: 'hidden',
+                  opacity: readOnly ? 0.65 : 1,
+                }}
+              >
+                {readOnly && collectionActive ? (
+                  <>
+                    <QrcodeOutlined style={{ fontSize: 48, color: '#bfbfbf', marginBottom: 12 }} />
+                    <Text type="secondary" style={{ textAlign: 'center', padding: '0 12px' }}>
+                      采集已结束
+                    </Text>
+                  </>
+                ) : collectionActive && wxQrDataUrl ? (
+                  <img src={wxQrDataUrl} alt="微信小程序人员采集码" style={{ width: 180, height: 180 }} />
+                ) : collectionActive ? (
+                  <>
+                    <QrcodeOutlined style={{ fontSize: 48, color: '#bfbfbf', marginBottom: 12 }} />
+                    <Button type="primary" size="small" loading={wxQrLoading} onClick={fetchWxMiniQrcode}>
+                      获取
+                    </Button>
+                  </>
+                ) : (
+                  <>
+                    <QrcodeOutlined style={{ fontSize: 48, color: '#bfbfbf', marginBottom: 12 }} />
+                    <Text type="secondary" style={{ textAlign: 'center', padding: '0 12px' }}>
+                      开启采集后显示小程序码
+                    </Text>
+                  </>
+                )}
+              </div>
+              <Text type="secondary" style={{ display: 'block', marginTop: 8 }}>微信扫</Text>
+            </div>
           </div>
 
           <div style={{ flex: 1, minWidth: 260 }}>

@@ -48,8 +48,25 @@ public class TrainingWxMiniQrcodeClient {
   }
 
   public byte[] createSignUpSelfQrcode(Long signUpId) {
+    return createPageQrcode("pages/registration/detail?id=" + signUpId);
+  }
+
+  /** 企业调研人员采集：扫码进入小程序 pages/research/collect */
+  public byte[] createResearchCollectQrcode(String token) {
+    if (!StringUtils.hasText(token)) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST, "缺少采集 token");
+    }
+    return createPageQrcode("pages/research/collect?token=" + token.trim());
+  }
+
+  public byte[] createPageQrcode(String page) {
     ensureConfigured();
-    String page = "pages/registration/detail?id=" + signUpId;
+    if (!StringUtils.hasText(page)) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST, "缺少小程序页面路径");
+    }
+    if (page.getBytes(StandardCharsets.UTF_8).length > 128) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST, "小程序码 path 超过 128 字节");
+    }
     byte[] lastData = null;
     for (int attempt = 0; attempt < 2; attempt++) {
       if (attempt > 0) {
@@ -62,9 +79,8 @@ public class TrainingWxMiniQrcodeClient {
         return lastData;
       }
       log.warn(
-          "微信二维码生成失败 attempt={} signUpId={} status={} page={} err={}",
+          "微信二维码生成失败 attempt={} status={} page={} err={}",
           attempt,
-          signUpId,
           response.statusCode(),
           page,
           previewError(lastData));
