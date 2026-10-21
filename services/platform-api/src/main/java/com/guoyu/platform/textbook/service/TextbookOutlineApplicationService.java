@@ -396,9 +396,11 @@ public class TextbookOutlineApplicationService {
     for (TextbookOutlineNodeEntity entity : toUpdate) {
       nodeMapper.updateById(entity);
     }
-    // 批量插入：骨架重建一次可达数百节点，逐行 insert 在弱网/高延迟链路上往返过多
-    if (!toInsert.isEmpty()) {
-      com.baomidou.mybatisplus.extension.toolkit.Db.saveBatch(toInsert, 200);
+    // 逐行插入：一次骨架重建约百余节点，同事务内往返开销可接受。
+    // 不用 Db.saveBatch——其静态 SqlSessionFactory 持有器在多测试上下文全量回归时
+    // 会被其他（H2）上下文覆置为 null 导致 NPE（2026-10-21 全量回归实证）
+    for (TextbookOutlineNodeEntity entity : toInsert) {
+      nodeMapper.insert(entity);
     }
     log.info("[教材] 骨架重建：projectId={} 新增节点={} 保留人工节点={} 删除={}",
         project.getId(), toInsert.size(), chapterEntity.size() + sectionEntity.size(),

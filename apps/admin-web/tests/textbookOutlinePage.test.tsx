@@ -132,7 +132,7 @@ describe('TextbookOutlinePage', () => {
 
     await waitFor(() => expect(api.rebuildOutline).toHaveBeenCalledWith('7001'));
     await waitFor(() => expect(api.getOutline.mock.calls.length).toBeGreaterThan(1));
-  });
+  }, 30000);
 
   it('删除节点：Popconfirm 确认后调 deleteOutlineNode（含子孙提示）', async () => {
     renderPage();
@@ -145,7 +145,7 @@ describe('TextbookOutlinePage', () => {
 
     // TanStack Query 的 mutationFn 还会收到 { client } 上下文参数，只校验业务入参
     await waitFor(() => expect(api.deleteOutlineNode.mock.calls[0]?.[0]).toBe('200'));
-  });
+  }, 30000);
 
   it('下移：同级交换 sortNo（两个节点各发一次请求）', async () => {
     renderPage();

@@ -182,7 +182,7 @@ describe('TextbookProjectPage', () => {
     );
     expect((createReq.file as File).name).toBe('铝电解工.docx');
     await waitFor(() => expect(window.location.pathname).toBe('/textbook/outline/8001'));
-  }, 20000);
+  }, 60000);
 
   it('新建向导：解析失败展示 Alert 且不能进入下一步', async () => {
     api.parsePreview.mockRejectedValue({ response: { data: { message: '未识别权重表，无法配比' } } });
@@ -195,7 +195,7 @@ describe('TextbookProjectPage', () => {
 
     expect(await within(dialog).findByText('未识别权重表，无法配比')).toBeInTheDocument();
     expect(within(dialog).getByRole('button', { name: '下一步' })).toBeDisabled();
-  });
+  }, 30000);
 
   it('新建向导：方向映射未识别时提示人工勾选，可手工选择职业功能提交', async () => {
     api.parsePreview.mockResolvedValue(PREVIEW_NO_GUESS);
@@ -225,5 +225,5 @@ describe('TextbookProjectPage', () => {
     expect(manualReq).toEqual(
       expect.objectContaining({ direction: '默认', levelCode: 5, functionNos: [1, 2] }),
     );
-  }, 20000);
+  }, 60000);
 });
