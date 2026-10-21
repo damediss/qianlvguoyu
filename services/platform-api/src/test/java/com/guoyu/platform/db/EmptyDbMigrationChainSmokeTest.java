@@ -17,6 +17,12 @@ import org.junit.jupiter.api.condition.EnabledIfSystemProperty;
  * {@code mvn test -Dtest=EmptyDbMigrationChainSmokeTest -DemptyDbSmoke=true}
  * 目标库由环境变量 EMPTY_DB_URL / USER / PASSWORD 指定，默认连本团队测试实例上的
  * 专用验证库 gjjddb_empty_check（每次运行前请先重建为空库）。
+ *
+ * <p>口径（2026-10-21 修正）：locations 对齐默认 profile 的 application.yml
+ * （{@code classpath:db/migration,classpath:db/migration-test}）——共用迁移允许依赖
+ * 分叉目录建表（如 competition_practical_sorting_task 由 migration-test 创建），
+ * 只跑共用目录不代表任何真实 profile；空库 collation 用 utf8mb4_unicode_ci（对齐测试库
+ * gjjddb2026 默认，跨表 JOIN 的迁移在 general_ci 空库上会假性失败）。
  */
 @EnabledIfSystemProperty(named = "emptyDbSmoke", matches = "true")
 class EmptyDbMigrationChainSmokeTest {
@@ -34,7 +40,7 @@ class EmptyDbMigrationChainSmokeTest {
     }
     Flyway flyway = Flyway.configure()
         .dataSource(url, user, password)
-        .locations("classpath:db/migration")
+        .locations("classpath:db/migration", "classpath:db/migration-test")
         .baselineOnMigrate(true)
         .outOfOrder(true)
         .validateOnMigrate(false)

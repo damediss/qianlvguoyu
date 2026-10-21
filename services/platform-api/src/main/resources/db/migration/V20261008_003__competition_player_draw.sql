@@ -1,5 +1,8 @@
 -- 选手抽签排序。取号：测试库 flyway max=20261008.002，生产库 max=20261008.001，共用版本 20261008.003。
 -- 第一轮保存随机抽签顺序，第二轮按该顺序逐个写入出场顺序。
+-- 空库幂等化（2026-10-21 补，踩坑 #34 同族）：父菜单 competition_player 是存量库 legacy 菜单，
+-- 空库不存在时子查询返 NULL 撞 parent_id NOT NULL 断链；父菜单在才挂载（INSERT ... SELECT 守卫）。
+-- 存量测试库已应用不会重跑（validate-on-migrate=false）；生产尚未应用到 003，无 checksum 历史。
 CREATE TABLE IF NOT EXISTS competition_player_draw_task (
   id BIGINT NOT NULL,
   tenant_id BIGINT NOT NULL,
@@ -47,13 +50,15 @@ SET @competition_player_draw_menu_id := COALESCE(
 INSERT INTO sys_menu (
   id, tenant_id, parent_id, menu_type, code, name, path, component, permission_code,
   icon, sort_order, visible, status, created_at, updated_at, created_by, updated_by, deleted
-) VALUES (
+)
+SELECT
   @competition_player_draw_menu_id, @competition_tenant_id, @competition_player_menu_id,
   'page', 'competition_player_draw', '抽签排序', '/competition/player-draw',
   'competition/CompetitionPlayerDrawPage', 'competition:player-draw:view',
   'OrderedListOutlined', 3, 1, 'enabled', NOW(), NOW(),
   @seed_operator_id, @seed_operator_id, 0
-)
+FROM DUAL
+WHERE @competition_player_menu_id IS NOT NULL
 ON DUPLICATE KEY UPDATE
   parent_id = VALUES(parent_id), menu_type = VALUES(menu_type), name = VALUES(name),
   path = VALUES(path), component = VALUES(component),
