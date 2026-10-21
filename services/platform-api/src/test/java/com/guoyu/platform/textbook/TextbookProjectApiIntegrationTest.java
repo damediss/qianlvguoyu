@@ -90,7 +90,8 @@ class TextbookProjectApiIntegrationTest {
   }
 
   private void cleanUp() {
-    // 远程共享测试库偶发连接重置（Communications link failure）：清理语句幂等，重试 5 次
+    // 远程共享测试库偶发连接重置/锁等待（Communications link failure / Lock wait timeout）：
+    // 清理语句幂等，重试 6 次、3s 退避，容忍病态窗口的锁释放与重连
     int attempts = 0;
     while (true) {
       try {
@@ -101,11 +102,11 @@ class TextbookProjectApiIntegrationTest {
         jdbcTemplate.update("DELETE FROM sys_file WHERE created_by = ?", USER_ID);
         return;
       } catch (org.springframework.dao.DataAccessException e) {
-        if (++attempts >= 5) {
+        if (++attempts >= 6) {
           throw e;
         }
         try {
-          Thread.sleep(1500);
+          Thread.sleep(3000);
         } catch (InterruptedException ie) {
           Thread.currentThread().interrupt();
           throw e;

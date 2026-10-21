@@ -9,6 +9,8 @@ import com.guoyu.platform.common.exception.ErrorCode;
 import com.guoyu.platform.exam.standard.parser.DocxStandardParser;
 import com.guoyu.platform.exam.standard.parser.model.ParsedStandard;
 import com.guoyu.platform.exam.standard.parser.model.StandardLevelDoc;
+import com.guoyu.platform.file.entity.FileEntity;
+import com.guoyu.platform.file.mapper.FileMapper;
 import com.guoyu.platform.file.service.FileApplicationService;
 import com.guoyu.platform.file.vo.FileVO;
 import com.guoyu.platform.textbook.domain.TextbookDirectionResolver;
@@ -60,17 +62,20 @@ public class TextbookProjectApplicationService {
   private final TextbookOutlineNodeMapper nodeMapper;
   private final TextbookOutlineApplicationService outlineService;
   private final FileApplicationService fileApplicationService;
+  private final FileMapper fileMapper;
   private final ObjectMapper objectMapper;
 
   public TextbookProjectApplicationService(TextbookProjectMapper projectMapper,
       TextbookOutlineNodeMapper nodeMapper,
       TextbookOutlineApplicationService outlineService,
       FileApplicationService fileApplicationService,
+      FileMapper fileMapper,
       ObjectMapper objectMapper) {
     this.projectMapper = projectMapper;
     this.nodeMapper = nodeMapper;
     this.outlineService = outlineService;
     this.fileApplicationService = fileApplicationService;
+    this.fileMapper = fileMapper;
     this.objectMapper = objectMapper;
   }
 
@@ -479,14 +484,12 @@ public class TextbookProjectApplicationService {
     if (fileIds.isEmpty()) {
       return Map.of();
     }
+    // 直查 FileMapper（与细目表 batchFileNames 同范式）：同事务可见未提交的文件行，
+    // 且不经 FileApplicationService.getById 的 NOT_SUPPORTED 边界——后者会挂起当前事务
+    // 重取连接（弱网/池紧张时显著拖慢），并在创建事务内必然读不到刚 insert 的文件行。
     Map<Long, String> names = new LinkedHashMap<>();
-    for (Long fileId : fileIds) {
-      try {
-        FileVO file = fileApplicationService.getById(fileId);
-        names.put(fileId, file.originalName());
-      } catch (BusinessException e) {
-        log.warn("[教材] 查询文件名失败 fileId={}: {}", fileId, e.getMessage());
-      }
+    for (FileEntity file : fileMapper.selectBatchIds(fileIds)) {
+      names.put(file.getId(), file.getOriginalName());
     }
     return names;
   }
