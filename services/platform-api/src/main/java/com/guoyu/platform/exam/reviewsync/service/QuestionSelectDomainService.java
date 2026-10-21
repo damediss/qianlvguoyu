@@ -190,10 +190,16 @@ public final class QuestionSelectDomainService {
     List<ReviewQuestion> selected = new ArrayList<>();
     for (Map.Entry<Long, Integer> entry : quota.entrySet()) {
       List<ReviewQuestion> group = new ArrayList<>(byL1.get(entry.getKey()));
-      // 组内：错题率 ×1.5 加权 + 随机
+      // 组内：错题率 ×1.5 加权 + 随机。
+      // 抖动值必须先抽好存表再排序——比较器内联抽 random 会因键不确定违反排序契约
+      // （生产实证：TimSort mergeHi 抛 Comparison method violates its general contract!）
+      Map<Long, Double> jitterByQid = new HashMap<>();
+      for (ReviewQuestion q : group) {
+        jitterByQid.put(q.id(), random.nextDouble());
+      }
       group.sort(Comparator.comparingDouble((ReviewQuestion q) -> {
         double wrongRate = wrongRateByL3.getOrDefault(q.knowledgeId(), 0.0);
-        return -(1.0 + 1.5 * wrongRate) * random.nextDouble();
+        return -(1.0 + 1.5 * wrongRate) * jitterByQid.get(q.id());
       }));
       for (int i = 0; i < Math.min(entry.getValue(), group.size()); i++) {
         selected.add(group.get(i));

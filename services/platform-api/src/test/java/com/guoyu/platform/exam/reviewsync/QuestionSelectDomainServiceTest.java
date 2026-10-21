@@ -99,6 +99,32 @@ class QuestionSelectDomainServiceTest {
   }
 
   @Test
+  void mockPaperLargePoolManySeedsNeverViolatesSortContract() {
+    // 生产事故回归（2026-10-21）：组内排序比较器内联抽 random.nextDouble()，
+    // 键不确定违反 TimSort 传递性契约 → Comparison method violates its general contract!
+    // 修复后：大池 + 错题率加权 + 50 个种子批量组卷不得抛异常，且题量/去重正确。
+    List<ReviewKnowledgeNode> tree = tree(20);
+    List<ReviewQuestion> questions = new ArrayList<>();
+    long id = 1;
+    for (int l3 = 0; l3 < 20; l3++) {
+      for (int i = 0; i < 90; i++) {
+        questions.add(new ReviewQuestion(id++, 1000L + l3, "single", 2, BigDecimal.ONE));
+      }
+      questions.add(new ReviewQuestion(id++, 1000L + l3, "multi", 2, BigDecimal.ONE));
+    }
+    WeightResolver.ResolvedWeights weights = uniformWeights(tree, questions);
+    Map<Long, Double> wrongRateByL3 = new HashMap<>();
+    for (int l3 = 0; l3 < 20; l3++) {
+      wrongRateByL3.put(1000L + l3, (l3 % 10) / 10.0);
+    }
+    for (int seed = 0; seed < 50; seed++) {
+      List<Long> paper = QuestionSelectDomainService.composeMockPaper(
+          questions, weights, 100, wrongRateByL3, new Random(seed));
+      assertThat(new HashSet<>(paper)).as("seed=%d 组卷去重", seed).hasSize(100);
+    }
+  }
+
+  @Test
   void allocateQuotaWaterFillsWhenCategoryLacksQuestions() {
     Map<Long, Double> weights = Map.of(1L, 0.8, 2L, 0.2);
     Map<Long, List<ReviewQuestion>> byL1 = Map.of(
