@@ -236,36 +236,36 @@ public class SignUpPeopleDefaultTemplatePackService {
     PersonAssets assets = new PersonAssets();
     Long signUpId = person.getSignUpId();
 
+    // 库字段/平台新上传优先于旧 CDN 约定路径（与 SignUpPeopleSelfAssembler 展示口径一致）
     Path header = ctx.idCardHeaderDir.resolve(idCard + ".jpg");
-    if (assetResolver.copyFirstExisting(header, withRecordCandidates(
+    if (assetResolver.copyFirstExisting(header, exportImageCandidates(
         StringUtils.hasText(person.getIdCardHeader()) || StringUtils.hasText(person.getPhoto()),
         assetResolver::existsLocally,
+        new String[] {person.getIdCardHeader(), person.getPhoto()},
         "idCard/headerOrigin/" + idCard + "_header.jpg",
         "idCard/old/headerOrigin/" + idCard + "_header.jpg",
-        "idCard/old/headerOrigin/" + idCard + "_full.png",
-        person.getIdCardHeader(),
-        person.getPhoto()))) {
+        "idCard/old/headerOrigin/" + idCard + "_full.png"))) {
       assets.header = header;
     }
 
     Path front = ctx.idCardFrontDir.resolve(idCard + ".jpg");
-    if (assetResolver.copyFirstExisting(front, withRecordCandidates(
+    if (assetResolver.copyFirstExisting(front, exportImageCandidates(
         StringUtils.hasText(person.getIdCardFront()),
         assetResolver::existsLocally,
+        new String[] {person.getIdCardFront()},
         "idCard/headerOrigin/" + idCard + "_front.jpg",
-        "idCard/old/headerOrigin/" + idCard + "_front.png",
-        person.getIdCardFront()))) {
+        "idCard/old/headerOrigin/" + idCard + "_front.png"))) {
       idCardCropper.tightenInPlace(front);
       assets.front = front;
     }
 
     Path back = ctx.idCardBackDir.resolve(idCard + ".jpg");
-    if (assetResolver.copyFirstExisting(back, withRecordCandidates(
+    if (assetResolver.copyFirstExisting(back, exportImageCandidates(
         StringUtils.hasText(person.getIdCardBack()),
         assetResolver::existsLocally,
+        new String[] {person.getIdCardBack()},
         "idCard/headerOrigin/" + idCard + "_back.jpg",
-        "idCard/old/headerOrigin/" + idCard + "_back.png",
-        person.getIdCardBack()))) {
+        "idCard/old/headerOrigin/" + idCard + "_back.png"))) {
       idCardCropper.tightenInPlace(back);
       assets.back = back;
     }
@@ -287,21 +287,21 @@ public class SignUpPeopleDefaultTemplatePackService {
     Path contractExpire = ctx.contractDir.resolve(realname + "_" + idCard + "_劳动合同到期页.jpg");
     Path contractSign = ctx.contractDir.resolve(realname + "_" + idCard + "_劳动合同盖章页.jpg");
 
-    boolean hasFirst = assetResolver.copyFirstExisting(contractFirst, withRecordCandidates(
+    boolean hasFirst = assetResolver.copyFirstExisting(contractFirst, exportImageCandidates(
         StringUtils.hasText(person.getContactFirstPage()),
         assetResolver::existsLocally,
-        "idCard/headerOrigin/" + idCard + "_" + signUpId + "_contact_first_page.jpg",
-        person.getContactFirstPage()));
-    boolean hasExpire = assetResolver.copyFirstExisting(contractExpire, withRecordCandidates(
+        new String[] {person.getContactFirstPage()},
+        "idCard/headerOrigin/" + idCard + "_" + signUpId + "_contact_first_page.jpg"));
+    boolean hasExpire = assetResolver.copyFirstExisting(contractExpire, exportImageCandidates(
         StringUtils.hasText(person.getContactExpirePage()),
         assetResolver::existsLocally,
-        "idCard/headerOrigin/" + idCard + "_" + signUpId + "_contact_expire_page.jpg",
-        person.getContactExpirePage()));
-    boolean hasSign = assetResolver.copyFirstExisting(contractSign, withRecordCandidates(
+        new String[] {person.getContactExpirePage()},
+        "idCard/headerOrigin/" + idCard + "_" + signUpId + "_contact_expire_page.jpg"));
+    boolean hasSign = assetResolver.copyFirstExisting(contractSign, exportImageCandidates(
         StringUtils.hasText(person.getContactSignPage()),
         assetResolver::existsLocally,
-        "idCard/headerOrigin/" + idCard + "_" + signUpId + "_contact_sign_page.jpg",
-        person.getContactSignPage()));
+        new String[] {person.getContactSignPage()},
+        "idCard/headerOrigin/" + idCard + "_" + signUpId + "_contact_sign_page.jpg"));
 
     if (hasFirst && hasExpire && hasSign) {
       try {
@@ -313,6 +313,33 @@ public class SignUpPeopleDefaultTemplatePackService {
       }
     }
     return assets;
+  }
+
+  /**
+   * 导出图片候选：库字段（含编辑页新上传的 /api/files/...）优先，旧 CDN 约定路径垫底。
+   * 修复「资料收集替换证件照后，默认模板信息图仍是旧照」——此前约定路径排在库字段前。
+   */
+  static List<String> exportImageCandidates(
+      boolean hasRecord,
+      Predicate<String> existsLocally,
+      String[] preferredStored,
+      String... legacyConventionPaths) {
+    List<String> ordered = new ArrayList<>();
+    if (preferredStored != null) {
+      for (String stored : preferredStored) {
+        if (StringUtils.hasText(stored)) {
+          ordered.add(stored.trim());
+        }
+      }
+    }
+    if (legacyConventionPaths != null) {
+      for (String legacy : legacyConventionPaths) {
+        if (StringUtils.hasText(legacy)) {
+          ordered.add(legacy.trim());
+        }
+      }
+    }
+    return withRecordCandidates(hasRecord, existsLocally, ordered.toArray(String[]::new));
   }
 
   /**

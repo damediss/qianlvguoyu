@@ -53,4 +53,32 @@ class SignUpPeopleAssetCandidatesTest {
 
     assertThat(candidates).isEmpty();
   }
+
+  @Test
+  void exportPrefersStoredPlatformUrlOverLegacyConventionPath() {
+    List<String> candidates = SignUpPeopleDefaultTemplatePackService.exportImageCandidates(
+        true,
+        path -> true,
+        new String[] {"/api/files/99/download?inline=true", null},
+        "idCard/headerOrigin/452628198508162117_header.jpg",
+        "idCard/old/headerOrigin/452628198508162117_full.png");
+
+    assertThat(candidates).containsExactly(
+        "/api/files/99/download?inline=true",
+        "idCard/headerOrigin/452628198508162117_header.jpg",
+        "idCard/old/headerOrigin/452628198508162117_full.png");
+  }
+
+  @Test
+  void exportWithoutStoredFallsBackToLocalLegacyOnly() {
+    Set<String> onDisk = Set.of("idCard/headerOrigin/x_header.jpg");
+    List<String> candidates = SignUpPeopleDefaultTemplatePackService.exportImageCandidates(
+        false,
+        onDisk::contains,
+        new String[] {null, ""},
+        "idCard/headerOrigin/x_header.jpg",
+        "idCard/old/headerOrigin/x_full.png");
+
+    assertThat(candidates).containsExactly("idCard/headerOrigin/x_header.jpg");
+  }
 }
