@@ -14,7 +14,6 @@ import com.guoyu.platform.common.exception.ErrorCode;
 import com.guoyu.platform.file.config.FileStorageProperties;
 import com.guoyu.platform.file.service.FileApplicationService;
 import com.guoyu.platform.file.support.CdnFileServeHelper;
-import com.guoyu.platform.file.vo.FileVO;
 import com.guoyu.platform.trainingdepartment.support.TrainingRemoteImageUtil.ImageBytes;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -183,8 +182,7 @@ class SignUpExportAssetServiceTest {
   @Test
   void fileApiIdFallsBackToAppBaseWhenLocalBytesMissing() throws Exception {
     when(fileApplicationService.readFileBytesById(88L)).thenReturn(null);
-    when(fileApplicationService.getById(88L)).thenThrow(
-        new BusinessException(ErrorCode.NOT_FOUND, "File not found"));
+    when(fileApplicationService.resolveExportFetchUrl(88L)).thenReturn(Optional.empty());
     String remote = APP_BASE + "/api/files/88/download";
     when(remoteImageUtil.fetchImage(remote))
         .thenReturn(Optional.of(new ImageBytes("remote-id".getBytes(), ".jpg")));
@@ -199,9 +197,8 @@ class SignUpExportAssetServiceTest {
   void fileApiIdFallsBackToExamFilesPublicUrlWhenReadThrows() throws Exception {
     when(fileApplicationService.readFileBytesById(66L))
         .thenThrow(new BusinessException(ErrorCode.NOT_FOUND, "File content not found"));
-    when(fileApplicationService.getById(66L)).thenReturn(new FileVO(
-        66L, "毕业证.jpg", "image/jpeg", 12L, "public", "uploaded", null,
-        "/api/exam/files/dev/10159/2026/10/grad.jpg"));
+    when(fileApplicationService.resolveExportFetchUrl(66L))
+        .thenReturn(Optional.of("/api/exam/files/dev/10159/2026/10/grad.jpg"));
     String expected = PUBLIC_URL + "/dev/10159/2026/10/grad.jpg";
     when(remoteImageUtil.fetchImage(expected))
         .thenReturn(Optional.of(new ImageBytes("grad".getBytes(), ".jpg")));
@@ -212,6 +209,16 @@ class SignUpExportAssetServiceTest {
   }
 
   @Test
+  void cdnAbsoluteUrlPrefersLocalDiskOverHttp() throws Exception {
+    writeFile(cdnRoot.resolve("upload/common/school.jpg"), "from-disk");
+
+    Path target = outDir.resolve("school.jpg");
+    assertThat(service.copyTo("https://cdn.app.gjjd168.com/upload/common/school.jpg", target)).isTrue();
+    assertThat(Files.readString(target)).isEqualTo("from-disk");
+    verifyNoInteractions(remoteImageUtil);
+  }
+
+  @Test
   void stripInternalServicePortRemovesBlockedPorts() {
     assertThat(SignUpExportAssetService.stripInternalServicePort(
         "http://43.138.163.7:8080/api/exam/files/a.jpg"))
@@ -219,6 +226,16 @@ class SignUpExportAssetServiceTest {
     assertThat(SignUpExportAssetService.stripInternalServicePort(
         "https://cdn.app.gjjd168.com/a.jpg"))
         .isEqualTo("https://cdn.app.gjjd168.com/a.jpg");
+  }
+
+  @Test
+  void relativePathFromHttpUrlStripsCdnHost() {
+    assertThat(SignUpExportAssetService.relativePathFromHttpUrl(
+        "https://cdn.app.gjjd168.com/upload/common/a.jpg"))
+        .isEqualTo("upload/common/a.jpg");
+    assertThat(SignUpExportAssetService.relativePathFromHttpUrl(
+        "http://43.138.163.7/api/exam/files/idCard/headerOrigin/x.jpg"))
+        .isEqualTo("idCard/headerOrigin/x.jpg");
   }
 
   @Test

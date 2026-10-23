@@ -268,6 +268,24 @@ public class FileApplicationService {
   }
 
   /**
+   * 导出素材回退地址（无 SecurityContext）：COS 给预签名直链；local 给 /api/exam/files/{objectKey}。
+   * 供默认模板导出在本机读盘失败时继续拉取，避免毕业证/等级证静默丢失。
+   */
+  @Transactional(propagation = Propagation.NOT_SUPPORTED, readOnly = true)
+  public Optional<String> resolveExportFetchUrl(Long id) {
+    FileEntity entity = findUploadedFile(id);
+    if ("cos".equalsIgnoreCase(entity.getStorageProvider())) {
+      Optional<String> signed = storage.presignedDownloadUrl(entity.getObjectKey(), Duration.ofMinutes(30))
+          .map(java.net.URL::toString);
+      if (signed.isPresent()) {
+        return signed;
+      }
+    }
+    String url = publicUrl(entity);
+    return StringUtils.hasText(url) ? Optional.of(url) : Optional.empty();
+  }
+
+  /**
    * Opens an uploaded file for an internal worker without relying on SecurityContext.
    * The caller owns and must close the returned stream.
    */

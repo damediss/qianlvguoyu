@@ -2,7 +2,6 @@ package com.guoyu.platform.trainingdepartment.support;
 
 import com.guoyu.platform.file.service.FileApplicationService;
 import com.guoyu.platform.file.support.CdnFileServeHelper;
-import com.guoyu.platform.file.vo.FileVO;
 import com.guoyu.platform.trainingdepartment.support.TrainingRemoteImageUtil.ImageBytes;
 import java.net.URI;
 import java.nio.file.Files;
@@ -126,6 +125,12 @@ public class SignUpExportAssetService {
         }
 
         if (isHttp(src)) {
+          // 线上常见：库里是 https://cdn.app/.../upload/xx.jpg，编辑页浏览器直开 CDN；
+          // 导出若只 HTTP 拉外网，API 机出网被墙/超时就会丢图。优先把 URL 还原成相对路径读本机 cdn.path。
+          String fromHttp = relativePathFromHttpUrl(src);
+          if (fromHttp != null && copyRelative(fromHttp, target)) {
+            return true;
+          }
           return copyRemote(src, target);
         }
 
@@ -190,16 +195,14 @@ public class SignUpExportAssetService {
         log.warn("按文件ID读盘失败，尝试公网/exam回退 fileId={} msg={}", fileId, ex.getMessage());
       }
 
-      // 元数据里的公网地址：local → /api/exam/files/{objectKey}（匿名可读）；COS → 桶/CDN URL
+      // 元数据：COS 预签名（免鉴权）/ local 的 exam/files 相对路径读盘或公网拉
       try {
-        FileVO meta = fileApplicationService.getById(fileId);
-        if (meta != null && StringUtils.hasText(meta.url())) {
-          String publicFileUrl = stripInternalServicePort(meta.url().trim());
-          String examRelative = toSelfRelative(publicFileUrl);
-          if (examRelative == null && publicFileUrl.contains(EXAM_FILES_SEGMENT)) {
-            int idx = publicFileUrl.indexOf(EXAM_FILES_SEGMENT);
-            examRelative = normalizeRelative(
-                publicFileUrl.substring(idx + EXAM_FILES_SEGMENT.length()));
+        Optional<String> exportUrl = fileApplicationService.resolveExportFetchUrl(fileId);
+        if (exportUrl.isPresent()) {
+          String publicFileUrl = stripInternalServicePort(exportUrl.get().trim());
+          String examRelative = relativePathFromHttpUrl(publicFileUrl);
+          if (examRelative == null) {
+            examRelative = toSelfRelative(publicFileUrl);
           }
           if (examRelative == null && publicFileUrl.startsWith("/api/exam/files/")) {
             examRelative = normalizeRelative(publicFileUrl.substring("/api/exam/files/".length()));
@@ -210,7 +213,6 @@ public class SignUpExportAssetService {
           if (isHttp(publicFileUrl) && !isLoopbackHttpUrl(publicFileUrl) && copyRemote(publicFileUrl, target)) {
             return true;
           }
-          // 相对 /api/exam/files/...：拼公网 public-url 再拉（本机连生产）
           if (examRelative != null) {
             for (String prefix : selfFileUrlPrefixes) {
               if (!StringUtils.hasText(prefix) || isLoopbackHttpUrl(prefix)) {
@@ -223,7 +225,7 @@ public class SignUpExportAssetService {
           }
         }
       } catch (Exception ex) {
-        log.warn("按文件ID取元数据回退失败 fileId={} msg={}", fileId, ex.getMessage());
+        log.warn("按文件ID取导出回退地址失败 fileId={} msg={}", fileId, ex.getMessage());
       }
 
       // 鉴权 /api/files/{id}/download 公网拉取（可能 401，仅作最后一搏）
@@ -335,6 +337,33 @@ public class SignUpExportAssetService {
 
   private static boolean isHttp(String src) {
     return src.startsWith("http://") || src.startsWith("https://");
+  }
+
+  /**
+   * 从 http(s) CDN/公网地址还原可落盘的相对路径（去掉 /api/exam/files 前缀与 query）。
+   * 例：https://cdn.app.gjjd168.com/upload/a.jpg → upload/a.jpg
+   */
+  static String relativePathFromHttpUrl(String url) {
+    if (!StringUtils.hasText(url) || !isHttp(url.trim())) {
+      return null;
+    }
+    try {
+      String path = URI.create(url.trim()).getPath();
+      if (!StringUtils.hasText(path) || "/".equals(path)) {
+        return null;
+      }
+      int examIdx = path.indexOf(EXAM_FILES_SEGMENT);
+      if (examIdx >= 0) {
+        return normalizeRelative(path.substring(examIdx + EXAM_FILES_SEGMENT.length()));
+      }
+      // 不要把 /api/files/{id}/download 当成相对磁盘路径
+      if (FILE_API_PATTERN.matcher(path).find()) {
+        return null;
+      }
+      return normalizeRelative(path.startsWith("/") ? path.substring(1) : path);
+    } catch (IllegalArgumentException ex) {
+      return null;
+    }
   }
 
   /**

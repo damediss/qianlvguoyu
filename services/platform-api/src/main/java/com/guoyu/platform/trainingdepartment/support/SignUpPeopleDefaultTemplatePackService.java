@@ -282,12 +282,13 @@ public class SignUpPeopleDefaultTemplatePackService {
       logMissingAsset("身份证反面", idCard, person.getIdCardBack());
     }
 
+    String fileNameBase = sanitize(realname) + "_" + idCard;
     copyStoredPaper(assetResolver, "毕业证", idCard, person.getSchoolPaper(),
-        ctx.schoolDir.resolve(realname + "_" + idCard + ".jpg"));
+        ctx.schoolDir.resolve(fileNameBase + ".jpg"));
     copyStoredPaper(assetResolver, "上一等级证书", idCard, person.getWorkTypePaper(),
-        ctx.lastLevelDir.resolve(realname + "_" + idCard + ".jpg"));
+        ctx.lastLevelDir.resolve(fileNameBase + ".jpg"));
     copyStoredPaper(assetResolver, "职称证", idCard, person.getTitlePaper(),
-        ctx.titlePaperDir.resolve(realname + "_" + idCard + ".jpg"));
+        ctx.titlePaperDir.resolve(fileNameBase + ".jpg"));
     copyStoredPaper(assetResolver, "原证件照", idCard, person.getIdCardHeader2(),
         ctx.idCardHeader2Dir.resolve(idCard + ".jpg"));
 
