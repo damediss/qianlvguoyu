@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.mock;
 
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
@@ -19,7 +20,9 @@ import com.guoyu.platform.exam.reviewsync.mapper.ReviewSyncStatsMapper;
 import com.guoyu.platform.trainingdepartment.entity.PlatformUserEntity;
 import com.guoyu.platform.trainingdepartment.entity.TrainExamListEntity;
 import com.guoyu.platform.trainingdepartment.mapper.PlatformUserMapper;
+import com.guoyu.platform.trainingdepartment.entity.TrainExamPeopleListEntity;
 import com.guoyu.platform.trainingdepartment.mapper.TrainExamListMapper;
+import com.guoyu.platform.trainingdepartment.mapper.TrainExamPeopleListMapper;
 import java.sql.Date;
 import java.time.LocalDate;
 import java.util.List;
@@ -51,6 +54,7 @@ class ReviewSyncStatsLastActiveDisplayTest {
   @Mock ExamExamDetailMapper examDetailMapper;
   @Mock PlatformUserMapper platformUserMapper;
   @Mock TrainExamListMapper trainExamListMapper;
+  @Mock TrainExamPeopleListMapper examPeopleListMapper;
   @Mock ReviewQuestionQueryService reviewQuery;
 
   ReviewSyncStatsApplicationService service;
@@ -67,7 +71,7 @@ class ReviewSyncStatsLastActiveDisplayTest {
   void setUp() {
     service = new ReviewSyncStatsApplicationService(statsMapper, planMapper, wrongMapper,
         mockPaperMapper, answerMapper, examDetailMapper, platformUserMapper, trainExamListMapper,
-        reviewQuery, new ObjectMapper());
+        examPeopleListMapper, reviewQuery, new ObjectMapper());
   }
 
   @Test
@@ -103,6 +107,69 @@ class ReviewSyncStatsLastActiveDisplayTest {
     assertThat(rows).hasSize(1);
     // 输出真实作答日，而不是 plan 上的未来覆盖日
     assertThat(rows.get(0).get("lastActiveDate")).isEqualTo(LocalDate.now().toString());
+  }
+
+  @Test
+  void blankProfileNameFallsBackToExamRosterByPhone() {
+    // 生产实证（2026-10-23）：App 注册学员 platform_user.realname 为空串，统计页学员列空白；
+    // 考生名册（考试计划导入）有姓名 → 按手机号回退
+    AiReviewPlanEntity plan = new AiReviewPlanEntity();
+    plan.setId(3L);
+    plan.setPlatformUserId(102L);
+    plan.setExamId(200L);
+    plan.setStatus("active");
+
+    Page<AiReviewPlanEntity> page = new Page<>(1, 20);
+    page.setRecords(List.of(plan));
+    when(planMapper.selectPage(any(), any())).thenReturn(page);
+    when(statsMapper.planAnswerAgg(anyList())).thenReturn(List.of());
+    when(statsMapper.planWrongAgg(anyList())).thenReturn(List.of());
+    when(trainExamListMapper.selectList(any())).thenReturn(List.of());
+
+    PlatformUserEntity user = new PlatformUserEntity();
+    user.setId(102L);
+    user.setRealname(""); // 空串（非 null）——原实现直接透传导致列空白
+    user.setPhone("15277075096");
+    when(platformUserMapper.selectList(any())).thenReturn(List.of(user));
+
+    TrainExamPeopleListEntity roster = new TrainExamPeopleListEntity();
+    roster.setId(17405L);
+    roster.setExamId(200L);
+    roster.setRealname("覃金冠");
+    roster.setPhone("15277075096");
+    when(examPeopleListMapper.selectList(any())).thenReturn(List.of(roster));
+
+    List<Map<String, Object>> rows = service.students(1, 20, null, null).items();
+
+    assertThat(rows).hasSize(1);
+    assertThat(rows.get(0).get("realname")).isEqualTo("覃金冠");
+  }
+
+  @Test
+  void blankProfileNameWithoutRosterUsesFallbackLabel() {
+    AiReviewPlanEntity plan = new AiReviewPlanEntity();
+    plan.setId(4L);
+    plan.setPlatformUserId(103L);
+    plan.setExamId(200L);
+    plan.setStatus("active");
+
+    Page<AiReviewPlanEntity> page = new Page<>(1, 20);
+    page.setRecords(List.of(plan));
+    when(planMapper.selectPage(any(), any())).thenReturn(page);
+    when(statsMapper.planAnswerAgg(anyList())).thenReturn(List.of());
+    when(statsMapper.planWrongAgg(anyList())).thenReturn(List.of());
+    when(trainExamListMapper.selectList(any())).thenReturn(List.of());
+
+    PlatformUserEntity user = new PlatformUserEntity();
+    user.setId(103L);
+    user.setRealname("  ");
+    user.setPhone("13000000000");
+    when(platformUserMapper.selectList(any())).thenReturn(List.of(user));
+    when(examPeopleListMapper.selectList(any())).thenReturn(List.of());
+
+    List<Map<String, Object>> rows = service.students(1, 20, null, null).items();
+
+    assertThat(rows.get(0).get("realname")).isEqualTo("学员#103");
   }
 
   @Test

@@ -152,7 +152,7 @@ export function TrainExamListPage() {
             <Button
               type="link" size="small" icon={<TeamOutlined />}
               onClick={() => { setPeopleExamId(r.id); setPeopleExamTitle(r.title ?? ''); }}
-            >考生</Button>
+            >学员</Button>
             {canViewStats && (
               <Button
                 type="link" size="small" icon={<LineChartOutlined />}
@@ -175,7 +175,7 @@ export function TrainExamListPage() {
     <div className="training-page">
       <section className="page-heading">
         <Typography.Title level={4}>考试计划</Typography.Title>
-        <Typography.Text type="secondary">管理考试计划，关联培训/课程/考生</Typography.Text>
+        <Typography.Text type="secondary">管理考试计划，关联培训/课程/学员</Typography.Text>
       </section>
 
       <Card size="small" style={{ marginBottom: 16 }}>

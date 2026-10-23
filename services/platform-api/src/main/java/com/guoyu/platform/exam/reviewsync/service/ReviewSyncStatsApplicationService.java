@@ -21,8 +21,11 @@ import com.guoyu.platform.exam.reviewsync.mapper.AiReviewWrongItemMapper;
 import com.guoyu.platform.exam.reviewsync.mapper.ReviewSyncStatsMapper;
 import com.guoyu.platform.trainingdepartment.entity.PlatformUserEntity;
 import com.guoyu.platform.trainingdepartment.entity.TrainExamListEntity;
+import com.guoyu.platform.trainingdepartment.entity.TrainExamPeopleListEntity;
 import com.guoyu.platform.trainingdepartment.mapper.PlatformUserMapper;
 import com.guoyu.platform.trainingdepartment.mapper.TrainExamListMapper;
+import com.guoyu.platform.trainingdepartment.mapper.TrainExamPeopleListMapper;
+import org.springframework.util.StringUtils;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDate;
@@ -59,6 +62,7 @@ public class ReviewSyncStatsApplicationService {
   private final ExamExamDetailMapper examDetailMapper;
   private final PlatformUserMapper platformUserMapper;
   private final TrainExamListMapper trainExamListMapper;
+  private final TrainExamPeopleListMapper examPeopleListMapper;
   private final ReviewQuestionQueryService reviewQuery;
   private final ObjectMapper objectMapper;
 
@@ -70,6 +74,7 @@ public class ReviewSyncStatsApplicationService {
       ExamExamDetailMapper examDetailMapper,
       PlatformUserMapper platformUserMapper,
       TrainExamListMapper trainExamListMapper,
+      TrainExamPeopleListMapper examPeopleListMapper,
       ReviewQuestionQueryService reviewQuery,
       ObjectMapper objectMapper) {
     this.statsMapper = statsMapper;
@@ -80,6 +85,7 @@ public class ReviewSyncStatsApplicationService {
     this.examDetailMapper = examDetailMapper;
     this.platformUserMapper = platformUserMapper;
     this.trainExamListMapper = trainExamListMapper;
+    this.examPeopleListMapper = examPeopleListMapper;
     this.reviewQuery = reviewQuery;
     this.objectMapper = objectMapper;
   }
@@ -367,6 +373,9 @@ public class ReviewSyncStatsApplicationService {
       }
     }
 
+    // 姓名回退：平台档案 realname 为空（生产实证：App 注册未填姓名）时按手机号查考生名册
+    Map<String, String> rosterNameByPhone = rosterNamesByPhone(plans, userById);
+
     List<Map<String, Object>> rows = new ArrayList<>(plans.size());
     for (AiReviewPlanEntity plan : plans) {
       Map<String, Object> answers = answerByPlan.get(plan.getId());
@@ -378,7 +387,7 @@ public class ReviewSyncStatsApplicationService {
       Map<String, Object> row = new LinkedHashMap<>();
       row.put("planId", String.valueOf(plan.getId())); // 雪花 id 超 JS 安全整数，字符串下发（AGENTS.md 坑 #24）
       row.put("platformUserId", plan.getPlatformUserId());
-      row.put("realname", user != null && user.getRealname() != null ? user.getRealname() : "学员#" + plan.getPlatformUserId());
+      row.put("realname", resolveRealname(user, plan, rosterNameByPhone));
       row.put("phone", user != null ? user.getPhone() : null);
       row.put("idcard", user != null ? user.getIdcard() : null);
       row.put("examId", plan.getExamId());
@@ -520,7 +529,7 @@ public class ReviewSyncStatsApplicationService {
 
     Map<String, Object> planView = new LinkedHashMap<>();
     planView.put("planId", String.valueOf(plan.getId()));
-    planView.put("realname", user != null && user.getRealname() != null ? user.getRealname() : "学员#" + plan.getPlatformUserId());
+    planView.put("realname", resolveRealname(user, plan, rosterNamesByPhone(List.of(plan), Map.of(plan.getPlatformUserId(), user))));
     planView.put("phone", user != null ? user.getPhone() : null);
     planView.put("examId", plan.getExamId());
     planView.put("examTitle", exam != null && exam.getTitle() != null ? exam.getTitle() : "计划#" + plan.getExamId());
@@ -632,6 +641,54 @@ public class ReviewSyncStatsApplicationService {
       return 0;
     }
     return BigDecimal.valueOf(corrects * 100.0 / total).setScale(1, RoundingMode.HALF_UP).doubleValue();
+  }
+
+  /**
+   * 姓名解析：平台用户档案姓名为空时回退考试计划考生名册（train_exam_people_list，按手机号匹配）。
+   * 生产实证（2026-10-23）：App 注册学员 platform_user.realname 为空串，统计页学员列空白，
+   * 而考生名册（导入/从培训导入）里有姓名。
+   */
+  private String resolveRealname(PlatformUserEntity user, AiReviewPlanEntity plan,
+      Map<String, String> rosterNameByPhone) {
+    if (user != null && StringUtils.hasText(user.getRealname())) {
+      return user.getRealname();
+    }
+    if (user != null && StringUtils.hasText(user.getPhone())) {
+      String rosterName = rosterNameByPhone.get(user.getPhone());
+      if (StringUtils.hasText(rosterName)) {
+        return rosterName;
+      }
+    }
+    return "学员#" + plan.getPlatformUserId();
+  }
+
+  /** 批量收集考生名册姓名：覆盖这些计划的考试，按手机号归并（同名同手机号取最新 id） */
+  private Map<String, String> rosterNamesByPhone(List<AiReviewPlanEntity> plans,
+      Map<Long, PlatformUserEntity> userById) {
+    List<String> phones = plans.stream()
+        .map(p -> userById.get(p.getPlatformUserId()))
+        .filter(u -> u != null && !StringUtils.hasText(u.getRealname())
+            && StringUtils.hasText(u.getPhone()))
+        .map(PlatformUserEntity::getPhone)
+        .distinct()
+        .toList();
+    if (phones.isEmpty()) {
+      return Map.of();
+    }
+    List<Long> examIds = plans.stream().map(AiReviewPlanEntity::getExamId).distinct().toList();
+    Map<String, String> byPhone = new HashMap<>();
+    for (TrainExamPeopleListEntity row : examPeopleListMapper.selectList(
+        new LambdaQueryWrapper<TrainExamPeopleListEntity>()
+            .in(TrainExamPeopleListEntity::getPhone, phones)
+            .in(TrainExamPeopleListEntity::getExamId, examIds)
+            .eq(TrainExamPeopleListEntity::getDeleted, 0)
+            .orderByAsc(TrainExamPeopleListEntity::getId))) {
+      if (row != null && StringUtils.hasText(row.getRealname()) && StringUtils.hasText(row.getPhone())
+          && !byPhone.containsKey(row.getPhone())) {
+        byPhone.put(row.getPhone(), row.getRealname());
+      }
+    }
+    return byPhone;
   }
 
   private static long asLong(Object value) {

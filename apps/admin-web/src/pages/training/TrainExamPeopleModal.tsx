@@ -133,7 +133,7 @@ export function TrainExamPeopleModal({ open, examId, examTitle, onClose }: Props
   return (
     <>
       <Modal
-        title={`考生管理 — ${examTitle || ''}`}
+        title={`学员管理 — ${examTitle || ''}`}
         open={open}
         width={1100}
         onCancel={onClose}
