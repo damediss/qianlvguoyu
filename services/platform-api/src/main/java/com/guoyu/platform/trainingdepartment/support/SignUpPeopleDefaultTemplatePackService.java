@@ -152,6 +152,7 @@ public class SignUpPeopleDefaultTemplatePackService {
     ctx.idCardFrontDir = mkdir(ctx.rootDir, "身份证正面");
     ctx.idCardBackDir = mkdir(ctx.rootDir, "身份证反面");
     ctx.idCardHeaderDir = mkdir(ctx.rootDir, "小二寸证件照");
+    ctx.idCardHeader2Dir = mkdir(ctx.rootDir, "原证件照");
     ctx.contractDir = mkdir(ctx.rootDir, "合同");
     ctx.contractMergeDir = mkdir(ctx.rootDir, "合同(合并)");
     ctx.idCardMergeDir = mkdir(ctx.rootDir, "身份证正反面合并");
@@ -237,15 +238,22 @@ public class SignUpPeopleDefaultTemplatePackService {
     Long signUpId = person.getSignUpId();
 
     // 库字段/平台新上传优先于旧 CDN 约定路径（与 SignUpPeopleSelfAssembler 展示口径一致）
+    // 原证件照可作为一寸照兜底（编辑页可单独上传 header2）
     Path header = ctx.idCardHeaderDir.resolve(idCard + ".jpg");
+    boolean hasHeaderRecord = StringUtils.hasText(person.getIdCardHeader())
+        || StringUtils.hasText(person.getPhoto())
+        || StringUtils.hasText(person.getIdCardHeader2());
     if (assetResolver.copyFirstExisting(header, exportImageCandidates(
-        StringUtils.hasText(person.getIdCardHeader()) || StringUtils.hasText(person.getPhoto()),
+        hasHeaderRecord,
         assetResolver::existsLocally,
-        new String[] {person.getIdCardHeader(), person.getPhoto()},
+        new String[] {person.getIdCardHeader(), person.getPhoto(), person.getIdCardHeader2()},
         "idCard/headerOrigin/" + idCard + "_header.jpg",
         "idCard/old/headerOrigin/" + idCard + "_header.jpg",
         "idCard/old/headerOrigin/" + idCard + "_full.png"))) {
       assets.header = header;
+    } else if (hasHeaderRecord) {
+      logMissingAsset("小二寸证件照", idCard, firstNonBlank(
+          person.getIdCardHeader(), person.getPhoto(), person.getIdCardHeader2()));
     }
 
     Path front = ctx.idCardFrontDir.resolve(idCard + ".jpg");
@@ -257,6 +265,8 @@ public class SignUpPeopleDefaultTemplatePackService {
         "idCard/old/headerOrigin/" + idCard + "_front.png"))) {
       idCardCropper.tightenInPlace(front);
       assets.front = front;
+    } else if (StringUtils.hasText(person.getIdCardFront())) {
+      logMissingAsset("身份证正面", idCard, person.getIdCardFront());
     }
 
     Path back = ctx.idCardBackDir.resolve(idCard + ".jpg");
@@ -268,20 +278,18 @@ public class SignUpPeopleDefaultTemplatePackService {
         "idCard/old/headerOrigin/" + idCard + "_back.png"))) {
       idCardCropper.tightenInPlace(back);
       assets.back = back;
+    } else if (StringUtils.hasText(person.getIdCardBack())) {
+      logMissingAsset("身份证反面", idCard, person.getIdCardBack());
     }
 
-    if (StringUtils.hasText(person.getSchoolPaper())) {
-      assetResolver.copyTo(person.getSchoolPaper(),
-          ctx.schoolDir.resolve(realname + "_" + idCard + ".jpg"));
-    }
-    if (StringUtils.hasText(person.getWorkTypePaper())) {
-      assetResolver.copyTo(person.getWorkTypePaper(),
-          ctx.lastLevelDir.resolve(realname + "_" + idCard + ".jpg"));
-    }
-    if (StringUtils.hasText(person.getTitlePaper())) {
-      assetResolver.copyTo(person.getTitlePaper(),
-          ctx.titlePaperDir.resolve(realname + "_" + idCard + ".jpg"));
-    }
+    copyStoredPaper(assetResolver, "毕业证", idCard, person.getSchoolPaper(),
+        ctx.schoolDir.resolve(realname + "_" + idCard + ".jpg"));
+    copyStoredPaper(assetResolver, "上一等级证书", idCard, person.getWorkTypePaper(),
+        ctx.lastLevelDir.resolve(realname + "_" + idCard + ".jpg"));
+    copyStoredPaper(assetResolver, "职称证", idCard, person.getTitlePaper(),
+        ctx.titlePaperDir.resolve(realname + "_" + idCard + ".jpg"));
+    copyStoredPaper(assetResolver, "原证件照", idCard, person.getIdCardHeader2(),
+        ctx.idCardHeader2Dir.resolve(idCard + ".jpg"));
 
     Path contractFirst = ctx.contractDir.resolve(realname + "_" + idCard + "_劳动合同第一页.jpg");
     Path contractExpire = ctx.contractDir.resolve(realname + "_" + idCard + "_劳动合同到期页.jpg");
@@ -302,6 +310,15 @@ public class SignUpPeopleDefaultTemplatePackService {
         assetResolver::existsLocally,
         new String[] {person.getContactSignPage()},
         "idCard/headerOrigin/" + idCard + "_" + signUpId + "_contact_sign_page.jpg"));
+    if (StringUtils.hasText(person.getContactFirstPage()) && !hasFirst) {
+      logMissingAsset("劳动合同第一页", idCard, person.getContactFirstPage());
+    }
+    if (StringUtils.hasText(person.getContactExpirePage()) && !hasExpire) {
+      logMissingAsset("劳动合同到期页", idCard, person.getContactExpirePage());
+    }
+    if (StringUtils.hasText(person.getContactSignPage()) && !hasSign) {
+      logMissingAsset("劳动合同盖章页", idCard, person.getContactSignPage());
+    }
 
     if (hasFirst && hasExpire && hasSign) {
       try {
@@ -313,6 +330,40 @@ public class SignUpPeopleDefaultTemplatePackService {
       }
     }
     return assets;
+  }
+
+  /**
+   * 毕业证 / 上一等级证书 / 职称证 / 原证件照：按库字段拷贝；有记录却拷不到时打 warn，避免空目录静默丢图。
+   */
+  private void copyStoredPaper(
+      SignUpExportAssetService.AssetResolver assetResolver,
+      String label,
+      String idCard,
+      String stored,
+      Path target) {
+    if (!StringUtils.hasText(stored)) {
+      return;
+    }
+    boolean ok = assetResolver.copyFirstExisting(target, exportImageCandidates(
+        true,
+        assetResolver::existsLocally,
+        new String[] {stored}));
+    if (!ok) {
+      logMissingAsset(label, idCard, stored);
+    }
+  }
+
+  private static void logMissingAsset(String label, String idCard, String stored) {
+    log.warn("导出材料缺失 label={} idCard={} stored={}",
+        label, SensitiveMaskUtils.maskIdCard(idCard), abbreviateStored(stored));
+  }
+
+  private static String abbreviateStored(String stored) {
+    if (!StringUtils.hasText(stored)) {
+      return "";
+    }
+    String t = stored.trim();
+    return t.length() <= 120 ? t : t.substring(0, 117) + "...";
   }
 
   /**
@@ -583,6 +634,7 @@ public class SignUpPeopleDefaultTemplatePackService {
     entries.add(ctx.idCardFrontDir);
     entries.add(ctx.idCardBackDir);
     entries.add(ctx.idCardHeaderDir);
+    entries.add(ctx.idCardHeader2Dir);
     entries.add(ctx.idCardMergeDir);
     entries.add(ctx.levelApplyDir);
     entries.add(ctx.commentRegisterDir);
@@ -1443,6 +1495,7 @@ public class SignUpPeopleDefaultTemplatePackService {
     private Path idCardFrontDir;
     private Path idCardBackDir;
     private Path idCardHeaderDir;
+    private Path idCardHeader2Dir;
     private Path contractDir;
     private Path contractMergeDir;
     private Path idCardMergeDir;

@@ -81,4 +81,32 @@ class SignUpPeopleAssetCandidatesTest {
 
     assertThat(candidates).containsExactly("idCard/headerOrigin/x_header.jpg");
   }
+
+  @Test
+  void headerCandidatesPreferHeaderThenPhotoThenHeader2() {
+    List<String> candidates = SignUpPeopleDefaultTemplatePackService.exportImageCandidates(
+        true,
+        path -> false,
+        new String[] {
+            "/api/files/1/download?inline=true",
+            null,
+            "/api/files/2/download?inline=true"
+        },
+        "idCard/headerOrigin/x_header.jpg");
+
+    assertThat(candidates).containsExactly(
+        "/api/files/1/download?inline=true",
+        "/api/files/2/download?inline=true",
+        "idCard/headerOrigin/x_header.jpg");
+  }
+
+  @Test
+  void paperCandidatesKeepStoredPlatformUrl() {
+    List<String> candidates = SignUpPeopleDefaultTemplatePackService.exportImageCandidates(
+        true,
+        path -> false,
+        new String[] {"/api/files/88/download?inline=true"});
+
+    assertThat(candidates).containsExactly("/api/files/88/download?inline=true");
+  }
 }

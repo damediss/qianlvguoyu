@@ -3,6 +3,7 @@ package com.guoyu.platform.trainingdepartment.support;
 import com.guoyu.platform.file.service.FileApplicationService;
 import com.guoyu.platform.file.support.CdnFileServeHelper;
 import com.guoyu.platform.trainingdepartment.support.TrainingRemoteImageUtil.ImageBytes;
+import java.net.URI;
 import java.nio.file.Files;
 import java.nio.file.InvalidPathException;
 import java.nio.file.Path;
@@ -27,10 +28,12 @@ import org.springframework.util.StringUtils;
  * <p>取值顺序与 {@code /api/exam/files/**}（CdnFileServeHelper）保持一致：先查本机磁盘
  * （platform.cdn.path、platform.file.local-root），本地没有才走远端 CDN。
  *
- * <p>不再回环请求本服务自己的 {@code /api/exam/files}：该端点读的是同一批磁盘根目录，
- * 本地查不到时它也只能 302 到远端，服务端再拉一次拿不到新东西。历史上生产把
- * platform.cdn.url 配成「公网 IP:8080」（8080 未对外开放、后端只监听 127.0.0.1），
- * 每个候选路径都要白等 10s 连接超时（2026-09-15 导出：15 人累计 364 次失败）。
+ * <p>本机 loopback（localhost/127.0.0.1）的 {@code /api/exam/files} 不再回环拉取：
+ * 与本机磁盘是同一批根目录，本地没有时再 HTTP 自己只会空等或 302 空转。历史上生产把
+ * platform.cdn.url 配成「公网 IP:8080」（8080 未对外开放），每个候选白等连接超时。
+ *
+ * <p>非 loopback 的 public-url（例如本机连生产导出）仍允许 HTTP 拉取：本地磁盘没有、
+ * 公网 Nginx 有文件时，否则毕业证/等级证等库字段有值也会静默丢图。
  */
 @Component
 @Slf4j
@@ -46,17 +49,20 @@ public class SignUpExportAssetService {
   private final TrainingRemoteImageUtil remoteImageUtil;
   private final FileApplicationService fileApplicationService;
   private final List<String> selfFileUrlPrefixes;
+  private final String appBaseUrl;
 
   public SignUpExportAssetService(
       CdnFileServeHelper cdnFileServeHelper,
       TrainingRemoteImageUtil remoteImageUtil,
       FileApplicationService fileApplicationService,
       @Value("${platform.cdn.url:http://localhost:8080/api/exam/files}") String cdnUrl,
-      @Value("${platform.cdn.public-url:}") String publicUrl) {
+      @Value("${platform.cdn.public-url:}") String publicUrl,
+      @Value("${platform.app-base-url:}") String appBaseUrl) {
     this.cdnFileServeHelper = cdnFileServeHelper;
     this.remoteImageUtil = remoteImageUtil;
     this.fileApplicationService = fileApplicationService;
     this.selfFileUrlPrefixes = List.of(trimTrailingSlash(cdnUrl), trimTrailingSlash(publicUrl));
+    this.appBaseUrl = trimTrailingSlash(appBaseUrl);
   }
 
   /** 一次导出共用一个解析器：同一候选路径不重复探测、不重复下载（名单里同一人可能出现多行）。 */
@@ -176,6 +182,11 @@ public class SignUpExportAssetService {
         Files.write(target, bytes);
         return true;
       }
+      // 本机磁盘无对象时（常见：连生产库但在开发机导出），经公网 API 再拉一次
+      String remote = fileDownloadFallbackUrl(fileId);
+      if (remote != null && copyRemote(remote, target)) {
+        return true;
+      }
       misses.add(key);
       return false;
     }
@@ -198,8 +209,8 @@ public class SignUpExportAssetService {
         return true;
       }
       Optional<String> remote = cdnFileServeHelper.remoteFallbackUrl(key);
-      // 远端回退若仍指向本服务自己（sign-up/** 走 public-url），服务端再拉一次也没有新内容
-      if (remote.isPresent() && !isSelfUrl(remote.get()) && copyRemote(remote.get(), target)) {
+      // loopback 自称地址跳过；公网 public-url / 历史 CDN 仍拉取
+      if (remote.isPresent() && !isLoopbackHttpUrl(remote.get()) && copyRemote(remote.get(), target)) {
         return true;
       }
       misses.add(key);
@@ -240,8 +251,42 @@ public class SignUpExportAssetService {
     return null;
   }
 
-  private boolean isSelfUrl(String url) {
-    return toSelfRelative(url) != null;
+  /**
+   * 平台文件 ID 的公网下载地址：优先 app-base-url；否则从非 loopback 的 cdn/public-url 推导源站。
+   */
+  String fileDownloadFallbackUrl(long fileId) {
+    if (StringUtils.hasText(appBaseUrl) && !isLoopbackHttpUrl(appBaseUrl)) {
+      return appBaseUrl + "/api/files/" + fileId + "/download";
+    }
+    for (String prefix : selfFileUrlPrefixes) {
+      if (!StringUtils.hasText(prefix) || isLoopbackHttpUrl(prefix)) {
+        continue;
+      }
+      int apiIdx = prefix.indexOf("/api/");
+      if (apiIdx > 0) {
+        return prefix.substring(0, apiIdx) + "/api/files/" + fileId + "/download";
+      }
+      if (isHttp(prefix)) {
+        return prefix + "/api/files/" + fileId + "/download";
+      }
+    }
+    return null;
+  }
+
+  /** localhost / 127.0.0.1 回环拉取无意义且易超时；公网「自称 self」地址仍允许 HTTP。 */
+  static boolean isLoopbackHttpUrl(String url) {
+    if (!StringUtils.hasText(url) || !isHttp(url.trim())) {
+      return false;
+    }
+    try {
+      String host = URI.create(url.trim()).getHost();
+      return host == null
+          || "localhost".equalsIgnoreCase(host)
+          || "127.0.0.1".equals(host)
+          || "::1".equals(host);
+    } catch (IllegalArgumentException ex) {
+      return false;
+    }
   }
 
   private static boolean isHttp(String src) {

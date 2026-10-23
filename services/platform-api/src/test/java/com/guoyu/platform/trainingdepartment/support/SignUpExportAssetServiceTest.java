@@ -23,14 +23,14 @@ import org.junit.jupiter.api.io.TempDir;
 import org.mockito.ArgumentCaptor;
 
 /**
- * 导出素材解析：本机磁盘（cdn.path / file.local-root）优先，不回环请求本服务自己的
- * /api/exam/files（生产曾把该地址配成公网 IP:8080，每个候选白等 10s 连接超时）。
+ * 导出素材解析：本机磁盘优先；loopback 自称地址不回环；公网 public-url 允许 HTTP 拉取。
  */
 class SignUpExportAssetServiceTest {
 
   private static final String CDN_URL = "http://43.138.163.7:8080/api/exam/files";
   private static final String PUBLIC_URL = "http://43.138.163.7/api/exam/files";
   private static final String REMOTE_FALLBACK = "https://cdn.app.gjjd168.com";
+  private static final String APP_BASE = "https://api.gjjd168.com";
 
   @TempDir Path tempDir;
 
@@ -55,7 +55,7 @@ class SignUpExportAssetServiceTest {
         REMOTE_FALLBACK,
         PUBLIC_URL);
     service = new SignUpExportAssetService(
-        helper, remoteImageUtil, fileApplicationService, CDN_URL, PUBLIC_URL);
+        helper, remoteImageUtil, fileApplicationService, CDN_URL, PUBLIC_URL, APP_BASE);
   }
 
   @Test
@@ -106,11 +106,35 @@ class SignUpExportAssetServiceTest {
     verifyNoInteractions(remoteImageUtil);
   }
 
-  /** sign-up/** 的远端回退指向本机 public-url，服务端再拉一次也没有新内容，直接判失败。 */
+  /** sign-up/** 本地没有时，允许经公网 public-url 拉取（本机连生产导出）。 */
   @Test
-  void selfFallbackUrlIsNotFetched() throws Exception {
+  void appUploadRelativeFallsBackToPublicUrl() throws Exception {
+    String expected = PUBLIC_URL + "/sign-up/qrcode/2026-09-15/a.png";
+    when(remoteImageUtil.fetchImage(expected))
+        .thenReturn(Optional.of(new ImageBytes("qr".getBytes(), ".png")));
+
     Path target = outDir.resolve("qrcode.png");
-    assertThat(service.copyTo("sign-up/qrcode/2026-09-15/a.png", target)).isFalse();
+    assertThat(service.copyTo("sign-up/qrcode/2026-09-15/a.png", target)).isTrue();
+    assertThat(Files.readString(target)).isEqualTo("qr");
+    assertThat(capturedUrls(1)).containsExactly(expected);
+  }
+
+  @Test
+  void loopbackPublicUrlIsNotFetchedForAppUpload() throws Exception {
+    CdnFileServeHelper helper = new CdnFileServeHelper(
+        new FileStorageProperties("local", localRoot.toString(), "", null),
+        cdnRoot.toString(),
+        "http://localhost:8080/api/exam/files",
+        REMOTE_FALLBACK,
+        "http://localhost:8080/api/exam/files");
+    SignUpExportAssetService loopbackService = new SignUpExportAssetService(
+        helper, remoteImageUtil, fileApplicationService,
+        "http://localhost:8080/api/exam/files",
+        "http://localhost:8080/api/exam/files",
+        "http://localhost:8080");
+
+    Path target = outDir.resolve("qrcode.png");
+    assertThat(loopbackService.copyTo("sign-up/qrcode/2026-09-15/a.png", target)).isFalse();
     verifyNoInteractions(remoteImageUtil);
   }
 
@@ -151,6 +175,45 @@ class SignUpExportAssetServiceTest {
     assertThat(service.copyTo("/api/files/20260915/download", target)).isTrue();
     assertThat(Files.readString(target)).isEqualTo("by-id");
     verify(remoteImageUtil, never()).fetchImage(anyString());
+  }
+
+  @Test
+  void fileApiIdFallsBackToAppBaseWhenLocalBytesMissing() throws Exception {
+    when(fileApplicationService.readFileBytesById(88L)).thenReturn(null);
+    String remote = APP_BASE + "/api/files/88/download";
+    when(remoteImageUtil.fetchImage(remote))
+        .thenReturn(Optional.of(new ImageBytes("remote-id".getBytes(), ".jpg")));
+
+    Path target = outDir.resolve("paper.jpg");
+    assertThat(service.copyTo("/api/files/88/download?inline=true", target)).isTrue();
+    assertThat(Files.readString(target)).isEqualTo("remote-id");
+  }
+
+  @Test
+  void fileDownloadFallbackPrefersAppBaseUrl() {
+    assertThat(service.fileDownloadFallbackUrl(99L))
+        .isEqualTo(APP_BASE + "/api/files/99/download");
+  }
+
+  @Test
+  void fileDownloadFallbackDerivesFromPublicCdnWhenAppBaseIsLoopback() {
+    SignUpExportAssetService derived = new SignUpExportAssetService(
+        mock(CdnFileServeHelper.class),
+        remoteImageUtil,
+        fileApplicationService,
+        "http://localhost:8080/api/exam/files",
+        PUBLIC_URL,
+        "http://localhost:8080");
+    assertThat(derived.fileDownloadFallbackUrl(7L))
+        .isEqualTo("http://43.138.163.7/api/files/7/download");
+  }
+
+  @Test
+  void loopbackHttpUrlsAreDetected() {
+    assertThat(SignUpExportAssetService.isLoopbackHttpUrl("http://localhost:8080/api/exam/files")).isTrue();
+    assertThat(SignUpExportAssetService.isLoopbackHttpUrl("http://127.0.0.1/api/files/1/download")).isTrue();
+    assertThat(SignUpExportAssetService.isLoopbackHttpUrl(REMOTE_FALLBACK + "/a.jpg")).isFalse();
+    assertThat(SignUpExportAssetService.isLoopbackHttpUrl(PUBLIC_URL)).isFalse();
   }
 
   @Test
