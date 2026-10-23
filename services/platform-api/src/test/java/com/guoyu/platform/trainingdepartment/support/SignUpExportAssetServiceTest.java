@@ -9,9 +9,12 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
+import com.guoyu.platform.common.exception.BusinessException;
+import com.guoyu.platform.common.exception.ErrorCode;
 import com.guoyu.platform.file.config.FileStorageProperties;
 import com.guoyu.platform.file.service.FileApplicationService;
 import com.guoyu.platform.file.support.CdnFileServeHelper;
+import com.guoyu.platform.file.vo.FileVO;
 import com.guoyu.platform.trainingdepartment.support.TrainingRemoteImageUtil.ImageBytes;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -180,6 +183,8 @@ class SignUpExportAssetServiceTest {
   @Test
   void fileApiIdFallsBackToAppBaseWhenLocalBytesMissing() throws Exception {
     when(fileApplicationService.readFileBytesById(88L)).thenReturn(null);
+    when(fileApplicationService.getById(88L)).thenThrow(
+        new BusinessException(ErrorCode.NOT_FOUND, "File not found"));
     String remote = APP_BASE + "/api/files/88/download";
     when(remoteImageUtil.fetchImage(remote))
         .thenReturn(Optional.of(new ImageBytes("remote-id".getBytes(), ".jpg")));
@@ -187,6 +192,33 @@ class SignUpExportAssetServiceTest {
     Path target = outDir.resolve("paper.jpg");
     assertThat(service.copyTo("/api/files/88/download?inline=true", target)).isTrue();
     assertThat(Files.readString(target)).isEqualTo("remote-id");
+  }
+
+  /** 回归：读盘抛异常时不能直接失败，应走 exam/files 公网回退（毕业证编辑可见但导出空）。 */
+  @Test
+  void fileApiIdFallsBackToExamFilesPublicUrlWhenReadThrows() throws Exception {
+    when(fileApplicationService.readFileBytesById(66L))
+        .thenThrow(new BusinessException(ErrorCode.NOT_FOUND, "File content not found"));
+    when(fileApplicationService.getById(66L)).thenReturn(new FileVO(
+        66L, "毕业证.jpg", "image/jpeg", 12L, "public", "uploaded", null,
+        "/api/exam/files/dev/10159/2026/10/grad.jpg"));
+    String expected = PUBLIC_URL + "/dev/10159/2026/10/grad.jpg";
+    when(remoteImageUtil.fetchImage(expected))
+        .thenReturn(Optional.of(new ImageBytes("grad".getBytes(), ".jpg")));
+
+    Path target = outDir.resolve("school.jpg");
+    assertThat(service.copyTo("/api/files/66/download?inline=true", target)).isTrue();
+    assertThat(Files.readString(target)).isEqualTo("grad");
+  }
+
+  @Test
+  void stripInternalServicePortRemovesBlockedPorts() {
+    assertThat(SignUpExportAssetService.stripInternalServicePort(
+        "http://43.138.163.7:8080/api/exam/files/a.jpg"))
+        .isEqualTo("http://43.138.163.7/api/exam/files/a.jpg");
+    assertThat(SignUpExportAssetService.stripInternalServicePort(
+        "https://cdn.app.gjjd168.com/a.jpg"))
+        .isEqualTo("https://cdn.app.gjjd168.com/a.jpg");
   }
 
   @Test

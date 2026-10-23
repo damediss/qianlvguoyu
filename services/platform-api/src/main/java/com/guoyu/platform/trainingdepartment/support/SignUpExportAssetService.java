@@ -2,6 +2,7 @@ package com.guoyu.platform.trainingdepartment.support;
 
 import com.guoyu.platform.file.service.FileApplicationService;
 import com.guoyu.platform.file.support.CdnFileServeHelper;
+import com.guoyu.platform.file.vo.FileVO;
 import com.guoyu.platform.trainingdepartment.support.TrainingRemoteImageUtil.ImageBytes;
 import java.net.URI;
 import java.nio.file.Files;
@@ -109,7 +110,8 @@ public class SignUpExportAssetService {
       if (!StringUtils.hasText(storedOrUrl) || target == null) {
         return false;
       }
-      String src = storedOrUrl.trim();
+      // 与编辑页展示一致：去掉公网直连常被墙的 :8080/:8081
+      String src = stripInternalServicePort(storedOrUrl.trim());
       try {
         Files.createDirectories(target.getParent());
 
@@ -177,12 +179,54 @@ public class SignUpExportAssetService {
       if (misses.contains(key)) {
         return false;
       }
-      byte[] bytes = fileApplicationService.readFileBytesById(fileId);
-      if (bytes != null && bytes.length > 0) {
-        Files.write(target, bytes);
-        return true;
+      // readFileBytesById 缺文件时抛 BusinessException；必须吃掉后再走回退，否则毕业证等会静默丢图
+      try {
+        byte[] bytes = fileApplicationService.readFileBytesById(fileId);
+        if (bytes != null && bytes.length > 0) {
+          Files.write(target, bytes);
+          return true;
+        }
+      } catch (Exception ex) {
+        log.warn("按文件ID读盘失败，尝试公网/exam回退 fileId={} msg={}", fileId, ex.getMessage());
       }
-      // 本机磁盘无对象时（常见：连生产库但在开发机导出），经公网 API 再拉一次
+
+      // 元数据里的公网地址：local → /api/exam/files/{objectKey}（匿名可读）；COS → 桶/CDN URL
+      try {
+        FileVO meta = fileApplicationService.getById(fileId);
+        if (meta != null && StringUtils.hasText(meta.url())) {
+          String publicFileUrl = stripInternalServicePort(meta.url().trim());
+          String examRelative = toSelfRelative(publicFileUrl);
+          if (examRelative == null && publicFileUrl.contains(EXAM_FILES_SEGMENT)) {
+            int idx = publicFileUrl.indexOf(EXAM_FILES_SEGMENT);
+            examRelative = normalizeRelative(
+                publicFileUrl.substring(idx + EXAM_FILES_SEGMENT.length()));
+          }
+          if (examRelative == null && publicFileUrl.startsWith("/api/exam/files/")) {
+            examRelative = normalizeRelative(publicFileUrl.substring("/api/exam/files/".length()));
+          }
+          if (examRelative != null && copyRelative(examRelative, target)) {
+            return true;
+          }
+          if (isHttp(publicFileUrl) && !isLoopbackHttpUrl(publicFileUrl) && copyRemote(publicFileUrl, target)) {
+            return true;
+          }
+          // 相对 /api/exam/files/...：拼公网 public-url 再拉（本机连生产）
+          if (examRelative != null) {
+            for (String prefix : selfFileUrlPrefixes) {
+              if (!StringUtils.hasText(prefix) || isLoopbackHttpUrl(prefix)) {
+                continue;
+              }
+              if (copyRemote(prefix + "/" + examRelative, target)) {
+                return true;
+              }
+            }
+          }
+        }
+      } catch (Exception ex) {
+        log.warn("按文件ID取元数据回退失败 fileId={} msg={}", fileId, ex.getMessage());
+      }
+
+      // 鉴权 /api/files/{id}/download 公网拉取（可能 401，仅作最后一搏）
       String remote = fileDownloadFallbackUrl(fileId);
       if (remote != null && copyRemote(remote, target)) {
         return true;
@@ -291,6 +335,39 @@ public class SignUpExportAssetService {
 
   private static boolean isHttp(String src) {
     return src.startsWith("http://") || src.startsWith("https://");
+  }
+
+  /**
+   * 公网预览时去掉非本机 :8080/:8081（与 SignUpPeopleSelfAssembler 展示口径一致）。
+   * 导出若仍打带端口地址，常被防火墙拦截导致毕业证等拷不到。
+   */
+  static String stripInternalServicePort(String absoluteUrl) {
+    if (!StringUtils.hasText(absoluteUrl) || !isHttp(absoluteUrl.trim())) {
+      return absoluteUrl;
+    }
+    try {
+      URI uri = URI.create(absoluteUrl.trim());
+      String host = uri.getHost();
+      int port = uri.getPort();
+      boolean local = host == null
+          || "localhost".equalsIgnoreCase(host)
+          || "127.0.0.1".equals(host);
+      if (!local && (port == 8080 || port == 8081)) {
+        String scheme = uri.getScheme() != null ? uri.getScheme() : "http";
+        StringBuilder sb = new StringBuilder();
+        sb.append(scheme).append("://").append(host);
+        if (uri.getRawPath() != null) {
+          sb.append(uri.getRawPath());
+        }
+        if (uri.getRawQuery() != null) {
+          sb.append('?').append(uri.getRawQuery());
+        }
+        return sb.toString();
+      }
+    } catch (IllegalArgumentException ignored) {
+      // keep original
+    }
+    return absoluteUrl;
   }
 
   /** 去掉 query、前导斜杠，拒绝目录穿越；空或非法返回 null。 */
