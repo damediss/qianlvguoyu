@@ -22,6 +22,10 @@ export interface ParsePreviewVO {
   trainingHoursByLevel: Record<string, number>;
   /** 方向→职业功能序号猜测值（解析失败为空，需人工勾选） */
   guessedFunctionNos: number[];
+  /** levelCode → 各等级解析出的 方向→序号（契约外附加字段） */
+  guessedFunctionNosByLevel?: Record<string, Record<string, number[]>>;
+  /** levelCode → 职业功能序号→名称（勾选项显示真实功能名；契约外附加字段） */
+  functionNamesByLevel?: Record<string, Record<string, string>>;
   warnings: string[];
 }
 

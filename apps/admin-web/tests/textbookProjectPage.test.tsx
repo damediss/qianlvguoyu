@@ -55,6 +55,8 @@ const PREVIEW = {
   directionLevels: { 槽操作工: [5], 吸出: [4, 5] },
   trainingHoursByLevel: { 5: 40, 4: 36 },
   guessedFunctionNos: [1, 2, 12],
+  guessedFunctionNosByLevel: { 5: { 槽操作工: [1, 2, 12] }, 4: { 吸出: [1, 2] } },
+  functionNamesByLevel: { 5: { '1': '工作准备', '2': '铝电解槽操作', '12': '培训与管理' } },
   warnings: ['未找到技能要求权重表，已按条数均分'],
 };
 
@@ -63,6 +65,8 @@ const PREVIEW_NO_GUESS = {
   directions: ['默认'],
   directionLevels: { 默认: [5] },
   guessedFunctionNos: [],
+  guessedFunctionNosByLevel: {},
+  functionNamesByLevel: {},
   warnings: ['方向映射未识别，请人工登记'],
 };
 
@@ -156,17 +160,20 @@ describe('TextbookProjectPage', () => {
     expect(api.parsePreview).toHaveBeenCalled();
 
     await userEvent.click(within(dialog).getByRole('button', { name: '下一步' }));
-    // 选方向：等级受 directionLevels 约束并回填学时，职业功能预选，系数默认 2500
+    // 选方向：等级受 directionLevels 约束并回填学时，职业功能预选（显示真实功能名），系数默认 2500
     await userEvent.click(within(dialog).getAllByRole('combobox')[0]);
     await selectOption('槽操作工');
     expect(within(dialog).getByDisplayValue('40')).toBeInTheDocument();
     expect(within(dialog).getByDisplayValue('2500')).toBeInTheDocument();
-    expect(within(dialog).getByText('职业功能 1')).toBeInTheDocument();
-    expect(within(dialog).getByText('职业功能 12')).toBeInTheDocument();
+    expect(within(dialog).getByText('1 工作准备')).toBeInTheDocument();
+    expect(within(dialog).getByText('12 培训与管理')).toBeInTheDocument();
+    // 三个字段（职业功能/培训参考学时/每学时字数系数）带问号解释图标
+    expect(within(dialog).getAllByRole('img', { name: 'question-circle' }).length).toBeGreaterThanOrEqual(3);
 
     await userEvent.click(within(dialog).getByRole('button', { name: '下一步' }));
     expect(within(dialog).getByText('预计总字数')).toBeInTheDocument();
     expect(within(dialog).getByText('100000')).toBeInTheDocument();
+    expect(within(dialog).getByText('1 工作准备、2 铝电解槽操作、12 培训与管理')).toBeInTheDocument();
 
     await userEvent.click(within(dialog).getByRole('button', { name: /创建并生成大纲/ }));
     await waitFor(() => expect(api.createProject).toHaveBeenCalledTimes(1));

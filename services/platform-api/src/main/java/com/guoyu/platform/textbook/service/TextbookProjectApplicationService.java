@@ -9,11 +9,13 @@ import com.guoyu.platform.common.exception.ErrorCode;
 import com.guoyu.platform.exam.standard.parser.DocxStandardParser;
 import com.guoyu.platform.exam.standard.parser.model.ParsedStandard;
 import com.guoyu.platform.exam.standard.parser.model.StandardLevelDoc;
+import com.guoyu.platform.exam.standard.parser.model.StandardNodeDoc;
 import com.guoyu.platform.file.entity.FileEntity;
 import com.guoyu.platform.file.mapper.FileMapper;
 import com.guoyu.platform.file.service.FileApplicationService;
 import com.guoyu.platform.file.vo.FileVO;
 import com.guoyu.platform.textbook.domain.TextbookDirectionResolver;
+import com.guoyu.platform.textbook.domain.TextbookOutlineBuilder;
 import com.guoyu.platform.textbook.dto.ProjectCreateReq;
 import com.guoyu.platform.textbook.dto.ProjectQueryReq;
 import com.guoyu.platform.textbook.dto.ProjectUpdateReq;
@@ -120,12 +122,25 @@ public class TextbookProjectApplicationService {
         ? List.of()
         : List.copyOf(firstLevelMapping.values().iterator().next());
 
+    // 各等级职业功能序号→名称（工作要求表 L1），供前端勾选项显示真实功能名
+    Map<Integer, Map<Integer, String>> functionNamesByLevel = new LinkedHashMap<>();
+    for (StandardLevelDoc level : parsed.getLevels()) {
+      Map<Integer, String> names = new LinkedHashMap<>();
+      for (StandardNodeDoc func : level.getWorkFunctions()) {
+        Integer no = TextbookOutlineBuilder.parseFunctionNo(func.getNumber());
+        if (no != null && func.getTitle() != null && !func.getTitle().isBlank()) {
+          names.put(no, func.getTitle());
+        }
+      }
+      functionNamesByLevel.put(5 - level.getLevelCode(), names);
+    }
+
     List<String> warnings = new ArrayList<>(parsed.getParseWarnings());
     warnings.addAll(extraWarnings);
     return new ParsePreviewVO(
         parsed.getWorkTypeTitle(), parsed.getSeriesNo(), parsed.getVersion(),
         directions, directionLevels, trainingHours,
-        guessedFlat, mappingByLevel, warnings);
+        guessedFlat, mappingByLevel, functionNamesByLevel, warnings);
   }
 
   // ============================================================

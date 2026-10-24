@@ -120,7 +120,8 @@ public final class TextbookOutlineBuilder {
     return value;
   }
 
-  private static Integer parseFunctionNo(String number) {
+  /** 工作要求 L1 编号 → 职业功能序号（"1"→1）；非纯数字编号返回 null */
+  public static Integer parseFunctionNo(String number) {
     if (number == null) {
       return null;
     }

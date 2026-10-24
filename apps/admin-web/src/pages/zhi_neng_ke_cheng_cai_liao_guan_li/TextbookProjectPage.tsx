@@ -343,13 +343,13 @@ export function TextbookProjectPage() {
           >
             <Input maxLength={128} />
           </Form.Item>
-          <Form.Item name="trainingHours" label="培训参考学时">
+          <Form.Item name="trainingHours" label="培训参考学时" tooltip={HOURS_TOOLTIP}>
             <InputNumber min={1} max={100000} style={{ width: '100%' }} />
           </Form.Item>
           <Form.Item
             name="wordsPerHour"
             label="每学时字数系数"
-            tooltip="修改学时或系数后后端将自动重建骨架并重新配比"
+            tooltip={`${WORDS_PER_HOUR_TOOLTIP} 修改学时或系数后将自动重建大纲骨架并重新配比。`}
           >
             <InputNumber min={100} max={100000} style={{ width: '100%' }} />
           </Form.Item>
@@ -365,6 +365,17 @@ export function TextbookProjectPage() {
 
 /** 解析不出方向映射时，职业功能勾选的兜底选项范围（1.4 节职业功能序号） */
 const FALLBACK_FUNCTION_NOS = Array.from({ length: 12 }, (_, i) => i + 1);
+
+/** 字段名词解释（问号气泡，向导与编辑弹窗共用） */
+const HOURS_TOOLTIP =
+  '本等级在国家职业技能标准中规定的培训参考学时，上传标准解析成功后会自动回填，一般无需手改。'
+  + '总字数 = 培训参考学时 × 每学时字数系数；标准未提供时，请与教务确认后填写。';
+const WORDS_PER_HOUR_TOOLTIP =
+  '每 1 学时对应的目标字数，用来估算教材总篇幅：总字数 = 培训参考学时 × 每学时字数系数。'
+  + '默认 2500，即 40 学时约生成 10 万字的教材；无特殊篇幅要求建议保持默认。';
+const FUNCTION_TOOLTIP =
+  '国家职业技能标准「工作要求」表的第一级分类（如 工作准备、铝电解槽操作、培训与管理）。'
+  + '勾选的功能将作为教材大纲专业篇的章生成内容；已按所选方向自动预勾选，可按需调整。';
 
 function CreateProjectWizard({
   onClose,
@@ -417,10 +428,12 @@ function CreateProjectWizard({
     const levels =
       preview?.directionLevels?.[dir]?.length ? preview.directionLevels[dir] : TEXTBOOK_LEVEL_OPTIONS.map((o) => o.value);
     const first = levels[0];
+    const mapped = mappedFunctionNos(first, dir);
     form.setFieldsValue({
       direction: dir,
       levelCode: first,
       trainingHours: hoursOf(first) ?? form.getFieldValue('trainingHours'),
+      ...(mapped ? { functionNos: mapped } : {}),
     });
   };
 
@@ -429,7 +442,22 @@ function CreateProjectWizard({
     return preview.trainingHoursByLevel?.[levelCode] ?? preview.trainingHoursByLevel?.[String(levelCode)];
   };
 
+  /** 所选等级的职业功能序号→名称（后端解析工作要求表 L1；无名称时 undefined） */
+  const functionNamesOf = (levelCode: number | undefined): Record<string, string> | undefined => {
+    if (levelCode == null || !preview) return undefined;
+    return preview.functionNamesByLevel?.[levelCode] ?? preview.functionNamesByLevel?.[String(levelCode)];
+  };
+
+  /** (等级, 方向) 对应的解析映射序号（勾选预选随选择联动；无映射返回 undefined 不覆盖手工勾选） */
+  const mappedFunctionNos = (levelCode: number | undefined, direction: string | undefined): number[] | undefined => {
+    if (levelCode == null || !direction || !preview) return undefined;
+    const byLevel =
+      preview.guessedFunctionNosByLevel?.[levelCode] ?? preview.guessedFunctionNosByLevel?.[String(levelCode)];
+    return byLevel?.[direction];
+  };
+
   const selectedDirection = Form.useWatch('direction', form) as string | undefined;
+  const selectedLevel = Form.useWatch('levelCode', form) as number | undefined;
   const allowedLevels = selectedDirection
     ? preview?.directionLevels?.[selectedDirection]?.length
       ? preview.directionLevels[selectedDirection]
@@ -440,10 +468,18 @@ function CreateProjectWizard({
     disabled: allowedLevels.length > 0 && !allowedLevels.includes(o.value),
   }));
 
-  const functionOptions = (preview?.guessedFunctionNos?.length
-    ? preview.guessedFunctionNos
-    : FALLBACK_FUNCTION_NOS
-  ).map((n) => ({ value: n, label: `职业功能 ${n}` }));
+  const levelFunctionNames = functionNamesOf(selectedLevel);
+  const functionOptions =
+    levelFunctionNames && Object.keys(levelFunctionNames).length > 0
+      ? Object.entries(levelFunctionNames).map(([no, name]) => ({ value: Number(no), label: `${no} ${name}` }))
+      : (preview?.guessedFunctionNos?.length ? preview.guessedFunctionNos : FALLBACK_FUNCTION_NOS).map((n) => ({
+          value: n,
+          label: `职业功能 ${n}`,
+        }));
+  const confirmNameOf = (no: number): string => {
+    const name = functionNamesOf(step1Values?.levelCode)?.[no];
+    return name ? `${no} ${name}` : `职业功能 ${no}`;
+  };
 
   const enterStep = (next: number) => {
     if (next === 1 && preview && !form.getFieldValue('direction')) {
@@ -609,14 +645,19 @@ function CreateProjectWizard({
               placeholder="请选择等级"
               options={levelOptions}
               onChange={(v: number) => {
+                const patch: { trainingHours?: number; functionNos?: number[] } = {};
                 const hours = hoursOf(v);
-                if (hours != null) form.setFieldsValue({ trainingHours: hours });
+                if (hours != null) patch.trainingHours = hours;
+                const mapped = mappedFunctionNos(v, form.getFieldValue('direction'));
+                if (mapped) patch.functionNos = mapped;
+                if (Object.keys(patch).length > 0) form.setFieldsValue(patch);
               }}
             />
           </Form.Item>
           <Form.Item
             name="functionNos"
             label="职业功能（勾选生成分册大纲的章）"
+            tooltip={FUNCTION_TOOLTIP}
             rules={[{ required: true, message: '请至少勾选一个职业功能' }]}
           >
             <Select mode="multiple" placeholder="请选择职业功能" options={functionOptions} />
@@ -625,11 +666,12 @@ function CreateProjectWizard({
             <Form.Item
               name="trainingHours"
               label="培训参考学时"
+              tooltip={HOURS_TOOLTIP}
               rules={[{ required: true, message: '请填写学时' }]}
             >
               <InputNumber min={1} max={100000} style={{ width: 180 }} />
             </Form.Item>
-            <Form.Item name="wordsPerHour" label="每学时字数系数">
+            <Form.Item name="wordsPerHour" label="每学时字数系数" tooltip={WORDS_PER_HOUR_TOOLTIP}>
               <InputNumber min={100} max={100000} style={{ width: 180 }} />
             </Form.Item>
           </Space>
@@ -637,7 +679,7 @@ function CreateProjectWizard({
       )}
 
       {step === 2 && step1Values && (
-        <ConfirmPanel values={step1Values} file={file} />
+        <ConfirmPanel values={step1Values} file={file} nameOf={confirmNameOf} />
       )}
     </Modal>
   );
@@ -646,6 +688,7 @@ function CreateProjectWizard({
 function ConfirmPanel({
   values,
   file,
+  nameOf,
 }: {
   values: {
     direction: string;
@@ -655,6 +698,7 @@ function ConfirmPanel({
     wordsPerHour?: number;
   };
   file: File | null;
+  nameOf: (no: number) => string;
 }) {
   const hours = values.trainingHours ?? 0;
   const perHour = values.wordsPerHour ?? 2500;
@@ -669,7 +713,7 @@ function ConfirmPanel({
         {
           key: 'functions',
           label: '职业功能',
-          children: (values.functionNos || []).map((n) => `职业功能 ${n}`).join('、') || '-',
+          children: (values.functionNos || []).map((n) => nameOf(n)).join('、') || '-',
         },
         { key: 'hours', label: '培训参考学时', children: hours },
         { key: 'words', label: '每学时字数系数', children: perHour },

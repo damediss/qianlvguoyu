@@ -136,6 +136,10 @@ class TextbookProjectApiIntegrationTest {
     assertTrue(texts(previewData.get("directions")).contains(DIRECTION_CAO));
     assertEquals(40, previewData.get("trainingHoursByLevel").get("5").asInt());
     assertEquals(List.of(1, 2, 12), ints(previewData.get("guessedFunctionNos")));
+    // 职业功能真实名称透出（供向导勾选项显示，替代"职业功能 N"占位标签）
+    assertEquals("工作准备", previewData.get("functionNamesByLevel").get("5").get("1").asText());
+    assertEquals("铝电解槽操作", previewData.get("functionNamesByLevel").get("5").get("2").asText());
+    assertEquals("设备管理", previewData.get("functionNamesByLevel").get("5").get("12").asText());
 
     // 创建（multipart 直传）：同步完成 解析→方向过滤→骨架→配比
     long projectId = createProject(DIRECTION_CAO, 5, "1,2,12", null, null);
