@@ -2,6 +2,7 @@
 # + 本地文件存储(不依赖 COS)。
 # 背景:测试 classpath 的 application.yml 遮蔽 main/resources/application.yml(Spring Boot 单文件
 # 解析),故本 profile 重建关键段;dev 测试库密码与主 yml/AGENTS.md 公开的本地开发凭据一致,不含生产密钥。
+# 2026-10-24 测试库已迁至 114.132.67.185:3309(原 43.138.163.7:3308 已废弃),默认值同步更新。
 server:
   servlet:
     context-path: /api
