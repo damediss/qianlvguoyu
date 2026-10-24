@@ -7,8 +7,8 @@ import { DndContext, MeasuringStrategy, PointerSensor, closestCenter, useSensor,
 import type { DragEndEvent } from '@dnd-kit/core';
 import { SortableContext, horizontalListSortingStrategy, useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { useQuery } from '@tanstack/react-query';
-import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useIsFetching, useQuery } from '@tanstack/react-query';
+import { Fragment, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { fetchMenus, logout } from '../api/auth';
 import { apiClient } from '../api/client';
@@ -196,11 +196,13 @@ function safeScrollToTop(el: HTMLElement | null) {
 function DraggableTabLabel({
   tab,
   isActive,
+  refreshing,
   onClose,
   onBeginSwitch,
 }: {
   tab: TabItem;
   isActive: boolean;
+  refreshing: boolean;
   onClose: (key: string) => void;
   onBeginSwitch: () => void;
 }) {
@@ -281,7 +283,7 @@ function DraggableTabLabel({
         {isActive && (
           <Tooltip title="刷新标签页">
             <Icons.ReloadOutlined
-              className="app-tab-refresh"
+              className={`app-tab-refresh${refreshing ? ' app-tab-refresh-spinning' : ''}`}
               onClick={(event) => {
                 event.stopPropagation();
                 useTabStore.getState().refreshTab(tab.key);
@@ -486,6 +488,38 @@ export function AppShell({
     };
   }, [tabsEnabled, effectiveActiveKey]);
 
+  // ---- 标签页：刷新反馈（§3.9 补强）----
+  // 重挂载由 refreshCounters 进入面板 key 完成（渲染层，见下方 pane 渲染）；数据新鲜度
+  // 由 react-query refetchOnMount（staleTime=0）保证。这里补可见反馈：面板加载遮罩 +
+  // 滚回顶部 + ⟳ 旋转——否则重挂载后缓存瞬时回填，数据没变化时用户看到"点了没反应"。
+  const isFetching = useIsFetching();
+  const [refreshingPane, setRefreshingPane] = useState<string | null>(null);
+  const prevRefreshCountersRef = useRef(refreshCounters);
+  useEffect(() => {
+    const prev = prevRefreshCountersRef.current;
+    prevRefreshCountersRef.current = refreshCounters;
+    const changedKey = Object.keys(refreshCounters)
+      .find((key) => refreshCounters[key] !== (prev[key] || 0));
+    if (!changedKey) return;
+    setRefreshingPane(changedKey);
+    if (changedKey === effectiveKeyRef.current) {
+      safeScrollToTop(contentRef.current);
+    }
+  }, [refreshCounters]);
+  // 遮罩收口：全站请求平息后再撤（最少可见 350ms 防闪烁）；8s 硬上限兜底，
+  // 防止隐藏标签的长查询把遮罩挂死
+  useEffect(() => {
+    if (!refreshingPane) return;
+    if (isFetching > 0) return;
+    const timer = window.setTimeout(() => setRefreshingPane(null), 350);
+    return () => window.clearTimeout(timer);
+  }, [refreshingPane, isFetching]);
+  useEffect(() => {
+    if (!refreshingPane) return;
+    const cap = window.setTimeout(() => setRefreshingPane(null), 8000);
+    return () => window.clearTimeout(cap);
+  }, [refreshingPane]);
+
   // ---- 标签页：document.title 联动 ----
   useEffect(() => {
     if (!tabsEnabled) return;
@@ -682,12 +716,13 @@ export function AppShell({
         <DraggableTabLabel
           tab={tab}
           isActive={tab.key === effectiveActiveKey}
+          refreshing={refreshingPane === tab.key}
           onClose={(key) => { void handleTabClose(key); }}
           onBeginSwitch={beginTabSwitch}
         />
       ),
     })),
-    [tabs, effectiveActiveKey, handleTabClose, beginTabSwitch],
+    [tabs, effectiveActiveKey, refreshingPane, handleTabClose, beginTabSwitch],
   );
 
   // 拖拽排序（T8）：PointerSensor distance=6 与点击切换互不干扰；
@@ -797,7 +832,15 @@ export function AppShell({
             <div className="app-page-body">
               <Suspense fallback={<Spin size="large" style={{ display: 'block', margin: '120px auto' }} />}>
               {tabsEnabled ? (
-                contentOverride || tabs.map((tab) => {
+                contentOverride ? (
+                  // 覆盖态标签（隐藏路由）同样支持"刷新标签页"：按刷新计数重挂载覆盖内容
+                  <div className="app-tab-pane" data-tab-key={effectiveActiveKey}>
+                    {refreshingPane === effectiveActiveKey && (
+                      <div className="app-tab-pane-refreshing" aria-hidden="true"><Spin /></div>
+                    )}
+                    <Fragment key={refreshCounters[effectiveActiveKey] || 0}>{contentOverride}</Fragment>
+                  </div>
+                ) : tabs.map((tab) => {
                   if (!visitedKeys.includes(tab.key)) return null; // 首次激活才挂载（forceRender 不开）
                   const paneActive = tab.key === effectiveActiveKey && !contentOverrideActive;
                   return (
@@ -807,6 +850,9 @@ export function AppShell({
                         data-tab-key={tab.key}
                         style={{ display: paneActive ? undefined : 'none' }}
                       >
+                        {refreshingPane === tab.key && (
+                          <div className="app-tab-pane-refreshing" aria-hidden="true"><Spin /></div>
+                        )}
                         <div key={`${tab.key}:${refreshCounters[tab.key] || 0}`}>{pageMap[tab.key]}</div>
                       </div>
                     </TabPaneActiveProvider>

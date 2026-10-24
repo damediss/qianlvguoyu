@@ -315,6 +315,30 @@ body {
   color: #2563eb;
 }
 
+/* 标签页"刷新"反馈：面板加载遮罩 + ⟳ 旋转 */
+.app-tab-pane {
+  position: relative;
+}
+
+.app-tab-pane-refreshing {
+  position: absolute;
+  inset: 0;
+  z-index: 30;
+  display: grid;
+  place-items: center;
+  background: rgba(255, 255, 255, 0.55);
+}
+
+.app-tabbar-strip .app-tab-refresh-spinning {
+  animation: app-tab-refresh-spin 0.9s linear infinite;
+}
+
+@keyframes app-tab-refresh-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 .user-meta {
   display: flex;
   flex-direction: column;
