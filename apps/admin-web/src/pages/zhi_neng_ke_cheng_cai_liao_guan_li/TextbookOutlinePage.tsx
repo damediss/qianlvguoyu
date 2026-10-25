@@ -51,12 +51,9 @@ import {
   type OutlineSummary,
   type TextbookProjectStatus,
 } from '../../types/textbook';
+import { TEXTBOOK_PROJECT_STATUS_META } from './TextbookTaskMeta';
 
-const STATUS_META: Record<TextbookProjectStatus, { text: string; color: string }> = {
-  parsed: { text: '已解析（骨架未建）', color: 'default' },
-  outlined: { text: '大纲已生成', color: 'blue' },
-  reviewed: { text: '评审通过', color: 'green' },
-};
+const STATUS_META: Record<TextbookProjectStatus, { text: string; color: string }> = TEXTBOOK_PROJECT_STATUS_META;
 
 const DIMENSION_META: Record<OutlineDimension, { text: string; color: string }> = {
   theory: { text: '理论', color: 'blue' },
@@ -89,6 +86,16 @@ function errorText(e: unknown, fallback: string): string {
   return err?.response?.data?.message || err?.message || fallback;
 }
 
+/** 隐藏路由跳转（与 TextbookProjectPage 相同约定：pushState + popstate） */
+function navigateTo(path: string) {
+  window.history.pushState({}, '', path);
+  window.dispatchEvent(new PopStateEvent('popstate'));
+}
+
+/** 结构冻结提示（§5.7：存在正文或有效分配后，身份变化操作一律 409，前端同步禁用并给出原因） */
+const STRUCTURE_LOCK_TOOLTIP = '工程已进入编写（存在章分配或正文），大纲结构已冻结；如需重建请先取消全部分配并确认无正文。';
+const DONE_READONLY_TOOLTIP = '工程已完成编写（done），全页只读；如需修改请先在编写管理中重新打开。';
+
 export function TextbookOutlinePage({ projectId }: { projectId: string }) {
   const queryClient = useQueryClient();
   const hasPermission = useAuthStore((s) => s.hasPermission);
@@ -111,6 +118,12 @@ export function TextbookOutlinePage({ projectId }: { projectId: string }) {
   const project = projectQuery.data;
   const flat = useMemo(() => outlineQuery.data || [], [outlineQuery.data]);
   const treeData = useMemo(() => buildTreeRows(flat), [flat]);
+
+  // 二期结构冻结与只读口径（§5.7/§10.2）
+  const structureLocked = project?.structureLocked ?? false;
+  const isDone = project?.status === 'done';
+  const structureFrozen = structureLocked || isDone;
+  const frozenReason = isDone ? DONE_READONLY_TOOLTIP : STRUCTURE_LOCK_TOOLTIP;
 
   // 合计校验：详情接口与写接口（改字数/重建）都会携带，写接口响应优先
   useEffect(() => {
@@ -257,6 +270,7 @@ export function TextbookOutlinePage({ projectId }: { projectId: string }) {
                 max={10000000}
                 style={{ width: 110 }}
                 value={v ?? undefined}
+                disabled={isDone}
                 onBlur={(e) => {
                   const raw = (e.target as HTMLInputElement).value;
                   const val = raw === '' ? null : Number(raw);
@@ -284,44 +298,52 @@ export function TextbookOutlinePage({ projectId }: { projectId: string }) {
       render: (_, n) =>
         canManage ? (
           <Space size={0}>
-            <Tooltip title="上移">
+            <Tooltip title={isDone ? DONE_READONLY_TOOLTIP : '上移'}>
               <Button
                 size="small"
                 type="link"
                 aria-label="上移节点"
                 icon={<ArrowUpOutlined />}
+                disabled={isDone}
                 onClick={() => handleMove(n, -1)}
               />
             </Tooltip>
-            <Tooltip title="下移">
+            <Tooltip title={isDone ? DONE_READONLY_TOOLTIP : '下移'}>
               <Button
                 size="small"
                 type="link"
                 aria-label="下移节点"
                 icon={<ArrowDownOutlined />}
+                disabled={isDone}
                 onClick={() => handleMove(n, 1)}
               />
             </Tooltip>
             {n.nodeLevel < 4 && (
-              <Button
-                size="small"
-                type="link"
-                aria-label="新增子节点"
-                icon={<PlusOutlined />}
-                onClick={() => setAddingUnder(n)}
-              >
-                新增子
-              </Button>
+              <Tooltip title={structureFrozen ? frozenReason : undefined}>
+                <Button
+                  size="small"
+                  type="link"
+                  aria-label="新增子节点"
+                  icon={<PlusOutlined />}
+                  disabled={structureFrozen}
+                  onClick={() => setAddingUnder(n)}
+                >
+                  新增子
+                </Button>
+              </Tooltip>
             )}
-            <Popconfirm
-              title="删除该节点？"
-              description="将同时删除其全部子孙节点。"
-              onConfirm={() => nodeDeleteMutation.mutate(n.id)}
-            >
-              <Button size="small" type="link" danger aria-label="删除节点">
-                删除
-              </Button>
-            </Popconfirm>
+            <Tooltip title={structureFrozen ? frozenReason : undefined}>
+              <Popconfirm
+                title="删除该节点？"
+                description="将同时删除其全部子孙节点。"
+                onConfirm={() => nodeDeleteMutation.mutate(n.id)}
+                disabled={structureFrozen}
+              >
+                <Button size="small" type="link" danger aria-label="删除节点" disabled={structureFrozen}>
+                  删除
+                </Button>
+              </Popconfirm>
+            </Tooltip>
           </Space>
         ) : (
           '-'
@@ -353,26 +375,35 @@ export function TextbookOutlinePage({ projectId }: { projectId: string }) {
       extra={
         <Space wrap>
           {canManage && (
-            <Popconfirm
-              title="重新生成骨架并配比？"
-              description="未人工调整的字数将被覆盖；已手调的章/节字数保留。"
-              onConfirm={() => rebuildMutation.mutate()}
-            >
-              <Button icon={<ReloadOutlined />} loading={rebuildMutation.isPending}>
-                重新配比
-              </Button>
-            </Popconfirm>
+            <Tooltip title={structureFrozen ? frozenReason : undefined}>
+              <Popconfirm
+                title="重新生成骨架并配比？"
+                description="未人工调整的字数将被覆盖；已手调的章/节字数保留。"
+                onConfirm={() => rebuildMutation.mutate()}
+                disabled={structureFrozen}
+              >
+                <Button icon={<ReloadOutlined />} loading={rebuildMutation.isPending} disabled={structureFrozen}>
+                  重新配比
+                </Button>
+              </Popconfirm>
+            </Tooltip>
           )}
-          {canManage && project.status !== 'reviewed' && (
+          {/* 二期 §10.2：「评审通过」仅 outlined 显示（原 status !== reviewed 写法会在 writing/done 错显示） */}
+          {canManage && project.status === 'outlined' && (
             <Popconfirm
               title="确认评审通过？"
-              description="状态将变为「评审通过」，一期终态，请专家确认大纲与配比后再操作。"
+              description="状态将变为「大纲已评审」，之后可在编写管理中分配章节任务。"
               onConfirm={() => reviewMutation.mutate()}
             >
               <Button type="primary" icon={<CheckCircleOutlined />}>
                 评审通过
               </Button>
             </Popconfirm>
+          )}
+          {(project.status === 'reviewed' || project.status === 'writing') && (
+            <Button type="primary" onClick={() => navigateTo(`/textbook/collaboration/${projectId}`)}>
+              编写管理
+            </Button>
           )}
           {canExport && (
             <Dropdown
@@ -418,6 +449,24 @@ export function TextbookOutlinePage({ projectId }: { projectId: string }) {
           description={warnings.map((w, i) => (
             <div key={i}>{w}</div>
           ))}
+        />
+      )}
+      {structureLocked && !isDone && (
+        <Alert
+          type="info"
+          showIcon
+          style={{ marginBottom: 12 }}
+          message="大纲结构已冻结（存在章分配或正文）"
+          description="标题、目标字数与同级排序仍可调整；新增/删除节点与重建已禁用。如需重建，请先在编写管理中取消全部分配并确认无正文。"
+        />
+      )}
+      {isDone && (
+        <Alert
+          type="success"
+          showIcon
+          style={{ marginBottom: 12 }}
+          message="工程已完成编写，本页只读"
+          description="如需继续修改，请先在教材工程列表进入编写管理并重新打开工程。"
         />
       )}
 

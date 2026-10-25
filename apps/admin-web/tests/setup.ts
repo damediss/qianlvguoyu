@@ -31,3 +31,11 @@ if (!globalThis.ResizeObserver) {
     disconnect() {}
   };
 }
+
+// jsdom 未实现 blob URL：下载类用例（教材草稿 .md 下载等）需要存在该 API
+if (typeof URL.createObjectURL !== 'function') {
+  URL.createObjectURL = () => `blob:mock-${Math.random().toString(36).slice(2)}`;
+}
+if (typeof URL.revokeObjectURL !== 'function') {
+  URL.revokeObjectURL = () => undefined;
+}

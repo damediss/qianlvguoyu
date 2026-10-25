@@ -26,6 +26,11 @@ const SkillQuestionGenPage = React.lazy(() => import('./pages/zhi_neng_ke_cheng_
 const AiCoursewarePage = React.lazy(() => import('./pages/zhi_neng_ke_cheng_cai_liao_guan_li/AiCoursewarePage'));
 const TextbookProjectPage = React.lazy(() => import('./pages/zhi_neng_ke_cheng_cai_liao_guan_li/TextbookProjectPage').then((m) => ({ default: m.TextbookProjectPage })));
 const TextbookOutlinePage = React.lazy(() => import('./pages/zhi_neng_ke_cheng_cai_liao_guan_li/TextbookOutlinePage').then((m) => ({ default: m.TextbookOutlinePage })));
+// 教材编写协同（二期，《二期编写协同实施设计》§10.1）
+const TextbookCollaborationPage = React.lazy(() => import('./pages/zhi_neng_ke_cheng_cai_liao_guan_li/TextbookCollaborationPage').then((m) => ({ default: m.TextbookCollaborationPage })));
+const TextbookMyTasksPage = React.lazy(() => import('./pages/zhi_neng_ke_cheng_cai_liao_guan_li/TextbookMyTasksPage').then((m) => ({ default: m.TextbookMyTasksPage })));
+const TextbookWritingWorkbenchPage = React.lazy(() => import('./pages/zhi_neng_ke_cheng_cai_liao_guan_li/TextbookWritingWorkbenchPage').then((m) => ({ default: m.TextbookWritingWorkbenchPage })));
+const TextbookReviewWorkbenchPage = React.lazy(() => import('./pages/zhi_neng_ke_cheng_cai_liao_guan_li/TextbookReviewWorkbenchPage').then((m) => ({ default: m.TextbookReviewWorkbenchPage })));
 const RencaishibieEmbedPage = React.lazy(() => import('./pages/knowledge/RencaishibieEmbedPage').then((m) => ({ default: m.RencaishibieEmbedPage })));
 const WorkTypePage = React.lazy(() => import('./pages/exam/WorkTypePage').then((m) => ({ default: m.WorkTypePage })));
 const CoursePage = React.lazy(() => import('./pages/exam/CoursePage').then((m) => ({ default: m.CoursePage })));
@@ -174,6 +179,10 @@ const pageMap: Record<string, React.ReactNode> = {
   ai_courseware_gen: <AiCoursewarePage />,
   // 智能课程材料管理 > 教材生成管理
   textbook_project: <TextbookProjectPage />,
+  // 智能课程材料管理 > 教材编写协同（二期）：两个菜单复用同一页面组件，
+  // 但必须分别注册为显式 mode 的元素，不期待组件自行判断 mode（设计 §10.1）
+  textbook_my_writing: <TextbookMyTasksPage mode="writing" />,
+  textbook_my_review: <TextbookMyTasksPage mode="review" />,
   exam_work_type: <WorkTypePage />,
   dev_task_detail: <DevTaskDetailPage />,
   // 题库审核指派(管理端 3 子菜单,挂在开发任务下)
@@ -766,6 +775,101 @@ function TextbookOutlineShell({ pathname }: { pathname: string }) {
   );
 }
 
+/** 教材编写管理（二期）隐藏路由：/textbook/collaboration/:projectId
+ *  （《二期编写协同实施设计》§10.1，不进菜单，工程列表/大纲页「编写管理」进入；照 TextbookOutlineShell 覆盖态模式） */
+function isTextbookCollaborationPath(pathname: string) {
+  return /^\/textbook\/collaboration\/[^/]+\/?$/.test(pathname);
+}
+
+function TextbookCollaborationShell({ pathname }: { pathname: string }) {
+  const [collabActive, setCollabActive] = React.useState(true);
+  const match = pathname.match(/^\/textbook\/collaboration\/([^/]+)\/?$/);
+  const projectId = match ? decodeURIComponent(match[1]) : '';
+
+  React.useEffect(() => {
+    setCollabActive(true);
+    // §3.7 覆盖态标签（D1）：先取当前完整 URL 再入 store，原子记录 overridePath 不触碰 URL
+    const overrideUrl = window.location.pathname + window.location.search;
+    useTabStore.getState().openOverrideTab('textbook_project', undefined, overrideUrl);
+  }, [pathname]);
+
+  return (
+    <AppShell
+      pageMap={pageMap}
+      selectedMenuKeyOverride={collabActive ? 'textbook_project' : undefined}
+      contentOverride={collabActive ? (
+        <React.Fragment key={pathname}>
+          <TextbookCollaborationPage projectId={projectId} />
+        </React.Fragment>
+      ) : undefined}
+      onMenuNavigate={() => setCollabActive(false)}
+      hideBreadcrumb={collabActive}
+    />
+  );
+}
+
+/** 主笔编写工作台（二期）隐藏路由：/textbook/write/:chapterId（载体 textbook_my_writing，我的编写任务行内进入） */
+function isTextbookWritePath(pathname: string) {
+  return /^\/textbook\/write\/[^/]+\/?$/.test(pathname);
+}
+
+function TextbookWriteShell({ pathname }: { pathname: string }) {
+  const [writeActive, setWriteActive] = React.useState(true);
+  const match = pathname.match(/^\/textbook\/write\/([^/]+)\/?$/);
+  const chapterId = match ? decodeURIComponent(match[1]) : '';
+
+  React.useEffect(() => {
+    setWriteActive(true);
+    const overrideUrl = window.location.pathname + window.location.search;
+    useTabStore.getState().openOverrideTab('textbook_my_writing', undefined, overrideUrl);
+  }, [pathname]);
+
+  return (
+    <AppShell
+      pageMap={pageMap}
+      selectedMenuKeyOverride={writeActive ? 'textbook_my_writing' : undefined}
+      contentOverride={writeActive ? (
+        <React.Fragment key={pathname}>
+          <TextbookWritingWorkbenchPage chapterId={chapterId} />
+        </React.Fragment>
+      ) : undefined}
+      onMenuNavigate={() => setWriteActive(false)}
+      hideBreadcrumb={writeActive}
+    />
+  );
+}
+
+/** 审定工作台（二期）隐藏路由：/textbook/review/:chapterId（载体 textbook_my_review，我的审定任务行内进入） */
+function isTextbookReviewPath(pathname: string) {
+  return /^\/textbook\/review\/[^/]+\/?$/.test(pathname);
+}
+
+function TextbookReviewShell({ pathname }: { pathname: string }) {
+  const [reviewActive, setReviewActive] = React.useState(true);
+  const match = pathname.match(/^\/textbook\/review\/([^/]+)\/?$/);
+  const chapterId = match ? decodeURIComponent(match[1]) : '';
+
+  React.useEffect(() => {
+    setReviewActive(true);
+    const overrideUrl = window.location.pathname + window.location.search;
+    useTabStore.getState().openOverrideTab('textbook_my_review', undefined, overrideUrl);
+  }, [pathname]);
+
+  return (
+    <AppShell
+      pageMap={pageMap}
+      selectedMenuKeyOverride={reviewActive ? 'textbook_my_review' : undefined}
+      contentOverride={reviewActive ? (
+        <React.Fragment key={pathname}>
+          <TextbookReviewWorkbenchPage chapterId={chapterId} />
+        </React.Fragment>
+      ) : undefined}
+      onMenuNavigate={() => setReviewActive(false)}
+      hideBreadcrumb={reviewActive}
+    />
+  );
+}
+
 function App() {
   const pathname = useBrowserPathname();
   const formalExamMode = pathname === '/formal-exam' || pathname.startsWith('/formal-exam/');
@@ -780,6 +884,9 @@ function App() {
   const reviewSyncStatsMode = isReviewSyncStatsPath(pathname);
   const graduationClassDetailMode = isGraduationClassDetailPath(pathname);
   const textbookOutlineMode = isTextbookOutlinePath(pathname);
+  const textbookCollaborationMode = isTextbookCollaborationPath(pathname);
+  const textbookWriteMode = isTextbookWritePath(pathname);
+  const textbookReviewMode = isTextbookReviewPath(pathname);
 
   return (
     <NavigationBlockerProvider>
@@ -807,6 +914,12 @@ function App() {
             <ReviewSyncStatsShell pathname={pathname} />
           ) : textbookOutlineMode ? (
             <TextbookOutlineShell pathname={pathname} />
+          ) : textbookCollaborationMode ? (
+            <TextbookCollaborationShell pathname={pathname} />
+          ) : textbookWriteMode ? (
+            <TextbookWriteShell pathname={pathname} />
+          ) : textbookReviewMode ? (
+            <TextbookReviewShell pathname={pathname} />
           ) : competitionEventMode ? (
             <CompetitionEventShell pathname={pathname} />
           ) : (

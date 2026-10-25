@@ -14,6 +14,12 @@ const HIDDEN_ROUTE_MATCHERS: RegExp[] = [
   /^\/certification\/practical-collection\/[^/]+\/manage\/?$/,
   // 教材大纲编辑（main.tsx TextbookOutlineShell）
   /^\/textbook\/outline\/[^/]+\/?$/,
+  // 教材编写管理（二期，main.tsx TextbookCollaborationShell）
+  /^\/textbook\/collaboration\/[^/]+\/?$/,
+  // 教材主笔编写工作台（二期，main.tsx TextbookWriteShell）
+  /^\/textbook\/write\/[^/]+\/?$/,
+  // 教材审定工作台（二期，main.tsx TextbookReviewShell）
+  /^\/textbook\/review\/[^/]+\/?$/,
 ];
 
 function normalizePathname(pathname: string) {

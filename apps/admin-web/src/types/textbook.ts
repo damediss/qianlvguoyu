@@ -3,8 +3,11 @@
  * 雪花 ID 经 json-bigint 处理后以 string 到达前端。
  */
 
-/** 工程状态：parsed（骨架未建兜底态）→ outlined → reviewed（一期终态） */
-export type TextbookProjectStatus = 'parsed' | 'outlined' | 'reviewed';
+/**
+ * 工程状态：parsed（骨架未建兜底态）→ outlined → reviewed（大纲已评审）
+ * 二期新增：writing（编写中，首个有效章分配后）→ done（编写完成，教研手动确认）
+ */
+export type TextbookProjectStatus = 'parsed' | 'outlined' | 'reviewed' | 'writing' | 'done';
 
 /** 大纲节点维度：仅点级（nodeLevel=4）有值 */
 export type OutlineDimension = 'theory' | 'skill';
@@ -85,6 +88,15 @@ export interface TextbookProjectVO {
   updatedAt: string | null;
   /** 仅 GET /{id} 详情返回 */
   summary?: OutlineSummary;
+  // ---- 二期编写协同批量补充字段（《二期编写协同实施设计》§10.2，列表接口批量返回，禁止逐行 N+1）----
+  chapterCount?: number;
+  assignedChapterCount?: number;
+  sectionCount?: number;
+  approvedSectionCount?: number;
+  /** 工程下已有任何正文记录（驱动删除文案） */
+  hasContent?: boolean;
+  /** 结构锁：存在正文或有效分配后增删/重建被后端拦截 */
+  structureLocked?: boolean;
 }
 
 /** 大纲节点（扁平下发，前端自组树） */

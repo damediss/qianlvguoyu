@@ -29,6 +29,7 @@ import {
   Steps,
   Table,
   Tag,
+  Tooltip,
   Upload,
   message,
 } from 'antd';
@@ -53,12 +54,9 @@ import {
   type TextbookProjectStatus,
   type TextbookProjectVO,
 } from '../../types/textbook';
+import { TEXTBOOK_PROJECT_STATUS_META } from './TextbookTaskMeta';
 
-const STATUS_META: Record<TextbookProjectStatus, { text: string; color: string }> = {
-  parsed: { text: '已解析', color: 'default' },
-  outlined: { text: '大纲已生成', color: 'blue' },
-  reviewed: { text: '评审通过', color: 'green' },
-};
+const STATUS_META: Record<TextbookProjectStatus, { text: string; color: string }> = TEXTBOOK_PROJECT_STATUS_META;
 
 const STATUS_OPTIONS = (Object.keys(STATUS_META) as TextbookProjectStatus[]).map((s) => ({
   value: s,
@@ -156,6 +154,39 @@ export function TextbookProjectPage() {
       ),
     },
     {
+      // 二期 §10.2：编写进度列（approvedSectionCount/sectionCount + 进度条；未分配时显示「未分配」）
+      title: '编写进度',
+      width: 150,
+      render: (_, record) => {
+        const sectionCount = record.sectionCount ?? 0;
+        const approved = record.approvedSectionCount ?? 0;
+        if ((record.assignedChapterCount ?? 0) === 0) {
+          return sectionCount > 0 ? <Tag>未分配</Tag> : '-';
+        }
+        if (sectionCount === 0) return '-';
+        const percent = Math.round((approved / sectionCount) * 100);
+        return (
+          <span style={{ whiteSpace: 'nowrap' }}>
+            <span style={{ marginRight: 6 }}>{approved}/{sectionCount}</span>
+            <span
+              aria-label={`编写进度 ${approved}/${sectionCount}`}
+              style={{
+                display: 'inline-block',
+                width: 56,
+                height: 6,
+                background: '#f0f0f0',
+                borderRadius: 3,
+                overflow: 'hidden',
+                verticalAlign: 'middle',
+              }}
+            >
+              <span style={{ display: 'block', height: '100%', width: `${percent}%`, background: '#52c41a' }} />
+            </span>
+          </span>
+        );
+      },
+    },
+    {
       title: '更新时间',
       dataIndex: 'updatedAt',
       width: 140,
@@ -163,13 +194,18 @@ export function TextbookProjectPage() {
     },
     {
       title: '操作',
-      width: 260,
+      width: 320,
       fixed: 'right',
       render: (_, record) => (
         <Space size={0}>
           <Button size="small" type="link" onClick={() => navigateTo(`/textbook/outline/${record.id}`)}>
             大纲
           </Button>
+          {(record.status === 'reviewed' || record.status === 'writing' || record.status === 'done') && (
+            <Button size="small" type="link" onClick={() => navigateTo(`/textbook/collaboration/${record.id}`)}>
+              编写管理
+            </Button>
+          )}
           {canExport && (
             <Dropdown
               menu={{
@@ -205,12 +241,19 @@ export function TextbookProjectPage() {
           {canManage && (
             <Popconfirm
               title={`确认删除「${record.workTypeTitle}·${record.direction}·${textbookLevelLabel(record.levelCode)}」？`}
-              description="将同时删除该工程下的大纲节点。"
+              description={
+                record.hasContent
+                  ? '将同时删除该工程下的大纲节点、编写任务、正文与历史版本。'
+                  : '将同时删除该工程下的大纲节点。'
+              }
+              disabled={record.status === 'done'}
               onConfirm={() => deleteMutation.mutate(record.id)}
             >
-              <Button size="small" type="link" danger icon={<DeleteOutlined />}>
-                删除
-              </Button>
+              <Tooltip title={record.status === 'done' ? '工程已完成（done），请先重新打开为编写中再删除' : undefined}>
+                <Button size="small" type="link" danger icon={<DeleteOutlined />} disabled={record.status === 'done'}>
+                  删除
+                </Button>
+              </Tooltip>
             </Popconfirm>
           )}
         </Space>
@@ -292,7 +335,7 @@ export function TextbookProjectPage() {
         loading={listQuery.isLoading}
         dataSource={listQuery.data?.items || []}
         columns={columns}
-        scroll={{ x: 1100 }}
+        scroll={{ x: 1250 }}
         pagination={{
           current: query.page,
           pageSize: query.pageSize,
