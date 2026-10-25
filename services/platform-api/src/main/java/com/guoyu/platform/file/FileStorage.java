@@ -26,6 +26,19 @@ public interface FileStorage {
    */
   String put(String objectKey, InputStream content, long sizeBytes, String contentType);
 
+  /**
+   * 受保护上传（教材二期方案 §5.6）：对象落入 {@code protected/**} 区域。
+   * local 实现走默认（key 前缀即受控目录，配合 /exam/files/protected/** 拒绝 + 部署 404）；
+   * COS 实现必须显式设置对象私有 ACL，不能仅靠 key 命名。
+   *
+   * @return 受保护对象不应返回公开 URL，实现应返回 null（元数据 url 由调用方置 null）
+   */
+  default String putProtected(String objectKey, InputStream content, long sizeBytes,
+      String contentType) {
+    put(objectKey, content, sizeBytes, contentType);
+    return null;
+  }
+
   /** 删除文件,失败不抛(只是 log warn)。 */
   void delete(String objectKey);
 

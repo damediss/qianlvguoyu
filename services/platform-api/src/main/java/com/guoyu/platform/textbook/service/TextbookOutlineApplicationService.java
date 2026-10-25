@@ -46,12 +46,17 @@ public class TextbookOutlineApplicationService {
   private final TextbookOutlineNodeMapper nodeMapper;
   private final TextbookProjectMapper projectMapper;
   private final ObjectMapper objectMapper;
+  private final TextbookProjectLockService lockService;
+  private final TextbookStructureGuard structureGuard;
 
   public TextbookOutlineApplicationService(TextbookOutlineNodeMapper nodeMapper,
-      TextbookProjectMapper projectMapper, ObjectMapper objectMapper) {
+      TextbookProjectMapper projectMapper, ObjectMapper objectMapper,
+      TextbookProjectLockService lockService, TextbookStructureGuard structureGuard) {
     this.nodeMapper = nodeMapper;
     this.projectMapper = projectMapper;
     this.objectMapper = objectMapper;
+    this.lockService = lockService;
+    this.structureGuard = structureGuard;
   }
 
   // ============================================================
@@ -111,10 +116,14 @@ public class TextbookOutlineApplicationService {
   // 节点编辑
   // ============================================================
 
-  /** 改标题/目标字数（置 words_manual=1）/排序；返回更新后的合计校验 */
+  /** 改标题/目标字数（置 words_manual=1）/排序；返回更新后的合计校验。
+   * 安全编辑：outlined/reviewed/writing 允许，done 一律只读（方案 §5.7）。 */
   @Transactional
   public OutlineSummaryVO updateNode(Long nodeId, OutlineNodeUpdateReq req) {
     TextbookOutlineNodeEntity node = findNode(nodeId);
+    // 工程行锁 + done 只读闸门（方案 §7.1：一期大纲写也纳入统一锁序）
+    TextbookProjectEntity project = lockService.lockProject(node.getProjectId());
+    structureGuard.assertSafeEditAllowed(project, "编辑大纲安全字段");
     if (req.title() != null && !req.title().isBlank()) {
       node.setTitle(req.title().trim());
     }
@@ -129,14 +138,15 @@ public class TextbookOutlineApplicationService {
       node.setSortNo(req.sortNo());
     }
     nodeMapper.updateById(node);
-    TextbookProjectEntity project = findProject(node.getProjectId());
     return summary(project);
   }
 
-  /** 人工新增子节点：父为章→节，父为节→点（dimension 必填）；source_no 恒空 */
+  /** 人工新增子节点：父为章→节，父为节→点（dimension 必填）；source_no 恒空。
+   * 结构身份变化：仅 parsed/outlined 且未锁定（方案 §5.7）。 */
   @Transactional
   public OutlineNodeVO createNode(OutlineNodeCreateReq req) {
-    findProject(req.projectId());
+    TextbookProjectEntity project = lockService.lockProject(req.projectId());
+    structureGuard.assertIdentityChangeAllowed(project, "新增大纲节点");
     TextbookOutlineNodeEntity parent = findNode(req.parentId());
     if (!parent.getProjectId().equals(req.projectId())) {
       throw new BusinessException(ErrorCode.BAD_REQUEST, "父节点不属于该工程");
@@ -168,10 +178,12 @@ public class TextbookOutlineApplicationService {
     return toVO(node);
   }
 
-  /** 软删节点及其子孙（同事务） */
+  /** 软删节点及其子孙（同事务）。结构身份变化：仅 parsed/outlined 且未锁定（方案 §5.7）。 */
   @Transactional
   public void deleteNode(Long nodeId) {
     TextbookOutlineNodeEntity node = findNode(nodeId);
+    TextbookProjectEntity project = lockService.lockProject(node.getProjectId());
+    structureGuard.assertIdentityChangeAllowed(project, "删除大纲节点");
     List<Long> ids = new ArrayList<>();
     collectDescendants(nodeId, ids);
     ids.add(nodeId);
@@ -179,10 +191,12 @@ public class TextbookOutlineApplicationService {
     log.info("[教材] 删除大纲节点（含子孙 {} 个）：nodeId={}", ids.size(), nodeId);
   }
 
-  /** 上移/下移：与相邻兄弟交换 sort_no（已在顶端/底端则不动） */
+  /** 上移/下移：与相邻兄弟交换 sort_no（已在顶端/底端则不动）。安全编辑，done 只读。 */
   @Transactional
   public void moveNode(Long nodeId, boolean up) {
     TextbookOutlineNodeEntity node = findNode(nodeId);
+    TextbookProjectEntity project = lockService.lockProject(node.getProjectId());
+    structureGuard.assertSafeEditAllowed(project, "调整大纲排序");
     List<TextbookOutlineNodeEntity> siblings = nodeMapper.selectList(
         new LambdaQueryWrapper<TextbookOutlineNodeEntity>()
             .eq(TextbookOutlineNodeEntity::getProjectId, node.getProjectId())
@@ -220,10 +234,11 @@ public class TextbookOutlineApplicationService {
    * 章级人工节点只保字数不保结构（其下节按标准重建，人工节仍按上规则保留）。
    * 人工字数先从总盘子扣除，剩余按权重/条数最大余数法分摊，合计严格 = total_words。
    *
-   * @return 重建期告警（不生章原因/均分兜底等），由调用方并入工程 parse_warnings
+   * @return 重建结果：告警 + 保留原 ID 的章 + 被移除的章（方案 §5.7 分配唯一键规则，
+   *         由调用方据此保留 active=0 分配行 / 软删被移除章的分配行）
    */
   @Transactional
-  public List<String> regenerate(TextbookProjectEntity project, ParsedStandard parsed,
+  public RegenerateResult regenerate(TextbookProjectEntity project, ParsedStandard parsed,
       boolean preserveManual) {
     int parserLevelCode = 5 - project.getLevelCode();
     List<Integer> functionNos = readFunctionNos(project.getFunctionNosJson());
@@ -402,10 +417,27 @@ public class TextbookOutlineApplicationService {
     for (TextbookOutlineNodeEntity entity : toInsert) {
       nodeMapper.insert(entity);
     }
-    log.info("[教材] 骨架重建：projectId={} 新增节点={} 保留人工节点={} 删除={}",
+    // 章级保留/移除清单（方案 §5.7：调用方据此处理分配行，防唯一键冲突）
+    List<Long> retainedChapters = new ArrayList<>();
+    List<Long> removedChapters = new ArrayList<>();
+    for (TextbookOutlineNodeEntity node : existing) {
+      if (node.getNodeLevel() != null && node.getNodeLevel() == LEVEL_CHAPTER) {
+        if (chapterEntity.containsValue(node)) {
+          retainedChapters.add(node.getId());
+        } else {
+          removedChapters.add(node.getId());
+        }
+      }
+    }
+    log.info("[教材] 骨架重建：projectId={} 新增节点={} 保留人工节点={} 删除={} 保留章={} 移除章={}",
         project.getId(), toInsert.size(), chapterEntity.size() + sectionEntity.size(),
-        toDelete.size());
-    return warnings;
+        toDelete.size(), retainedChapters.size(), removedChapters.size());
+    return new RegenerateResult(warnings, retainedChapters, removedChapters);
+  }
+
+  /** 重建结果（方案 §5.7 分配唯一键规则）。 */
+  public record RegenerateResult(List<String> warnings, List<Long> retainedChapterIds,
+      List<Long> removedChapterIds) {
   }
 
   // ============================================================

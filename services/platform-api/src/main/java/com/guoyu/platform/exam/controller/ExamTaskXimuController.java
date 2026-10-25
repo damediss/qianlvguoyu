@@ -141,10 +141,20 @@ public class ExamTaskXimuController {
   /**
    * CDN file access — maps /api/files/** to the configured cdn path.
    * Used by Office Online Viewer and direct download.
+   *
+   * <p>受保护文件区（protected/**，教材二期方案 §5.6-5）在本 Controller 最前面拒绝：
+   * 该区域文件不允许经匿名 /exam/files/** 读盘，也不允许 302 remote fallback
+   * （nginx/CDN 等价路径由部署侧再加一道 404 规则）。拒绝用 404，不暴露存在性。
    */
   @GetMapping("/files/**")
   public ResponseEntity<?> serveFile(jakarta.servlet.http.HttpServletRequest request)
       throws IOException {
+    String rawRelative = extractRawCdnRelativePath(request);
+    if (com.guoyu.platform.file.support.ProtectedFileAccessGuard
+        .isProtectedRequestPath(rawRelative)) {
+      log.warn("GET /exam/files/ protected zone rejected: {}", rawRelative);
+      throw new BusinessException(ErrorCode.NOT_FOUND, "文件不存在");
+    }
     String fp = extractCdnRelativePath(request);
     log.info("GET /exam/files/{}", fp);
     var local = cdnFileServeHelper.resolveLocalPath(fp);
@@ -187,5 +197,17 @@ public class ExamTaskXimuController {
     // getRequestURI() 保留百分号编码；中文文件名若不解码会找不到本地文件并误跳 CDN
     String relative = uri.substring(idx + marker.length());
     return java.net.URLDecoder.decode(relative, StandardCharsets.UTF_8);
+  }
+
+  /** 受保护区判定用未解码原文（拦 %2F/%2e/重复编码变形，方案 §5.6-2）。 */
+  private static String extractRawCdnRelativePath(
+      jakarta.servlet.http.HttpServletRequest request) {
+    String marker = "/exam/files/";
+    String uri = request.getRequestURI();
+    int idx = uri.indexOf(marker);
+    if (idx < 0) {
+      throw new IllegalArgumentException("Invalid CDN file path: " + uri);
+    }
+    return uri.substring(idx + marker.length());
   }
 }

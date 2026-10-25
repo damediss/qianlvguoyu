@@ -46,16 +46,14 @@ public class TencentCosFileStorage implements FileStorage {
   private final String urlPrefix;
 
   public TencentCosFileStorage(FileStorageProperties properties) {
+    this(properties, buildClient(properties));
+  }
+
+  /** 测试缝：注入桩 COSClient，验证受保护上传显式携带私有 ACL（不触网）。 */
+  public TencentCosFileStorage(FileStorageProperties properties, COSClient client) {
     this.properties = properties;
     FileStorageProperties.Cos c = properties.cos();
-    if (!StringUtils.hasText(c.secretId()) || !StringUtils.hasText(c.secretKey())
-        || !StringUtils.hasText(c.bucket())) {
-      throw new IllegalStateException(
-          "COS 配置缺失:COS_SECRET_ID / COS_SECRET_KEY / COS_BUCKET 必须全部设置");
-    }
-    COSCredentials creds = new BasicCOSCredentials(c.secretId(), c.secretKey());
-    ClientConfig config = new ClientConfig(new Region(c.region()));
-    this.client = new COSClient(creds, config);
+    this.client = client;
     this.bucket = c.bucket();
     this.urlPrefix = StringUtils.hasText(c.urlPrefix())
         ? c.urlPrefix()
@@ -63,8 +61,36 @@ public class TencentCosFileStorage implements FileStorage {
     log.info("[TencentCosFileStorage] 已初始化 bucket={} region={} urlPrefix={}", bucket, c.region(), urlPrefix);
   }
 
+  private static COSClient buildClient(FileStorageProperties properties) {
+    FileStorageProperties.Cos c = properties.cos();
+    if (!StringUtils.hasText(c.secretId()) || !StringUtils.hasText(c.secretKey())
+        || !StringUtils.hasText(c.bucket())) {
+      throw new IllegalStateException(
+          "COS 配置缺失:COS_SECRET_ID / COS_SECRET_KEY / COS_BUCKET 必须全部设置");
+    }
+    COSCredentials creds = new BasicCOSCredentials(c.secretId(), c.secretKey());
+    return new COSClient(creds, new ClientConfig(new Region(c.region())));
+  }
+
   @Override
   public String put(String objectKey, InputStream content, long sizeBytes, String contentType) {
+    return putInternal(objectKey, content, contentType, false);
+  }
+
+  /**
+   * 受保护上传（教材二期方案 §5.6）：显式设置对象私有 ACL（CannedAccessControlList.Private）。
+   * 不能仅靠 protected/ key 前缀——若桶策略强制 public-read，此处显式私有 ACL 会与桶策略
+   * 冲突或被覆盖，属部署配置错误：上传成功≠可公开访问已防住，生产验收必须用未登录浏览器
+   * 直访 objectKey URL 验证失败（方案 §5.6-6）。返回 null（不提供公开 URL）。
+   */
+  @Override
+  public String putProtected(String objectKey, InputStream content, long sizeBytes,
+      String contentType) {
+    return putInternal(objectKey, content, contentType, true);
+  }
+
+  private String putInternal(String objectKey, InputStream content, String contentType,
+      boolean protectedObject) {
     // COS SDK 会消费流；先缓冲以便本地镜像双写（下载时可本地回退）
     byte[] bytes;
     try {
@@ -79,12 +105,15 @@ public class TencentCosFileStorage implements FileStorage {
     }
     PutObjectRequest req = new PutObjectRequest(
         bucket, objectKey, new java.io.ByteArrayInputStream(bytes), meta);
+    if (protectedObject) {
+      req.setCannedAcl(com.qcloud.cos.model.CannedAccessControlList.Private);
+    }
     PutObjectResult result = client.putObject(req);
     if (result == null || result.getETag() == null) {
       throw new RuntimeException("COS put returned no ETag for " + objectKey);
     }
     mirrorLocal(objectKey, bytes);
-    return joinUrl(urlPrefix, objectKey);
+    return protectedObject ? null : joinUrl(urlPrefix, objectKey);
   }
 
   private void mirrorLocal(String objectKey, byte[] bytes) {

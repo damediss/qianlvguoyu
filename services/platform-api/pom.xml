@@ -185,6 +185,19 @@
       <version>3.0.4</version>
     </dependency>
 
+    <!-- 教材二期（方案 §8.1）：Markdown 解析/渲染统一收敛 flexmark，
+         保存校验、字数/覆盖检查、docx 导出共用同一实现，禁止三套各自理解 Markdown -->
+    <dependency>
+      <groupId>com.vladsch.flexmark</groupId>
+      <artifactId>flexmark</artifactId>
+      <version>0.64.8</version>
+    </dependency>
+    <dependency>
+      <groupId>com.vladsch.flexmark</groupId>
+      <artifactId>flexmark-ext-tables</artifactId>
+      <version>0.64.8</version>
+    </dependency>
+
     <!-- 腾讯云 COS SDK(可选,生产用 cos provider 时需要) -->
     <dependency>
       <groupId>com.qcloud</groupId>

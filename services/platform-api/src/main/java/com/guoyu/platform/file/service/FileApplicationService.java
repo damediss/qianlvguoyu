@@ -12,6 +12,7 @@ import com.qcloud.cos.model.COSObject;
 import com.guoyu.platform.file.entity.FileEntity;
 import com.guoyu.platform.file.mapper.FileMapper;
 import com.guoyu.platform.file.support.FileLocalPathResolver;
+import com.guoyu.platform.file.support.ProtectedFileAccessGuard;
 import com.guoyu.platform.file.support.StoredFileFormatValidator;
 import com.guoyu.platform.file.vo.DownloadUrlVO;
 import com.guoyu.platform.file.vo.FileVO;
@@ -148,6 +149,72 @@ public class FileApplicationService {
     }
   }
 
+  /**
+   * 受保护上传（教材二期方案 §5.6-1）：对象 key 固定写入
+   * {@code protected/{businessArea}/{tenantId}/{yyyy}/{MM}/{uuid}.{ext}}，accessPolicy=protected。
+   *
+   * <p>file 模块只负责安全生成 objectKey、存文件与元数据，不感知教材权限；业务侧
+   * （教材 A1）在上传前后自行做章节归属授权。返回 VO 的 url 恒为 null——受保护文件
+   * 的唯一在线读取入口是业务受控接口（教材 A2），走内部 {@link #buildDownloadResponse}。
+   */
+  @Transactional
+  public FileVO uploadProtectedForTenant(Long tenantId, MultipartFile file, String businessArea) {
+    if (file == null || file.isEmpty()) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST, "File is empty");
+    }
+    if (tenantId == null) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST, "Tenant is required");
+    }
+    String area = normalizeBusinessArea(businessArea);
+    String safeName = sanitizeFileName(file.getOriginalFilename());
+    String objectKey = buildProtectedObjectKey(area, tenantId, safeName);
+    try {
+      String sha256 = HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256")
+          .digest(file.getBytes()));
+      String url;
+      try (InputStream in = file.getInputStream()) {
+        url = storage.putProtected(objectKey, in, file.getSize(), file.getContentType());
+      }
+      FileEntity entity = newFileEntity(tenantId, objectKey, safeName,
+          file.getContentType(), file.getSize(), sha256, "protected");
+      try {
+        fileMapper.insert(entity);
+      } catch (RuntimeException ex) {
+        storage.delete(objectKey);
+        throw ex;
+      }
+      registerRollbackCleanup(objectKey);
+      return toVO(entity, url);
+    } catch (IOException | NoSuchAlgorithmException ex) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST, "File upload failed");
+    } catch (RuntimeException ex) {
+      storage.delete(objectKey);
+      throw ex;
+    }
+  }
+
+  private String normalizeBusinessArea(String businessArea) {
+    if (!StringUtils.hasText(businessArea)
+        || !businessArea.matches("[a-z0-9][a-z0-9-]{0,31}")) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST, "Invalid protected business area");
+    }
+    return businessArea;
+  }
+
+  private String buildProtectedObjectKey(String area, Long tenantId, String fileName) {
+    String ext = "";
+    if (fileName != null) {
+      int dot = fileName.lastIndexOf('.');
+      if (dot >= 0 && dot < fileName.length() - 1) {
+        ext = fileName.substring(dot).replaceAll("[^A-Za-z0-9.]", "").toLowerCase();
+      }
+    }
+    LocalDate now = LocalDate.now();
+    return String.format("protected/%s/%d/%d/%02d/%s%s",
+        area, tenantId == null ? 0L : tenantId, now.getYear(), now.getMonthValue(),
+        UUID.randomUUID(), ext);
+  }
+
   private void registerRollbackCleanup(String objectKey) {
     if (!TransactionSynchronizationManager.isSynchronizationActive()) {
       return;
@@ -210,12 +277,14 @@ public class FileApplicationService {
   @Transactional(readOnly = true)
   public FileVO get(Long id) {
     FileEntity entity = getExistingFile(SecurityContext.currentUser().getTenantId(), id);
+    ProtectedFileAccessGuard.rejectExternalAccess(entity);
     return toVO(entity, publicUrl(entity));
   }
 
   @Transactional(readOnly = true)
   public DownloadUrlVO downloadUrl(Long id) {
     FileEntity entity = getExistingFile(SecurityContext.currentUser().getTenantId(), id);
+    ProtectedFileAccessGuard.rejectExternalAccess(entity);
     // COS 文件给预签名直链（10 分钟有效）：大文件让客户端直连 COS，绕开服务端中转和 120s 超时墙；
     // local 等无法直链的存储回退鉴权中转 /download
     String url = "/api/files/" + entity.getId() + "/download";
@@ -247,7 +316,8 @@ public class FileApplicationService {
   @Transactional(propagation = Propagation.NOT_SUPPORTED, readOnly = true)
   public FileVO getById(Long id) {
     FileEntity entity = findUploadedFile(id);
-    return toVO(entity, publicUrl(entity));
+    // 元数据（文件名/大小/类型）可给，受保护文件的公开 url 必须为 null（方案 §5.6-4）
+    return toVO(entity, ProtectedFileAccessGuard.externalUrlOrNull(entity, publicUrl(entity)));
   }
 
   /**
@@ -274,6 +344,10 @@ public class FileApplicationService {
   @Transactional(propagation = Propagation.NOT_SUPPORTED, readOnly = true)
   public Optional<String> resolveExportFetchUrl(Long id) {
     FileEntity entity = findUploadedFile(id);
+    if (ProtectedFileAccessGuard.isProtectedObjectKey(entity.getObjectKey())) {
+      // 受保护文件禁止经通用导出素材回退地址（预签名/公开 URL）外泄（方案 §5.6-2）
+      return Optional.empty();
+    }
     if ("cos".equalsIgnoreCase(entity.getStorageProvider())) {
       Optional<String> signed = storage.presignedDownloadUrl(entity.getObjectKey(), Duration.ofMinutes(30))
           .map(java.net.URL::toString);
@@ -304,9 +378,16 @@ public class FileApplicationService {
   @Transactional(readOnly = true)
   public ResponseEntity<Resource> buildDownloadResponse(Long id, boolean inline) {
     FileEntity entity = getExistingFile(SecurityContext.currentUser().getTenantId(), id);
+    // FileController /files/{id}/download 通用入口：受保护文件默认拒绝（方案 §5.6-2）。
+    // 业务受控下载（教材 A2）走 buildDownloadResponse(tenantId, id, inline) 内部变体。
+    ProtectedFileAccessGuard.rejectExternalAccess(entity);
     return buildDownloadResponse(entity, loadResource(entity), inline);
   }
 
+  /**
+   * 内部受控下载变体：调用方（如教材 A2）已完成业务级授权（TextbookAccessService），
+   * 受保护文件允许经此读取；同租户普通文件行为不变。
+   */
   @Transactional(readOnly = true)
   public ResponseEntity<Resource> buildDownloadResponse(
       Long tenantId, Long id, boolean inline) {
@@ -406,8 +487,25 @@ public class FileApplicationService {
   @Transactional
   public void deleteForTenant(Long tenantId, Long id) {
     FileEntity entity = getExistingFile(tenantId, id);
+    // 通用 DELETE /files/{id} 外部入口不允许删受保护文件（防绕过教材 A3 快照引用检查）；
+    // 业务侧完成自身校验后走内部 deleteAfterCommitForTenant 清理（方案 §5.6-3）。
+    ProtectedFileAccessGuard.rejectExternalAccess(entity);
     entity.setStatus("deleted");
     fileMapper.updateById(entity);
+    storage.delete(entity.getObjectKey());
+  }
+
+  /**
+   * 业务受控失败的立即物理清理（教材 A1 锁内授权失败后调用）。
+   *
+   * <p>与 {@link #deleteAfterCommitForTenant} 不同：调用方所在事务即将回滚，文件元数据行
+   * 会随之消失，不能依赖 afterCommit（回滚不会触发），否则受保护对象会变成无主物理文件。
+   * 这里只删存储对象、不改元数据——回滚后元数据本就不存在；若事务异常提交，遗留的
+   * uploaded 行会因对象缺失在后续读取时暴露为明确错误，而不是静默泄漏文件。
+   */
+  @Transactional
+  public void deleteStorageImmediatelyForCleanup(Long tenantId, Long id) {
+    FileEntity entity = getExistingFile(tenantId, id);
     storage.delete(entity.getObjectKey());
   }
 

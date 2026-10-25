@@ -100,6 +100,113 @@ class AuditLogAspectTest {
     assertThat(captor.getValue().getDetailJson().length()).isLessThan(1024);
   }
 
+  /** 教材二期（方案 §12.1-AuditLogAspectTest）：includeArgs 缺省 = true 行为不变。 */
+  @Test
+  void includeArgsDefaultTrueKeepsArgs() {
+    AuditLog annotation = auditLogWithArgs(true);
+    assertThat(annotation.includeArgs()).isTrue();
+
+    PlatformUserPrincipal principal = new PlatformUserPrincipal(
+        1000L, 1L, "writer", "主笔", "admin", List.of("TEXTBOOK_WRITER"),
+        List.of("textbook:content:write"), null);
+    SecurityContextHolder.getContext().setAuthentication(
+        new UsernamePasswordAuthenticationToken(principal, "token", principal.getAuthorities()));
+
+    AuditLogMapper mapper = Mockito.mock(AuditLogMapper.class);
+    AuditLogAspect aspect =
+        new AuditLogAspect(mapper, new com.fasterxml.jackson.databind.ObjectMapper());
+    org.aspectj.lang.JoinPoint joinPoint = Mockito.mock(org.aspectj.lang.JoinPoint.class);
+    org.aspectj.lang.Signature signature = Mockito.mock(org.aspectj.lang.Signature.class);
+    Mockito.when(joinPoint.getArgs()).thenReturn(new Object[] {9101L, "普通短参数"});
+    Mockito.when(joinPoint.getSignature()).thenReturn(signature);
+    Mockito.when(signature.toShortString()).thenReturn("TextbookSectionContentController.save(..)");
+
+    aspect.writeAuditLog(joinPoint, annotation, null);
+
+    ArgumentCaptor<com.guoyu.platform.system.entity.AuditLogEntity> captor =
+        ArgumentCaptor.forClass(com.guoyu.platform.system.entity.AuditLogEntity.class);
+    Mockito.verify(mapper).insert(captor.capture());
+    assertThat(captor.getValue().getDetailJson()).contains("\"args\"");
+    assertThat(captor.getValue().getTargetId()).isEqualTo(9101L);
+  }
+
+  /** W3 includeArgs=false：审计不含 contentMd/args，但操作者/targetId/方法仍完整。 */
+  @Test
+  void includeArgsFalseOmitsArgsButKeepsMetadata() {
+    AuditLog annotation = auditLogWithArgs(false);
+    assertThat(annotation.includeArgs()).isFalse();
+
+    PlatformUserPrincipal principal = new PlatformUserPrincipal(
+        1000L, 1L, "writer", "主笔", "admin", List.of("TEXTBOOK_WRITER"),
+        List.of("textbook:content:write"), null);
+    SecurityContextHolder.getContext().setAuthentication(
+        new UsernamePasswordAuthenticationToken(principal, "token", principal.getAuthorities()));
+
+    AuditLogMapper mapper = Mockito.mock(AuditLogMapper.class);
+    AuditLogAspect aspect =
+        new AuditLogAspect(mapper, new com.fasterxml.jackson.databind.ObjectMapper());
+    org.aspectj.lang.JoinPoint joinPoint = Mockito.mock(org.aspectj.lang.JoinPoint.class);
+    org.aspectj.lang.Signature signature = Mockito.mock(org.aspectj.lang.Signature.class);
+    String contentMd = "# 整篇正文不应进入审计\n".repeat(500);
+    Mockito.when(joinPoint.getArgs()).thenReturn(new Object[] {9101L, contentMd});
+    Mockito.when(joinPoint.getSignature()).thenReturn(signature);
+    Mockito.when(signature.toShortString())
+        .thenReturn("TextbookSectionContentController.save(..)");
+
+    aspect.writeAuditLog(joinPoint, annotation, null);
+
+    ArgumentCaptor<com.guoyu.platform.system.entity.AuditLogEntity> captor =
+        ArgumentCaptor.forClass(com.guoyu.platform.system.entity.AuditLogEntity.class);
+    Mockito.verify(mapper).insert(captor.capture());
+    com.guoyu.platform.system.entity.AuditLogEntity entity = captor.getValue();
+    assertThat(entity.getDetailJson())
+        .as("includeArgs=false 时不得记录 args")
+        .doesNotContain("\"args\"");
+    assertThat(entity.getDetailJson())
+        .as("整篇正文绝不能落入审计详情")
+        .doesNotContain("整篇正文不应进入审计");
+    assertThat(entity.getDetailJson())
+        .as("方法名等元数据仍完整")
+        .contains("TextbookSectionContentController.save(..)");
+    assertThat(entity.getUserId()).isEqualTo(1000L);
+    assertThat(entity.getTargetId()).isEqualTo(9101L);
+    assertThat(entity.getModule()).isEqualTo("textbook");
+  }
+
+  private AuditLog auditLogWithArgs(boolean includeArgs) {
+    return new AuditLog() {
+      @Override
+      public String module() {
+        return "textbook";
+      }
+
+      @Override
+      public String action() {
+        return "section:save";
+      }
+
+      @Override
+      public String targetType() {
+        return "textbook_section_content";
+      }
+
+      @Override
+      public boolean includeResult() {
+        return false;
+      }
+
+      @Override
+      public boolean includeArgs() {
+        return includeArgs;
+      }
+
+      @Override
+      public Class<? extends java.lang.annotation.Annotation> annotationType() {
+        return AuditLog.class;
+      }
+    };
+  }
+
   private AuditLog fileAuditLog() {
     return new AuditLog() {
       @Override
@@ -120,6 +227,11 @@ class AuditLogAspectTest {
       @Override
       public boolean includeResult() {
         return false;
+      }
+
+      @Override
+      public boolean includeArgs() {
+        return true;
       }
 
       @Override
@@ -149,6 +261,11 @@ class AuditLogAspectTest {
       @Override
       public boolean includeResult() {
         return false;
+      }
+
+      @Override
+      public boolean includeArgs() {
+        return true;
       }
 
       @Override

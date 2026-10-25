@@ -156,9 +156,11 @@ public class AuditLogAspect {
     }
     if (auditLog.includeResult()) {
       detail.put("result", sanitizeArg(result));
-    } else {
+    } else if (auditLog.includeArgs()) {
       detail.put("args", sanitizeArgs(joinPoint.getArgs()));
     }
+    // includeArgs=false 且 includeResult=false：只保留方法/操作者/时间/traceId 等
+    // 元数据（教材 W3 自动保存等含整篇正文的入口必须如此，防止正文灌入审计日志）。
     try {
       String json = objectMapper.writeValueAsString(detail);
       if (json.length() <= MAX_DETAIL_JSON_LENGTH) {

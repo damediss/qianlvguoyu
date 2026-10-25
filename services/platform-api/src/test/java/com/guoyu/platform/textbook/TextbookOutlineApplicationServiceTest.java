@@ -48,6 +48,8 @@ class TextbookOutlineApplicationServiceTest {
   private TextbookOutlineNodeMapper nodeMapper;
   private TextbookProjectMapper projectMapper;
   private TextbookOutlineApplicationService service;
+  private com.guoyu.platform.textbook.service.TextbookProjectLockService lockService;
+  private com.guoyu.platform.textbook.service.TextbookStructureGuard structureGuard;
   private org.mockito.MockedStatic<Db> dbMock;
 
   private Map<Long, TextbookOutlineNodeEntity> nodesDb;
@@ -66,8 +68,12 @@ class TextbookOutlineApplicationServiceTest {
   void setUp() {
     nodeMapper = mock(TextbookOutlineNodeMapper.class);
     projectMapper = mock(TextbookProjectMapper.class);
+    lockService = mock(com.guoyu.platform.textbook.service.TextbookProjectLockService.class);
+    structureGuard = mock(com.guoyu.platform.textbook.service.TextbookStructureGuard.class);
+    when(lockService.lockProject(any())).thenAnswer(
+        inv -> projectsDb.get(((Number) inv.getArgument(0)).longValue()));
     service = new TextbookOutlineApplicationService(nodeMapper, projectMapper,
-        new ObjectMapper());
+        new ObjectMapper(), lockService, structureGuard);
     nodesDb = new HashMap<>();
     projectsDb = new HashMap<>();
 
@@ -156,7 +162,8 @@ class TextbookOutlineApplicationServiceTest {
     nodesDb.put(102L, oldSection);
     nodesDb.put(103L, oldPoint);
 
-    List<String> warnings = service.regenerate(project, syntheticStandard(), true);
+    List<String> warnings =
+        service.regenerate(project, syntheticStandard(), true).warnings();
 
     long chapterSum = nodesDb.values().stream()
         .filter(n -> n.getDeleted() == null || n.getDeleted() == 0)
@@ -183,6 +190,33 @@ class TextbookOutlineApplicationServiceTest {
         .findFirst().orElseThrow();
     assertEquals(4000, newSection.getTargetWords());
     assertEquals("2.1", newSection.getSourceNo());
+  }
+
+  /** ③（二期 §5.7）regenerate 返回保留/移除章清单：分配行据此保留 active=0 行/软删，防唯一键冲突 */
+  @Test
+  void regenerateReportsRetainedAndRemovedChapters() {
+    TextbookProjectEntity project = project(1L, 6000);
+    project.setDirection("铝电解槽操作工");
+    project.setLevelCode(5);
+    project.setFunctionNosJson("[1,2]");
+    projectsDb.put(project.getId(), project);
+    TextbookOutlineNodeEntity manualChapter = node(101L, 1L, 900L, 2, "铝电解槽操作");
+    manualChapter.setSourceNo("2");
+    manualChapter.setWordsManual(1);
+    manualChapter.setTargetWords(4000);
+    TextbookOutlineNodeEntity autoChapter = node(900L, 1L, 0L, 2, "工作准备");
+    autoChapter.setSourceNo("1");
+    autoChapter.setWordsManual(0);
+    autoChapter.setTargetWords(2000);
+    nodesDb.put(101L, manualChapter);
+    nodesDb.put(900L, autoChapter);
+
+    var result = service.regenerate(project, syntheticStandard(), true);
+
+    assertTrue(result.retainedChapterIds().contains(101L), "人工调整章应保留原 ID");
+    assertTrue(result.removedChapterIds().contains(900L), "自动章被移除应上报（其分配行须软删）");
+    assertEquals(1, result.retainedChapterIds().size());
+    assertEquals(1, result.removedChapterIds().size());
   }
 
   /** ③ 删除节点级联软删子孙 */

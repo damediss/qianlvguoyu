@@ -21,10 +21,20 @@ import com.guoyu.platform.textbook.dto.ProjectQueryReq;
 import com.guoyu.platform.textbook.dto.ProjectUpdateReq;
 import com.guoyu.platform.textbook.entity.TextbookOutlineNodeEntity;
 import com.guoyu.platform.textbook.entity.TextbookProjectEntity;
+import com.guoyu.platform.textbook.entity.TextbookChapterAssignmentEntity;
+import com.guoyu.platform.textbook.entity.TextbookSectionAssetEntity;
+import com.guoyu.platform.textbook.entity.TextbookSectionContentEntity;
+import com.guoyu.platform.textbook.entity.TextbookSectionContentVersionEntity;
+import com.guoyu.platform.textbook.entity.TextbookSectionReviewRecordEntity;
 import com.guoyu.platform.textbook.exporter.TextbookOutlineExporter;
 import com.guoyu.platform.textbook.exporter.TextbookOutlineExporter.ExportFile;
+import com.guoyu.platform.textbook.mapper.TextbookChapterAssignmentMapper;
 import com.guoyu.platform.textbook.mapper.TextbookOutlineNodeMapper;
 import com.guoyu.platform.textbook.mapper.TextbookProjectMapper;
+import com.guoyu.platform.textbook.mapper.TextbookSectionAssetMapper;
+import com.guoyu.platform.textbook.mapper.TextbookSectionContentMapper;
+import com.guoyu.platform.textbook.mapper.TextbookSectionContentVersionMapper;
+import com.guoyu.platform.textbook.mapper.TextbookSectionReviewRecordMapper;
 import com.guoyu.platform.textbook.vo.OutlineSummaryVO;
 import com.guoyu.platform.textbook.vo.ParsePreviewVO;
 import com.guoyu.platform.textbook.vo.TextbookProjectVO;
@@ -36,6 +46,7 @@ import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import org.apache.poi.ooxml.POIXMLException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -58,6 +69,9 @@ public class TextbookProjectApplicationService {
   public static final String STATUS_PARSED = "parsed";
   public static final String STATUS_OUTLINED = "outlined";
   public static final String STATUS_REVIEWED = "reviewed";
+  /** 二期新增工程状态（方案 §3.1）：首个有效章分配创建 → writing；教研完成 → done。 */
+  public static final String STATUS_WRITING = "writing";
+  public static final String STATUS_DONE = "done";
   private static final int DEFAULT_WORDS_PER_HOUR = 2500;
 
   private final TextbookProjectMapper projectMapper;
@@ -66,19 +80,40 @@ public class TextbookProjectApplicationService {
   private final FileApplicationService fileApplicationService;
   private final FileMapper fileMapper;
   private final ObjectMapper objectMapper;
+  private final TextbookProjectLockService lockService;
+  private final TextbookStructureGuard structureGuard;
+  private final TextbookChapterAssignmentMapper assignmentMapper;
+  private final TextbookSectionContentMapper sectionContentMapper;
+  private final TextbookSectionContentVersionMapper sectionVersionMapper;
+  private final TextbookSectionReviewRecordMapper sectionReviewRecordMapper;
+  private final TextbookSectionAssetMapper sectionAssetMapper;
 
   public TextbookProjectApplicationService(TextbookProjectMapper projectMapper,
       TextbookOutlineNodeMapper nodeMapper,
       TextbookOutlineApplicationService outlineService,
       FileApplicationService fileApplicationService,
       FileMapper fileMapper,
-      ObjectMapper objectMapper) {
+      ObjectMapper objectMapper,
+      TextbookProjectLockService lockService,
+      TextbookStructureGuard structureGuard,
+      TextbookChapterAssignmentMapper assignmentMapper,
+      TextbookSectionContentMapper sectionContentMapper,
+      TextbookSectionContentVersionMapper sectionVersionMapper,
+      TextbookSectionReviewRecordMapper sectionReviewRecordMapper,
+      TextbookSectionAssetMapper sectionAssetMapper) {
     this.projectMapper = projectMapper;
     this.nodeMapper = nodeMapper;
     this.outlineService = outlineService;
     this.fileApplicationService = fileApplicationService;
     this.fileMapper = fileMapper;
     this.objectMapper = objectMapper;
+    this.lockService = lockService;
+    this.structureGuard = structureGuard;
+    this.assignmentMapper = assignmentMapper;
+    this.sectionContentMapper = sectionContentMapper;
+    this.sectionVersionMapper = sectionVersionMapper;
+    this.sectionReviewRecordMapper = sectionReviewRecordMapper;
+    this.sectionAssetMapper = sectionAssetMapper;
   }
 
   // ============================================================
@@ -257,7 +292,8 @@ public class TextbookProjectApplicationService {
       throw new BusinessException(ErrorCode.CONFLICT, "该分册已存在（同工种×方向×等级），请勿重复创建");
     }
 
-    List<String> rebuildWarnings = outlineService.regenerate(project, parsed, false);
+    List<String> rebuildWarnings =
+        outlineService.regenerate(project, parsed, false).warnings();
     if (!rebuildWarnings.isEmpty()) {
       warnings.addAll(rebuildWarnings);
       project.setParseWarnings(writeJson(warnings));
@@ -289,9 +325,10 @@ public class TextbookProjectApplicationService {
     Page<TextbookProjectEntity> result = projectMapper.selectPage(
         new Page<>(req.getPage(), req.getPageSize()), wrapper);
     Map<Long, String> fileNames = fileNames(result.getRecords());
+    Map<Long, CollaborationStats> stats = collaborationStats(result.getRecords());
     List<TextbookProjectVO> items = new ArrayList<>();
     for (TextbookProjectEntity project : result.getRecords()) {
-      items.add(toVO(project, fileNames, false));
+      items.add(toVO(project, fileNames, false, stats.get(project.getId())));
     }
     return new PageResponse<>(items, result.getCurrent(), result.getSize(), result.getTotal());
   }
@@ -299,23 +336,83 @@ public class TextbookProjectApplicationService {
   @Transactional(readOnly = true)
   public TextbookProjectVO detail(Long id) {
     TextbookProjectEntity project = findProject(id);
-    return toVO(project, fileNames(List.of(project)), true);
+    return toVO(project, fileNames(List.of(project)), true,
+        collaborationStats(List.of(project)).get(id));
+  }
+
+  /** 二期列表批量统计（方案 §10.2）：禁止逐工程 N+1；内容查询只选 project/status 两列，不拉 LONGTEXT 正文。 */
+  private Map<Long, CollaborationStats> collaborationStats(List<TextbookProjectEntity> projects) {
+    if (projects == null || projects.isEmpty()) {
+      return Map.of();
+    }
+    List<Long> projectIds = projects.stream()
+        .map(TextbookProjectEntity::getId).distinct().toList();
+    Map<Long, Integer> assignedByProject = new LinkedHashMap<>();
+    for (TextbookChapterAssignmentEntity assignment : assignmentMapper.selectList(
+        new LambdaQueryWrapper<TextbookChapterAssignmentEntity>()
+            .select(TextbookChapterAssignmentEntity::getProjectId)
+            .in(TextbookChapterAssignmentEntity::getProjectId, projectIds)
+            .eq(TextbookChapterAssignmentEntity::getActive, 1))) {
+      assignedByProject.merge(assignment.getProjectId(), 1, Integer::sum);
+    }
+    Map<Long, Integer> approvedByProject = new LinkedHashMap<>();
+    Set<Long> projectsWithContent = new LinkedHashSet<>();
+    for (TextbookSectionContentEntity content : sectionContentMapper.selectList(
+        new LambdaQueryWrapper<TextbookSectionContentEntity>()
+            .select(TextbookSectionContentEntity::getProjectId,
+                TextbookSectionContentEntity::getContentStatus)
+            .in(TextbookSectionContentEntity::getProjectId, projectIds))) {
+      projectsWithContent.add(content.getProjectId());
+      if (TextbookSectionContentApplicationService.STATUS_APPROVED
+          .equals(content.getContentStatus())) {
+        approvedByProject.merge(content.getProjectId(), 1, Integer::sum);
+      }
+    }
+    Map<Long, CollaborationStats> result = new LinkedHashMap<>();
+    for (Long projectId : projectIds) {
+      int assigned = assignedByProject.getOrDefault(projectId, 0);
+      boolean hasContent = projectsWithContent.contains(projectId);
+      result.put(projectId, new CollaborationStats(assigned,
+          approvedByProject.getOrDefault(projectId, 0), hasContent, hasContent || assigned > 0));
+    }
+    return result;
+  }
+
+  private record CollaborationStats(int assignedChapterCount, int approvedSectionCount,
+                                    boolean hasContent, boolean structureLocked) {
   }
 
   // ============================================================
   // 更新（接口 5）：名称/系数/功能映射；结构变化自动重建骨架
+  // 二期收紧（方案 §3.5/§5.7）：状态白名单 + 结构锁 + 同请求结构/状态互斥
   // ============================================================
 
   @Transactional
   public TextbookProjectVO update(Long id, ProjectUpdateReq req) {
-    TextbookProjectEntity project = findProject(id);
-    if (req.workTypeTitle() != null && !req.workTypeTitle().isBlank()) {
-      project.setWorkTypeTitle(req.workTypeTitle().trim());
-    }
+    // 统一工程行锁（方案 §7.1）：旧 PUT 与 C3-C6/重建/删除互斥
+    TextbookProjectEntity project = lockService.lockProject(id);
     boolean structural = req.trainingHours() != null || req.wordsPerHour() != null
         || (req.functionNos() != null && !req.functionNos().isEmpty());
+    boolean statusChange = req.status() != null && !req.status().isBlank();
+    if (structural && statusChange) {
+      // 结构变更后必须单独发起评审，不得同一请求重建并立即 reviewed（方案 §3.5）
+      throw new BusinessException(ErrorCode.BAD_REQUEST,
+          "同一请求不允许同时携带结构字段与 status，请先保存结构变化再单独发起评审");
+    }
+    if (req.workTypeTitle() != null && !req.workTypeTitle().isBlank()) {
+      // 工程名称：非 done 允许（方案 §5.7）
+      structureGuard.assertSafeEditAllowed(project, "修改工程名称");
+      project.setWorkTypeTitle(req.workTypeTitle().trim());
+    }
     List<String> warnings = readWarnings(project.getParseWarnings());
     if (structural) {
+      // 改 functionNos/学时/系数触发 regenerate：仅 outlined 且未结构锁定（§5.7）；
+      // writing/done 一律 409；reviewed 必须先显式撤回为 outlined
+      structureGuard.assertIdentityChangeAllowed(project, "修改学时/系数/功能映射触发的重建");
+      if (!STATUS_OUTLINED.equals(project.getStatus())) {
+        throw new BusinessException(ErrorCode.CONFLICT,
+            "结构重建仅 outlined 工程允许，当前：" + project.getStatus());
+      }
       ParsedStandard parsed = parseAndValidate(
           fileApplicationService.readFileBytesById(project.getFileId()), null);
       StandardLevelDoc level = parsed.levelOf(5 - project.getLevelCode());
@@ -333,7 +430,7 @@ public class TextbookProjectApplicationService {
         project.setWordsPerHour(req.wordsPerHour());
       }
       project.setTotalWords(project.getTrainingHours() * project.getWordsPerHour());
-      warnings.addAll(outlineService.regenerate(project, parsed, true));
+      warnings.addAll(applyRegenerate(project, parsed));
       project.setParseWarnings(writeJson(warnings));
       project.setStatus(STATUS_OUTLINED);
     }
@@ -346,13 +443,91 @@ public class TextbookProjectApplicationService {
     return detail(id);
   }
 
+  /**
+   * 旧 PUT 状态白名单（方案 §3.5）：
+   * <ul>
+   *   <li>outlined → reviewed：一期「大纲评审通过」唯一入口</li>
+   *   <li>reviewed → outlined：仅未结构锁定时允许（撤回大纲评审）</li>
+   *   <li>writing → done / done → writing：只允许 C5/C6，旧 PUT 一律 409</li>
+   *   <li>writing/done → outlined/parsed/reviewed：一律 409</li>
+   * </ul>
+   */
+  private void applyStatusTransition(TextbookProjectEntity project, String status) {
+    if (status == null || status.isBlank()) {
+      return;
+    }
+    String current = project.getStatus();
+    switch (status) {
+      case STATUS_REVIEWED -> {
+        if (!STATUS_OUTLINED.equals(current)) {
+          throw new BusinessException(ErrorCode.CONFLICT,
+              "仅 outlined 工程可评审通过为 reviewed，当前：" + current
+                  + "（writing/done 请走编写管理）");
+        }
+        project.setStatus(STATUS_REVIEWED);
+      }
+      case STATUS_OUTLINED -> {
+        if (STATUS_DONE.equals(current)) {
+          throw new BusinessException(ErrorCode.CONFLICT,
+              "工程已完成（done），旧接口不允许回退，请先重新打开为 writing");
+        }
+        if (structureGuard.isLocked(project.getId())) {
+          throw new BusinessException(ErrorCode.CONFLICT,
+              (STATUS_REVIEWED.equals(current) ? "已存在章节分配或正文，不能撤回大纲评审（结构已锁定）"
+                  : "工程仍有有效分配或正文，不能从 writing 撤回为 outlined；如需重建请先取消全部分配且确认无正文"));
+        }
+        project.setStatus(STATUS_OUTLINED);
+      }
+      // parsed 为管理端"打回重建"兜底态；writing/done 禁止经旧 PUT 越级
+      case STATUS_PARSED -> {
+        if (STATUS_WRITING.equals(current) || STATUS_DONE.equals(current)) {
+          throw new BusinessException(ErrorCode.CONFLICT,
+              "工程已进入编写阶段（" + current + "），旧接口不允许回退为 parsed");
+        }
+        if (structureGuard.isLocked(project.getId())) {
+          throw new BusinessException(ErrorCode.CONFLICT,
+              "已存在章节分配或正文，不允许回退为 parsed（结构已锁定）");
+        }
+        project.setStatus(STATUS_PARSED);
+      }
+      case STATUS_WRITING, STATUS_DONE -> throw new BusinessException(ErrorCode.CONFLICT,
+          "writing/done 流转仅允许编写管理接口（complete/reopen），旧 PUT 禁止");
+      default -> throw new BusinessException(ErrorCode.BAD_REQUEST, "不支持的 status：" + status);
+    }
+  }
+
+  /** 重建后的分配行处理（方案 §5.7 分配唯一键规则）：保留章保留 active=0 行，移除章软删。 */
+  private List<String> applyRegenerate(TextbookProjectEntity project, ParsedStandard parsed) {
+    TextbookOutlineApplicationService.RegenerateResult result =
+        outlineService.regenerate(project, parsed, true);
+    if (!result.removedChapterIds().isEmpty()) {
+      List<TextbookChapterAssignmentEntity> removed = assignmentMapper.selectList(
+          new LambdaQueryWrapper<TextbookChapterAssignmentEntity>()
+              .in(TextbookChapterAssignmentEntity::getChapterId, result.removedChapterIds()));
+      if (!removed.isEmpty()) {
+        assignmentMapper.deleteBatchIds(
+            removed.stream().map(TextbookChapterAssignmentEntity::getId).toList());
+      }
+    }
+    // 保留章：active=0 分配行原样保留，供下次分配复用（防 (tenant_id,chapter_id,deleted) 唯一键冲突）
+    return result.warnings();
+  }
+
   // ============================================================
   // 删除（接口 6）/ 重建（接口 7）
   // ============================================================
 
+  /**
+   * 删除工程：done 先由教研重开（§5.7）；任务、正文、快照、审定记录、资产元数据级联软删，
+   * 资产文件按 file 模块提交后清理。
+   */
   @Transactional
   public void delete(Long id) {
-    TextbookProjectEntity project = findProject(id);
+    TextbookProjectEntity project = lockService.lockProject(id);
+    if (STATUS_DONE.equals(project.getStatus())) {
+      throw new BusinessException(ErrorCode.CONFLICT,
+          "工程已完成（done），请先重新打开为 writing 再删除");
+    }
     List<Long> nodeIds = nodeMapper.selectList(
             new LambdaQueryWrapper<TextbookOutlineNodeEntity>()
                 .eq(TextbookOutlineNodeEntity::getProjectId, id))
@@ -360,18 +535,62 @@ public class TextbookProjectApplicationService {
     if (!nodeIds.isEmpty()) {
       nodeMapper.deleteBatchIds(nodeIds);
     }
+    cascadeDeleteCollaboration(id, project.getTenantId());
     projectMapper.deleteById(project.getId());
     log.info("[教材] 删除工程：projectId={} 级联删除大纲节点={}", id, nodeIds.size());
   }
 
+  /** 二期新表级联软删 + 资产文件提交后清理（方案 §5.7 删除行）。 */
+  private void cascadeDeleteCollaboration(Long projectId, Long tenantId) {
+    List<TextbookSectionAssetEntity> assets = sectionAssetMapper.selectList(
+        new LambdaQueryWrapper<TextbookSectionAssetEntity>()
+            .eq(TextbookSectionAssetEntity::getProjectId, projectId));
+    if (!assets.isEmpty()) {
+      sectionAssetMapper.deleteBatchIds(
+          assets.stream().map(TextbookSectionAssetEntity::getId).toList());
+      for (TextbookSectionAssetEntity asset : assets) {
+        fileApplicationService.deleteAfterCommitForTenant(tenantId, asset.getFileId());
+      }
+    }
+    // content/version/review/assignment 都带 project_id 或可由 content 推导
+    List<TextbookSectionContentEntity> contents = sectionContentMapper.selectList(
+        new LambdaQueryWrapper<TextbookSectionContentEntity>()
+            .eq(TextbookSectionContentEntity::getProjectId, projectId));
+    if (!contents.isEmpty()) {
+      List<Long> contentIds = contents.stream()
+          .map(TextbookSectionContentEntity::getId).toList();
+      List<Long> sectionIds = contents.stream()
+          .map(TextbookSectionContentEntity::getSectionId).toList();
+      sectionVersionMapper.delete(new LambdaQueryWrapper<TextbookSectionContentVersionEntity>()
+          .in(TextbookSectionContentVersionEntity::getContentId, contentIds));
+      sectionReviewRecordMapper.delete(new LambdaQueryWrapper<TextbookSectionReviewRecordEntity>()
+          .in(TextbookSectionReviewRecordEntity::getSectionId, sectionIds));
+      sectionContentMapper.deleteBatchIds(contentIds);
+    }
+    List<TextbookChapterAssignmentEntity> assignments = assignmentMapper.selectList(
+        new LambdaQueryWrapper<TextbookChapterAssignmentEntity>()
+            .eq(TextbookChapterAssignmentEntity::getProjectId, projectId));
+    if (!assignments.isEmpty()) {
+      assignmentMapper.deleteBatchIds(
+          assignments.stream().map(TextbookChapterAssignmentEntity::getId).toList());
+    }
+  }
+
+  /** 手动重建：仅 parsed/outlined 且未锁定（§5.7）；writing/done/reviewed 一律 409。 */
   @Transactional
   public OutlineSummaryVO rebuild(Long id) {
-    TextbookProjectEntity project = findProject(id);
+    TextbookProjectEntity project = lockService.lockProject(id);
+    structureGuard.assertIdentityChangeAllowed(project, "手动重建骨架");
+    if (!STATUS_OUTLINED.equals(project.getStatus())
+        && !STATUS_PARSED.equals(project.getStatus())) {
+      throw new BusinessException(ErrorCode.CONFLICT,
+          "手动重建仅 parsed/outlined 工程允许，当前：" + project.getStatus());
+    }
     ParsedStandard parsed = parseAndValidate(
         fileApplicationService.readFileBytesById(project.getFileId()), null);
     List<String> warnings = readWarnings(project.getParseWarnings());
     warnings.add("INFO: 手动重建骨架（未人工调整的字数已被覆盖）");
-    warnings.addAll(outlineService.regenerate(project, parsed, true));
+    warnings.addAll(applyRegenerate(project, parsed));
     project.setParseWarnings(writeJson(warnings));
     project.setStatus(STATUS_OUTLINED);
     projectMapper.updateById(project);
@@ -453,33 +672,6 @@ public class TextbookProjectApplicationService {
     }
   }
 
-  private void applyStatusTransition(TextbookProjectEntity project, String status) {
-    if (status == null || status.isBlank()) {
-      return;
-    }
-    switch (status) {
-      case STATUS_REVIEWED -> {
-        if (!STATUS_OUTLINED.equals(project.getStatus())
-            && !STATUS_PARSED.equals(project.getStatus())) {
-          throw new BusinessException(ErrorCode.BAD_REQUEST,
-              "当前状态不允许流转为 reviewed：" + project.getStatus());
-        }
-        project.setStatus(STATUS_REVIEWED);
-      }
-      case STATUS_OUTLINED -> project.setStatus(STATUS_OUTLINED);
-      // parsed 为管理端"打回重建"兜底态（骨架未建的创建失败态），允许从 outlined/reviewed 回退
-      case STATUS_PARSED -> {
-        if (!STATUS_OUTLINED.equals(project.getStatus())
-            && !STATUS_REVIEWED.equals(project.getStatus())) {
-          throw new BusinessException(ErrorCode.BAD_REQUEST,
-              "当前状态不允许流转为 parsed：" + project.getStatus());
-        }
-        project.setStatus(STATUS_PARSED);
-      }
-      default -> throw new BusinessException(ErrorCode.BAD_REQUEST, "不支持的 status：" + status);
-    }
-  }
-
   private TextbookProjectEntity findProject(Long id) {
     TextbookProjectEntity project = projectMapper.selectOne(
         new LambdaQueryWrapper<TextbookProjectEntity>()
@@ -510,7 +702,7 @@ public class TextbookProjectApplicationService {
   }
 
   private TextbookProjectVO toVO(TextbookProjectEntity project, Map<Long, String> fileNames,
-      boolean withStats) {
+      boolean withStats, CollaborationStats collaborationStats) {
     Integer chapterCount = null;
     Integer sectionCount = null;
     Integer pointCount = null;
@@ -521,6 +713,8 @@ public class TextbookProjectApplicationService {
       pointCount = countOf(project.getId(), TextbookOutlineApplicationService.LEVEL_POINT);
       summary = outlineService.summary(project);
     }
+    CollaborationStats stats = collaborationStats == null
+        ? new CollaborationStats(0, 0, false, false) : collaborationStats;
     return new TextbookProjectVO(
         project.getId() == null ? null : String.valueOf(project.getId()),
         project.getWorkTypeTitle(),
@@ -539,6 +733,10 @@ public class TextbookProjectApplicationService {
         chapterCount,
         sectionCount,
         pointCount,
+        stats.assignedChapterCount(),
+        stats.approvedSectionCount(),
+        stats.hasContent(),
+        stats.structureLocked(),
         summary,
         project.getCreatedAt(),
         project.getUpdatedAt());

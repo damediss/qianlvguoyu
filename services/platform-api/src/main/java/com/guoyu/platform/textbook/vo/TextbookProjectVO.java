@@ -25,6 +25,11 @@ public record TextbookProjectVO(
     Integer chapterCount,
     Integer sectionCount,
     Integer pointCount,
+    /** 二期编写协同列表/详情批量字段（方案 §10.2；页面进度、删除文案与结构锁提示） */
+    Integer assignedChapterCount,
+    Integer approvedSectionCount,
+    Boolean hasContent,
+    Boolean structureLocked,
     OutlineSummaryVO summary,
     LocalDateTime createdAt,
     LocalDateTime updatedAt
