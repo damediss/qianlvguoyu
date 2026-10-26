@@ -35,6 +35,7 @@ import { listCompetitionEventWorkTypeLevels, listCompetitionEventWorkTypes, page
 import { getCompetitionQuestionBlueprintTree, pageCompetitionQuestionBlueprints } from '../../api/competitionQuestionBlueprint';
 import type { CompetitionEvent, CompetitionEventWorkType, CompetitionEventWorkTypeLevel } from '../../types/competition';
 import type { CompetitionMakeExamPlan, CompetitionMakeExamPlanRequest, CompetitionQuestion, CompetitionQuestionContentType, CompetitionQuestionType } from '../../types/competitionQuestion';
+import { competitionEventLabel } from '../../utils/competitionEventLabel';
 import { CompetitionPracticalSnapshotPaperPreview } from './CompetitionPracticalSnapshotPaperPreview';
 
 interface PlanFormValues {
@@ -355,7 +356,7 @@ export function CompetitionMakeExamPlanPage({ contentType = 'theory', simpleMode
       {!simpleMode && contentType === 'theory' && !activeBlueprint && eventId && workTypeId && levelId && <Alert type="warning" showIcon style={{ marginBottom: 16 }} message="当前赛事工种等级没有启用的理论细目表；理论自动组卷需要先导入并启用版本。" />}
       <Space wrap style={{ marginBottom: 16 }}>
         <Select showSearch optionFilterProp="label" style={{ width: 250 }} placeholder="选择赛事" value={eventId || undefined}
-          options={events.map((event: CompetitionEvent) => ({ value: String(event.id), label: `${event.name}（${event.code}）` }))}
+          options={events.map((event: CompetitionEvent) => ({ value: String(event.id), label: competitionEventLabel(event) }))}
           onChange={(value) => { setEventId(value); setWorkTypeId(''); setLevelId(''); }} />
         <Select style={{ width: 220 }} placeholder="选择工种" value={workTypeId || undefined}
           options={workTypes.map((item: CompetitionEventWorkType) => ({ value: String(item.id), label: item.displayName || item.workTypeName || String(item.workTypeId) }))}

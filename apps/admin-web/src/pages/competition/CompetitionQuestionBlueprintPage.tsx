@@ -18,6 +18,7 @@ import { listCompetitionEventWorkTypeLevels, listCompetitionEventWorkTypes, page
 import type { CompetitionEvent, CompetitionEventWorkType, CompetitionEventWorkTypeLevel } from '../../types/competition';
 import type { CompetitionQuestionContentType } from '../../types/competitionQuestion';
 import type { CompetitionQuestionBlueprint } from '../../types/competitionQuestionBlueprint';
+import { competitionEventLabel } from '../../utils/competitionEventLabel';
 
 interface Props { contentType: CompetitionQuestionContentType; }
 
@@ -171,7 +172,7 @@ export function CompetitionQuestionBlueprintPage({ contentType }: Props) {
   const treeData = treeQuery.data?.tree.map(toTreeNode);
   const reportLines = checkReportLines(treeQuery.data?.blueprint.checkReport);
   return <Card title={`竞赛${contentType === 'theory' ? '理论' : '实操'}细目表`} extra={<Space wrap>
-    <Select showSearch optionFilterProp="label" style={{ width: 240 }} placeholder="选择赛事" value={eventId || undefined} options={events.map((e: CompetitionEvent) => ({ value: String(e.id), label: `${e.name}（${e.code}）` }))} onChange={(v) => { setEventId(v); setWorkTypeId(''); setLevelId(''); }} />
+    <Select showSearch optionFilterProp="label" style={{ width: 240 }} placeholder="选择赛事" value={eventId || undefined} options={events.map((e: CompetitionEvent) => ({ value: String(e.id), label: competitionEventLabel(e) }))} onChange={(v) => { setEventId(v); setWorkTypeId(''); setLevelId(''); }} />
     <Select style={{ width: 210 }} placeholder="选择工种" value={workTypeId || undefined} options={workTypes.map((w: CompetitionEventWorkType) => ({ value: String(w.id), label: w.displayName || w.workTypeName || String(w.workTypeId) }))} onChange={(v) => { setWorkTypeId(v); setLevelId(''); }} />
     <Select style={{ width: 170 }} placeholder="选择等级" value={levelId || undefined} options={levels.map((l: CompetitionEventWorkTypeLevel) => ({ value: String(l.id), label: `${l.levelName}（${l.levelCode}）` }))} onChange={setLevelId} />
     <Button icon={<DownloadOutlined />} onClick={() => void downloadTemplate()}>下载导入模板</Button>

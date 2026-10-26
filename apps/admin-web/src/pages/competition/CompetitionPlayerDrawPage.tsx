@@ -38,6 +38,7 @@ import {
 } from '../../api/competitionPlayerDraw';
 import { usePaneActive } from '../../layouts/TabKeepAlive';
 import { useAuthStore } from '../../stores/authStore';
+import { competitionEventLabel } from '../../utils/competitionEventLabel';
 import type { CompetitionEvent, CompetitionId, CompetitionStage } from '../../types/competition';
 import type { PageResponse } from '../../types/api';
 import type {
@@ -493,7 +494,7 @@ function CompetitionPlayerDrawModulePage({ mode }: { mode: DrawMode }) {
           <Select
             showSearch optionFilterProp="label" value={selectedEventId}
             options={events.map((event: CompetitionEvent) => ({
-              value: idValue(event.id), label: `${event.code} · ${event.name}`,
+              value: idValue(event.id), label: competitionEventLabel(event),
             }))}
             onChange={(value) => {
               setSelectedEventId(value); setSelectedWorkTypeId(undefined);

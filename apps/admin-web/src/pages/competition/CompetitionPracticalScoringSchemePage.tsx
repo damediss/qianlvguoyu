@@ -26,6 +26,7 @@ import {
 } from 'antd';
 import { useEffect, useMemo, useState } from 'react';
 import type { Key } from 'react';
+import { competitionEventLabel } from '../../utils/competitionEventLabel';
 import {
   listCompetitionEventWorkTypeLevels,
   listCompetitionEventWorkTypes,
@@ -323,7 +324,7 @@ export function CompetitionPracticalScoringSchemePage() {
           placeholder="选择赛事"
           value={eventId || undefined}
           loading={eventsQuery.isLoading}
-          options={events.map((event: CompetitionEvent) => ({ value: String(event.id), label: `${event.name}（${event.code}）` }))}
+          options={events.map((event: CompetitionEvent) => ({ value: String(event.id), label: competitionEventLabel(event) }))}
           onChange={value => { setEventId(value); setWorkTypeId(''); setLevelId(''); setSelectedIds([]); setPrecheck(null); }}
         />
         <Select

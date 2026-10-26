@@ -52,6 +52,7 @@ import { getCompetitionQuestionBlueprintTree, pageCompetitionQuestionBlueprints 
 import type { CompetitionEvent, CompetitionEventWorkType, CompetitionEventWorkTypeLevel } from '../../types/competition';
 import { SimplePracticalQuestionCreateModal } from './SimplePracticalQuestionCreateModal';
 import { usePaneActive } from '../../layouts/TabKeepAlive';
+import { competitionEventLabel } from '../../utils/competitionEventLabel';
 import type {
   CompetitionQuestion,
   CompetitionQuestionContentType,
@@ -520,7 +521,7 @@ export function CompetitionQuestionBankPage({ contentType, simpleMode = false }:
         <Select
           showSearch optionFilterProp="label" style={{ width: 240 }} placeholder="选择赛事"
           value={eventId || undefined}
-          options={events.map((event: CompetitionEvent) => ({ value: String(event.id), label: `${event.name}（${event.code}）` }))}
+          options={events.map((event: CompetitionEvent) => ({ value: String(event.id), label: competitionEventLabel(event) }))}
           onChange={(value) => { setEventId(value); setWorkTypeId(''); setLevelId(''); setBindingStatus(undefined); setBlueprintNodeId(undefined); setSelectedQuestionIds([]); setPage(1); }}
         />
         <Select

@@ -10,7 +10,7 @@ import {
 } from '../../api/competition';
 import { useAuthStore } from '../../stores/authStore';
 import { useNavigationBlocker } from '../../hooks/useUnsavedChangesBlocker';
-import type { CompetitionEvent } from '../../types/competition';
+import { competitionEventLabel } from '../../utils/competitionEventLabel';
 import './CompetitionEventManagementPage.css';
 import { CompetitionNoticePage } from './CompetitionNoticePage';
 import { CompetitionFormalExamConsolePage } from './CompetitionFormalExamConsolePage';
@@ -33,43 +33,36 @@ const moduleMeta: Record<CompetitionEventModule, {
   title: string;
   description: string;
   permission: string[];
-  eventLabel: (event: CompetitionEvent) => string;
 }> = {
   stages: {
     title: '赛段编排',
     description: '选择赛事和工种后，按初赛、复赛、半决赛、决赛等晋级流程编排赛段、时间和晋级规则。',
     permission: ['competition:stage:view'],
-    eventLabel: (event) => `${event.code} · ${event.name}`,
   },
   notices: {
     title: '公告设置',
     description: '选择赛事后，创建、编辑并发布赛事公告。',
     permission: ['competition:notice:view'],
-    eventLabel: (event) => `${event.code} · ${event.name}`,
   },
   'theory-exam': {
     title: '理论考试',
     description: '选择赛事后，配置理论试卷、考场、排考和考试监控。',
     permission: ['competition:theory-paper:view', 'competition:theory-schedule:view', 'competition:theory-monitor:view', 'competition:theory-result:view'],
-    eventLabel: (event) => `${event.code} · ${event.name}`,
   },
   'formal-exam-console': {
     title: '理论考试正式比赛控制台',
     description: '选择赛事、工种和技能等级后，进入对应赛段的理论考试正式比赛运行控制台，初始化运行实例并执行开考、监考和成绩处理。',
     permission: ['competition:exam-session:view'],
-    eventLabel: (event) => `${event.name} · ${event.code}`,
   },
   'practical-exam-console': {
     title: '实操比赛控制台',
     description: '按赛事工种、技能等级和赛段初始化正式实操比赛，将三名裁判、选手和考评表冻结为评分任务。',
     permission: ['competition:practical-console:view'],
-    eventLabel: (event) => `${event.code} · ${event.name}`,
   },
   scores: {
     title: '成绩与排名',
     description: '选择赛事后，汇总成绩并生成赛事排名。',
     permission: ['competition:score:view', 'competition:ranking:view'],
-    eventLabel: (event) => `${event.code} · ${event.name}`,
   },
 };
 
@@ -187,7 +180,7 @@ export function CompetitionEventModulePage({
       style={{ width: 280, maxWidth: '100%' }}
       options={events.map((event) => ({
         value: String(event.id),
-        label: meta.eventLabel(event),
+        label: competitionEventLabel(event),
       }))}
       onChange={async (eventId) => {
         if (!(await confirmNavigation())) return;

@@ -43,6 +43,7 @@ import type {
   CompetitionPlayerUpdateRequest,
 } from '../../types/competition';
 import { useAuthStore } from '../../stores/authStore';
+import { competitionEventLabel } from '../../utils/competitionEventLabel';
 import './CompetitionEventManagementPage.css';
 
 interface CompetitionPlayerFormValues {
@@ -378,7 +379,7 @@ export function CompetitionPlayerManagementPage() {
             showSearch
             optionFilterProp="label"
             value={selectedEventId}
-            options={events.map((event: CompetitionEvent) => ({ value: idValue(event.id), label: `${event.code} · ${event.name}` }))}
+            options={events.map((event: CompetitionEvent) => ({ value: idValue(event.id), label: competitionEventLabel(event) }))}
             onChange={(value) => { setSelectedEventId(value); setQuery((current) => ({ ...current, page: 1 })); setSelectedOrgId(undefined); setSelectedWorkTypeId(undefined); setSelectedWorkTypes([]); }}
             placeholder="选择赛事任务"
             style={{ width: 280 }}
