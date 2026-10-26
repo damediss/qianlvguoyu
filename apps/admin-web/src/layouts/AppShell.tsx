@@ -38,14 +38,32 @@ type AppMenuItem = {
   children?: AppMenuItem[];
 };
 
-const hiddenMenuCodes = new Set(['competition_theory_exam']);
+// 按业务要求下线的独立菜单入口：只从侧栏/标签入口移除，页面与后端接口保留（URL 仍可直达）。
+const hiddenMenuCodes = new Set([
+  'competition_theory_exam',
+  'competition_theory_blueprint',
+  'competition_theory_question',
+  'competition_practical_blueprint',
+  'competition_practical_question',
+  'competition_theory_make_exam_plan',
+  'competition_practical_make_exam_plan',
+  'competition_practical_exam',
+]);
 
+// 默认折叠的目录（含子目录）：不按后端 expanded 配置自动展开，由用户点击展开。
+const defaultCollapsedMenuCodes = new Set(['competition_foundation']);
+
+/**
+ * 剔除下线菜单：命中 hiddenMenuCodes 的节点连同子节点整棵移除；
+ * 目录的子入口全部被移除时，目录本身也不再保留，避免侧栏出现空目录或禁用项。
+ */
 function filterHiddenMenuNodes(tree: MenuVO[]): MenuVO[] {
-  return tree
-    .filter((node) => !hiddenMenuCodes.has(node.code))
-    .map((node) => node.children?.length
-      ? { ...node, children: filterHiddenMenuNodes(node.children) }
-      : node);
+  return tree.flatMap((node) => {
+    if (hiddenMenuCodes.has(node.code)) return [];
+    if (!node.children?.length) return [node];
+    const children = filterHiddenMenuNodes(node.children);
+    return children.length ? [{ ...node, children }] : [];
+  });
 }
 
 function menuDisplayName(menu: MenuVO) {
@@ -359,6 +377,9 @@ export function AppShell({
   const prevEffectiveKeyRef = useRef<string | null>(null);
   const effectiveKeyRef = useRef(effectiveActiveKey);
   const userNavRef = useRef(false);
+  // 用户是否从侧栏点过菜单：进入系统时的标签恢复/深链也会改变 activeKey，
+  // 但不应据此展开侧栏目录（默认折叠），只有用户点过菜单后才恢复祖先自动展开。
+  const userMenuNavRef = useRef(false);
   const appliedDefaultExpandedRef = useRef(false);
   const contentRef = useRef<HTMLElement>(null);
 
@@ -541,11 +562,16 @@ export function AppShell({
 
   // 进入系统时不按当前选中页强制展开祖先（认定管理等保持折叠）；
   // 仅在用户切换菜单后，才自动展开选中页的祖先路径。
+  // 标签页恢复与深链在进入时同样会改变 activeKey —— 那是"进入系统"，不是用户切换菜单，
+  // 不能拿它展开侧栏，否则竞赛管理等目录会随上次停留的页面默认展开。
   useEffect(() => {
     if (!menuTree.length || !effectiveActiveKey) return;
     const prevKey = prevEffectiveKeyRef.current;
     prevEffectiveKeyRef.current = effectiveActiveKey;
     if (prevKey === null || prevKey === effectiveActiveKey) {
+      return;
+    }
+    if (!userMenuNavRef.current) {
       return;
     }
     const ancestors = findAncestorCodes(visibleMenuTree, effectiveActiveKey);
@@ -554,16 +580,24 @@ export function AppShell({
     }
   }, [effectiveActiveKey, visibleMenuTree]);
 
-  // 根据菜单配置的 expanded 字段初始化默认展开的目录（仅首次）
+  // 根据菜单配置的 expanded 字段初始化默认展开的目录（仅首次）。
+  // 竞赛管理整组默认折叠：其自身及子目录不沿用后端 expanded=1 自动展开，
+  // 避免恢复标签进入时竞赛菜单被整棵树撑开；后端菜单配置保持不变。
   useEffect(() => {
     if (!visibleMenuTree.length || appliedDefaultExpandedRef.current) return;
-    const collectExpanded = (nodes: MenuVO[]): string[] => {
-      return nodes.reduce((keys: string[], node) => {
-        if (node.menuType === 'directory' && node.expanded === 1) keys.push(node.code);
-        if (node.children?.length) keys.push(...collectExpanded(node.children));
-        return keys;
-      }, []);
-    };
+    const collectExpanded = (
+      nodes: MenuVO[],
+      insideDefaultCollapsed = false,
+    ): string[] => nodes.reduce((keys: string[], node) => {
+      const defaultCollapsed = insideDefaultCollapsed || defaultCollapsedMenuCodes.has(node.code);
+      if (!defaultCollapsed && node.menuType === 'directory' && node.expanded === 1) {
+        keys.push(node.code);
+      }
+      if (node.children?.length) {
+        keys.push(...collectExpanded(node.children, defaultCollapsed));
+      }
+      return keys;
+    }, []);
     const expandedKeys = collectExpanded(visibleMenuTree);
     appliedDefaultExpandedRef.current = true;
     if (expandedKeys.length > 0) {
@@ -680,6 +714,8 @@ export function AppShell({
   }, [openExternalMenu, pageMap, setSelectedKey, tabsEnabled]);
 
   const handleMenuNavigate = useCallback((node: MenuVO | null) => {
+    // 只有侧栏点击链路才允许展开选中页祖先（区别于标签恢复/深链）
+    userMenuNavRef.current = true;
     onMenuNavigate?.(node);
     navigateToNode(node);
   }, [navigateToNode, onMenuNavigate]);
