@@ -498,9 +498,13 @@ export function CompetitionPlayerManagementPage() {
                   ),
                 },
               ]}
-              extra={editing ? '请核对完整信息；不修改请保持原值' : undefined}
+              extra={editing ? '登录手机号请在选手端“我的-更换登录手机号”通过身份证核验后修改' : undefined}
             >
-              <Input maxLength={11} inputMode="numeric" />
+              <Input
+                maxLength={11}
+                inputMode="numeric"
+                disabled={Boolean(editing)}
+              />
             </Form.Item>
           </div>
         </Form>

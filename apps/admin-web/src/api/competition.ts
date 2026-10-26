@@ -60,6 +60,11 @@ import type {
   CompetitionCalculatedRankingPublishRequest,
   CompetitionFormalScoringTask,
   CompetitionSimulationImportBatch,
+  CompetitionSimulationProviderBinding,
+  CompetitionSimulationProviderBindingRequest,
+  PlantVrCompetitionSession,
+  CompetitionSimulationSyncBatch,
+  CompetitionSimulationSyncRow,
   CompetitionSubjectScoreImportBatch,
   CompetitionTheoryRequirement,
   CompetitionTheoryRequirementRequest,
@@ -1324,6 +1329,72 @@ export function getCompetitionSimulationImport(batchId: CompetitionId) {
 export function confirmCompetitionSimulationImport(batchId: CompetitionId, correctionReason?: string) {
   return unwrap<CompetitionSimulationImportBatch>(
     apiClient.post(`/competition/simulation-score-imports/${batchId}/confirm`, { correctionReason }),
+  );
+}
+
+export function getCompetitionSimulationProviderBinding(
+  eventId: CompetitionId,
+  params: {
+    stageId: CompetitionId;
+    eventWorkTypeId: CompetitionId;
+    eventWorkTypeLevelId?: CompetitionId;
+  },
+) {
+  return unwrap<CompetitionSimulationProviderBinding | null>(
+    apiClient.get(`/competition/events/${eventId}/simulation-provider-binding`, { params }),
+  );
+}
+
+export function listPlantVrCompetitionSessions(eventId: CompetitionId) {
+  return unwrap<PlantVrCompetitionSession[]>(
+    apiClient.get(`/competition/events/${eventId}/simulation-provider-sessions`),
+  );
+}
+
+export function saveCompetitionSimulationProviderBinding(
+  eventId: CompetitionId,
+  payload: CompetitionSimulationProviderBindingRequest,
+) {
+  return unwrap<CompetitionSimulationProviderBinding>(
+    apiClient.put(`/competition/events/${eventId}/simulation-provider-binding`, payload),
+  );
+}
+
+export function startCompetitionSimulationSync(bindingId: CompetitionId) {
+  return unwrap<CompetitionSimulationSyncBatch>(
+    apiClient.post('/competition/simulation-score-syncs', { bindingId }),
+  );
+}
+
+export function getCompetitionSimulationSync(batchId: CompetitionId) {
+  return unwrap<CompetitionSimulationSyncBatch>(
+    apiClient.get(`/competition/simulation-score-syncs/${batchId}`),
+  );
+}
+
+export function pageCompetitionSimulationSyncRows(
+  batchId: CompetitionId,
+  params: { page: number; pageSize: number },
+) {
+  return unwrap<PageResponse<CompetitionSimulationSyncRow>>(
+    apiClient.get(`/competition/simulation-score-syncs/${batchId}/rows`, { params }),
+  );
+}
+
+export function confirmCompetitionSimulationSync(
+  batchId: CompetitionId,
+  correctionReason?: string,
+) {
+  return unwrap<CompetitionSimulationSyncBatch>(
+    apiClient.post(`/competition/simulation-score-syncs/${batchId}/confirm`, {
+      correctionReason,
+    }),
+  );
+}
+
+export function getCompetitionSimulationScoreDetail(scoreSourceId: CompetitionId) {
+  return unwrap<CompetitionSimulationSyncRow>(
+    apiClient.get(`/competition/score-sources/${scoreSourceId}/simulation-detail`),
   );
 }
 

@@ -62,6 +62,7 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import {
   confirmCompetitionRankingSnapshot,
   confirmCompetitionSimulationImport,
+  confirmCompetitionSimulationSync,
   calculateCompetitionTotalScore,
   confirmCompetitionSubjectScoreImport,
   downloadCompetitionSimulationImportErrors,
@@ -75,21 +76,28 @@ import {
   getCompetitionFormalCandidateResult,
   getCompetitionScoringReadiness,
   getCompetitionSimulationImport,
+  getCompetitionSimulationProviderBinding,
+  getCompetitionSimulationScoreDetail,
+  getCompetitionSimulationSync,
   getCompetitionStageWorkspace,
   generateCompetitionRankingSnapshot,
   listCompetitionEventWorkTypeLevels,
   listCompetitionEventWorkTypes,
   listCompetitionScoreRules,
+  listPlantVrCompetitionSessions,
   pageCompetitionFormalScoringTasks,
   pageCompetitionPlayers,
   pageCompetitionRankingEntries,
   pageCompetitionRankingSnapshots,
   pageCompetitionScoreSources,
+  pageCompetitionSimulationSyncRows,
   pageCompetitionStages,
   pageCompetitionTotalScoreSnapshots,
   publishCalculatedCompetitionRanking,
   publishCompetitionRankingSnapshot,
   retryCompetitionFormalScoringTask,
+  saveCompetitionSimulationProviderBinding,
+  startCompetitionSimulationSync,
   uploadCompetitionSimulationScores,
   uploadCompetitionSubjectScores,
 } from '../../api/competition';
@@ -110,6 +118,10 @@ import type {
   CompetitionScoreRule,
   CompetitionScoreSource,
   CompetitionScoreSourceType,
+  CompetitionSimulationProviderBindingRequest,
+  PlantVrCompetitionSession,
+  CompetitionSimulationScoreDetail,
+  CompetitionSimulationSyncRow,
   CompetitionSubjectScoreImportBatch,
   CompetitionStageContent,
   CompetitionTotalScoreSnapshot,
@@ -273,6 +285,191 @@ function scoreNumber(value?: number | string | null) {
 function scoreValue(value?: number | string | null) {
   const parsed = scoreNumber(value);
   return parsed === undefined ? '-' : parsed.toFixed(2);
+}
+
+function simulationScoreValue(value?: number | string | null) {
+  const parsed = scoreNumber(value);
+  return parsed === undefined ? '—' : String(Number(parsed.toFixed(2)));
+}
+
+type SimulationDetailRecord = Record<string, unknown>;
+
+function simulationDetailRecord(value: unknown): SimulationDetailRecord | undefined {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+    ? (value as SimulationDetailRecord)
+    : undefined;
+}
+
+function simulationDetailRecords(value: unknown): SimulationDetailRecord[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map(simulationDetailRecord)
+    .filter((record): record is SimulationDetailRecord => Boolean(record));
+}
+
+function simulationDetailText(value: unknown): string {
+  if (typeof value === 'string' || typeof value === 'number') {
+    return String(value).trim();
+  }
+  if (Array.isArray(value)) {
+    return value.map(simulationDetailText).filter(Boolean).join('、');
+  }
+  const record = simulationDetailRecord(value);
+  if (!record) return '';
+  return firstDisplayText(
+    simulationDetailText(record.title),
+    simulationDetailText(record.reason),
+    simulationDetailText(record.label),
+    simulationDetailText(record.name),
+    simulationDetailText(record.assessment),
+    simulationDetailText(record.value),
+  );
+}
+
+function simulationDetailField(
+  record: SimulationDetailRecord,
+  keys: string[],
+): unknown {
+  for (const key of keys) {
+    const value = record[key];
+    if (value !== undefined && value !== null && value !== '') return value;
+  }
+  return undefined;
+}
+
+function simulationDetailValue(
+  record: SimulationDetailRecord,
+  keys: string[],
+  presenceFlag?: string,
+): number | string | undefined {
+  if (presenceFlag && record[presenceFlag] === false) return undefined;
+  const value = simulationDetailField(record, keys);
+  if (typeof value !== 'number' && typeof value !== 'string') return undefined;
+  return scoreNumber(value) === undefined ? undefined : value;
+}
+
+function sumSimulationDetailValues(
+  records: SimulationDetailRecord[],
+  keys: string[],
+  presenceFlag?: string,
+): number | undefined {
+  if (records.length === 0) return undefined;
+  const values = records.map((record) =>
+    simulationDetailValue(record, keys, presenceFlag),
+  );
+  if (values.some((value) => value === undefined)) return undefined;
+  return values.reduce<number>((sum, value) => sum + Number(value), 0);
+}
+
+function simulationDetailChildren(record: SimulationDetailRecord) {
+  return simulationDetailRecords(
+    simulationDetailField(record, ['items', 'lines', 'criteriaItems']),
+  );
+}
+
+function simulationDetailProject(
+  record: SimulationDetailRecord,
+  children: SimulationDetailRecord[],
+) {
+  const direct = simulationDetailText(
+    simulationDetailField(record, [
+      'assessmentItem',
+      'assessment',
+      'project',
+      'label',
+    ]),
+  );
+  if (direct) return direct;
+  return children
+    .map((child) =>
+      simulationDetailText(
+        simulationDetailField(child, [
+          'assessmentItem',
+          'assessment',
+          'project',
+          'label',
+        ]),
+      ),
+    )
+    .filter(Boolean)
+    .join('、');
+}
+
+function simulationDetailStandard(
+  record: SimulationDetailRecord,
+  children: SimulationDetailRecord[],
+) {
+  const direct = simulationDetailText(
+    simulationDetailField(record, [
+      'scoringStandard',
+      'standard',
+      'criteria',
+    ]),
+  );
+  if (direct) return direct;
+  return children
+    .map((item) => {
+      return simulationDetailText(
+        simulationDetailField(item, [
+          'scoringStandard',
+          'standard',
+          'criteria',
+        ]),
+      );
+    })
+    .filter(Boolean)
+    .join(' ');
+}
+
+function simulationDetailDeduction(value: unknown): string {
+  if (typeof value === 'string' || typeof value === 'number') {
+    return String(value).trim();
+  }
+  const record = simulationDetailRecord(value);
+  if (!record) return '';
+  const label = firstDisplayText(
+    simulationDetailText(record.title),
+    simulationDetailText(record.reason),
+    simulationDetailText(record.label),
+  );
+  const points = simulationDetailValue(record, ['points', 'score']);
+  if (!label) {
+    return points === undefined || Number(points) === 0
+      ? ''
+      : `扣${simulationScoreValue(Math.abs(Number(points)))}分`;
+  }
+  return points === undefined || Number(points) === 0
+    ? label
+    : `${label} -${simulationScoreValue(Math.abs(Number(points)))}分`;
+}
+
+function simulationDetailDeductions(
+  record: SimulationDetailRecord,
+  children: SimulationDetailRecord[],
+): string {
+  const direct = simulationDetailField(record, [
+    'deductionItems',
+    'deductions',
+    'deduction',
+  ]);
+  const directText = Array.isArray(direct)
+    ? direct.map(simulationDetailDeduction).filter(Boolean).join('；')
+    : simulationDetailDeduction(direct);
+  if (directText) return directText;
+  return children
+    .map((child) =>
+      simulationDetailDeductions(child, simulationDetailChildren(child)),
+    )
+    .filter(Boolean)
+    .join('；');
+}
+
+function firstDisplayText(...values: Array<string | null | undefined>) {
+  for (const value of values) {
+    const text = String(value ?? '').trim();
+    if (text) return text;
+  }
+  return '';
 }
 
 function compareScoreValues(
@@ -614,6 +811,47 @@ function ScoreCellView({
   );
 }
 
+function CompetitionScoreDetailOverlay({
+  modal,
+  open,
+  onClose,
+  children,
+}: {
+  modal: boolean;
+  open: boolean;
+  onClose: () => void;
+  children: ReactNode;
+}) {
+  if (modal) {
+    return (
+      <Modal
+        className="competition-score-detail-modal"
+        title="选手成绩详情"
+        open={open}
+        centered
+        width="min(1200px, calc(100vw - 48px))"
+        footer={null}
+        onCancel={onClose}
+        destroyOnClose
+      >
+        {children}
+      </Modal>
+    );
+  }
+
+  return (
+    <Drawer
+      title="选手成绩详情"
+      open={open}
+      width={560}
+      onClose={onClose}
+      destroyOnClose
+    >
+      {children}
+    </Drawer>
+  );
+}
+
 function answerSheetStatus(
   question: CompetitionFormalCandidateAnswerSheetQuestion,
 ): 'correct' | 'wrong' | 'unanswered' {
@@ -639,6 +877,61 @@ function questionTypeLabel(type: string) {
     fill: '填空题',
   };
   return labels[type] || type || '题目';
+}
+
+function simulationDetailItems(detail?: CompetitionSimulationScoreDetail | null) {
+  const phases = simulationDetailRecords(detail?.sheet?.phases);
+  const groups = simulationDetailRecords(detail?.groups);
+  const lines = simulationDetailRecords(detail?.lines);
+  const sources = phases.length > 0 ? phases : groups.length > 0 ? groups : lines;
+
+  return sources.map((source, index) => {
+    const children = simulationDetailChildren(source);
+    const key = simulationDetailText(
+      simulationDetailField(source, ['key', 'id']),
+    );
+    const sequence = simulationDetailText(
+      simulationDetailField(source, [
+        'sequence',
+        'title',
+        'name',
+        'phaseTitle',
+        'groupTitle',
+      ]),
+    );
+    const directMaxScore = simulationDetailValue(
+      source,
+      ['maxScore', 'allocatedScore'],
+      'hasMaxScore',
+    );
+    const directScore = simulationDetailValue(source, [
+      'score',
+      'earnedScore',
+      'value',
+    ], 'hasScore');
+
+    return {
+      key: key || `simulation-detail-${index + 1}`,
+      sequence,
+      assessmentItem: simulationDetailProject(source, children),
+      scoringStandard: simulationDetailStandard(source, children),
+      maxScore:
+        directMaxScore ??
+        sumSimulationDetailValues(
+          children,
+          ['maxScore', 'allocatedScore'],
+          'hasMaxScore',
+        ),
+      deductionItems: simulationDetailDeductions(source, children),
+      score:
+        directScore ??
+        sumSimulationDetailValues(
+          children,
+          ['score', 'earnedScore', 'value'],
+          'hasScore',
+        ),
+    };
+  });
 }
 
 export function CompetitionScoreRankingPage({
@@ -689,6 +982,11 @@ export function CompetitionScoreRankingPage({
     useState<string>();
   const [selectedSnapshotId, setSelectedSnapshotId] = useState<string>();
   const [simulationBatchId, setSimulationBatchId] = useState<string>();
+  const [plantVrBatchId, setPlantVrBatchId] = useState<string>();
+  const [plantVrBindingOpen, setPlantVrBindingOpen] = useState(false);
+  const [plantVrHostTenantId, setPlantVrHostTenantId] = useState('');
+  const [plantVrSessionId, setPlantVrSessionId] = useState('');
+  const [plantVrModuleFilter, setPlantVrModuleFilter] = useState('');
   const [subjectBatchIds, setSubjectBatchIds] = useState<
     Partial<Record<'practical' | 'simulation', string>>
   >({});
@@ -995,6 +1293,68 @@ export function CompetitionScoreRankingPage({
         ? 1000
         : false,
   });
+  const plantVrBindingQuery = useQuery({
+    queryKey: [
+      'competition-simulation-provider-binding',
+      eventId,
+      stageId,
+      eventWorkTypeId,
+      eventWorkTypeLevelId,
+    ],
+    queryFn: () =>
+      getCompetitionSimulationProviderBinding(eventId, {
+        stageId: stageId!,
+        eventWorkTypeId: eventWorkTypeId!,
+        eventWorkTypeLevelId,
+      }),
+    enabled: canViewScores && scopeReady,
+    retry: false,
+  });
+  const plantVrSessionsQuery = useQuery({
+    queryKey: ['plantvr-competition-sessions', eventId],
+    queryFn: () => listPlantVrCompetitionSessions(eventId),
+    enabled: plantVrBindingOpen && canImportSimulation,
+    retry: false,
+    staleTime: 30_000,
+  });
+  const plantVrBatchQuery = useQuery({
+    queryKey: ['competition-simulation-sync', plantVrBatchId],
+    queryFn: () => getCompetitionSimulationSync(plantVrBatchId!),
+    enabled: canViewScores && Boolean(plantVrBatchId),
+    refetchInterval: (query) =>
+      paneActive &&
+      ['syncing', 'confirming'].includes(query.state.data?.batchStatus || '')
+        ? 1000
+        : false,
+  });
+  const plantVrRowsQuery = useQuery({
+    queryKey: ['competition-simulation-sync-rows', plantVrBatchId],
+    queryFn: () =>
+      pageCompetitionSimulationSyncRows(plantVrBatchId!, {
+        page: 1,
+        pageSize: 500,
+      }),
+    enabled:
+      canViewScores &&
+      Boolean(plantVrBatchId) &&
+      !['syncing'].includes(plantVrBatchQuery.data?.batchStatus || 'syncing'),
+  });
+
+  useEffect(() => {
+    const binding = plantVrBindingQuery.data;
+    if (!binding) {
+      if (plantVrBindingQuery.isSuccess) {
+        setPlantVrHostTenantId('');
+        setPlantVrSessionId('');
+        setPlantVrModuleFilter('');
+        setPlantVrBatchId(undefined);
+      }
+      return;
+    }
+    setPlantVrHostTenantId(binding.externalHostTenantId);
+    setPlantVrSessionId(binding.externalSessionId);
+    setPlantVrModuleFilter(binding.moduleFilter || '');
+  }, [plantVrBindingQuery.data, plantVrBindingQuery.isSuccess]);
 
   const selectedRule = useMemo(
     () =>
@@ -1153,6 +1513,23 @@ export function CompetitionScoreRankingPage({
     );
   }, [keyword, orgFilter, overviewRows, statusFilter]);
   const selectedRow = overviewRows.find((row) => row.key === selectedMemberId);
+  const selectedSimulationSource = selectedRow?.subjectCells.simulation?.source;
+  const isSimulationDetailModal =
+    workbenchSubject === 'simulation' ||
+    selectedSimulationSource?.sourceSystem === 'plantvr';
+  const selectedSimulationDetailQuery = useQuery({
+    queryKey: [
+      'competition-simulation-score-detail',
+      selectedSimulationSource?.id,
+    ],
+    queryFn: () =>
+      getCompetitionSimulationScoreDetail(selectedSimulationSource!.id),
+    enabled:
+      canViewScores &&
+      selectedSimulationSource?.sourceSystem === 'plantvr' &&
+      Boolean(selectedSimulationSource?.id),
+    retry: false,
+  });
   const selectedTask = selectedRow
     ? latestFormalScoringTask(scoringTasks, selectedRow.key)
     : undefined;
@@ -1396,6 +1773,115 @@ export function CompetitionScoreRankingPage({
       simulationBatchQuery.refetch();
     },
   });
+  const plantVrBindingMutation = useMutation({
+    mutationFn: (payload: CompetitionSimulationProviderBindingRequest) =>
+      saveCompetitionSimulationProviderBinding(eventId, payload),
+    onSuccess: (binding) => {
+      queryClient.setQueryData(
+        [
+          'competition-simulation-provider-binding',
+          eventId,
+          stageId,
+          eventWorkTypeId,
+          eventWorkTypeLevelId,
+        ],
+        binding,
+      );
+      setPlantVrBindingOpen(false);
+      message.success('PlantVR赛事场次已绑定');
+    },
+  });
+  const plantVrSyncMutation = useMutation({
+    mutationFn: (bindingId: CompetitionId) =>
+      startCompetitionSimulationSync(bindingId),
+    onSuccess: (batch) => {
+      setPlantVrBatchId(idValue(batch.id));
+      message.success('正在从PlantVR查询并核验仿真成绩');
+    },
+  });
+  const plantVrConfirmMutation = useMutation({
+    mutationFn: (correctionReason?: string) =>
+      confirmCompetitionSimulationSync(plantVrBatchId!, correctionReason),
+    onSuccess: () => {
+      message.success('核验通过的PlantVR成绩正在写入统一成绩链路');
+      plantVrBatchQuery.refetch();
+    },
+  });
+
+  const plantVrTenantOptions = useMemo(() => {
+    const sessions = plantVrSessionsQuery.data || [];
+    const tenants = new Map<
+      string,
+      { value: string; label: string; sessionCount: number }
+    >();
+    sessions.forEach((session: PlantVrCompetitionSession) => {
+      const hostTenantId = session.hostTenantId?.trim();
+      if (!hostTenantId) return;
+      const current = tenants.get(hostTenantId);
+      tenants.set(hostTenantId, {
+        value: hostTenantId,
+        label: session.hostTenantName
+          ? `${session.hostTenantName}（${hostTenantId}）`
+          : `租户 ${hostTenantId}`,
+        sessionCount: (current?.sessionCount || 0) + 1,
+      });
+    });
+    return Array.from(tenants.values())
+      .sort((left, right) => left.label.localeCompare(right.label, 'zh-CN'))
+      .map((tenant) => ({
+        value: tenant.value,
+        label: `${tenant.label} · ${tenant.sessionCount} 场赛事`,
+      }));
+  }, [plantVrSessionsQuery.data]);
+
+  const plantVrSessionOptions = useMemo(() => {
+    const sessions = plantVrSessionsQuery.data || [];
+    return sessions
+      .filter((session: PlantVrCompetitionSession) =>
+        Boolean(plantVrHostTenantId) &&
+        session.hostTenantId === plantVrHostTenantId,
+      )
+      .map((session: PlantVrCompetitionSession) => ({
+        value: session.id,
+        label: session.name || '未命名赛事',
+        session,
+      }));
+  }, [plantVrHostTenantId, plantVrSessionsQuery.data]);
+
+  const selectedPlantVrSession = plantVrSessionOptions.find(
+    (item) => item.value === plantVrSessionId,
+  )?.session;
+
+  const requestPlantVrConfirm = () => {
+    const replacingPublished = rankingSnapshots.some(
+      (snapshot) => snapshot.status === 'published',
+    );
+    if (!replacingPublished) {
+      plantVrConfirmMutation.mutate(undefined);
+      return;
+    }
+    let reason = '';
+    Modal.confirm({
+      title: '填写已发布成绩更正原因',
+      content: (
+        <Input.TextArea
+          rows={3}
+          maxLength={500}
+          onChange={(event) => {
+            reason = event.target.value;
+          }}
+        />
+      ),
+      okText: '确认写入',
+      onOk: async () => {
+        if (!reason.trim()) {
+          message.error('已发布范围更正必须填写原因');
+          return Promise.reject(new Error('correction reason required'));
+        }
+        await plantVrConfirmMutation.mutateAsync(reason.trim());
+      },
+    });
+  };
 
   const requestSimulationConfirm = () => {
     const replacingPublished = rankingSnapshots.some(
@@ -1509,6 +1995,24 @@ export function CompetitionScoreRankingPage({
   };
   const autoConfirmedBatches = useRef(new Set<string>());
   const completedImportBatches = useRef(new Set<string>());
+  const completedPlantVrBatches = useRef(new Set<string>());
+  useEffect(() => {
+    const batch = plantVrBatchQuery.data;
+    if (!batch || batch.batchStatus !== 'completed') return;
+    const batchKey = idValue(batch.id);
+    if (completedPlantVrBatches.current.has(batchKey)) return;
+    completedPlantVrBatches.current.add(batchKey);
+    queryClient.invalidateQueries({
+      queryKey: ['competition-score-sources', eventId],
+    });
+    queryClient.invalidateQueries({
+      queryKey: ['competition-total-score-snapshots', eventId],
+    });
+    queryClient.invalidateQueries({
+      queryKey: ['competition-ranking-snapshots', eventId],
+    });
+    plantVrRowsQuery.refetch();
+  }, [eventId, plantVrBatchQuery.data, plantVrRowsQuery, queryClient]);
   useEffect(() => {
     const batches = [
       practicalImportQuery.data,
@@ -2457,6 +2961,143 @@ export function CompetitionScoreRankingPage({
               </Card>
             </Col>
           </Row>
+          {subject.type === 'simulation' && (
+            <Card
+              size="small"
+              className="competition-score-plantvr-card"
+              title={
+                <Space>
+                  <ExperimentOutlined />
+                  PlantVR 数据接口
+                  {plantVrBindingQuery.data && <Tag color="green">已绑定</Tag>}
+                </Space>
+              }
+              extra={
+                <Space wrap>
+                  <Button
+                    size="small"
+                    icon={<SettingOutlined />}
+                    disabled={!canImportSimulation || !scopeReady}
+                    onClick={() => setPlantVrBindingOpen(true)}
+                  >
+                    配置场次
+                  </Button>
+                  <Button
+                    size="small"
+                    type="primary"
+                    icon={<ReloadOutlined />}
+                    loading={plantVrSyncMutation.isPending}
+                    disabled={
+                      !canImportSimulation || !plantVrBindingQuery.data?.id
+                    }
+                    onClick={() =>
+                      plantVrBindingQuery.data &&
+                      plantVrSyncMutation.mutate(plantVrBindingQuery.data.id)
+                    }
+                  >
+                    查询并核验
+                  </Button>
+                </Space>
+              }
+            >
+              {plantVrBindingQuery.data ? (
+                <Space direction="vertical" size={12} style={{ width: '100%' }}>
+                  <Typography.Text type="secondary">
+                    PlantVR赛事场次 {plantVrBindingQuery.data.externalSessionId}
+                    {plantVrBindingQuery.data.moduleFilter
+                      ? ` · 模块 ${plantVrBindingQuery.data.moduleFilter}`
+                      : ''}
+                    {plantVrBindingQuery.data.lastSyncAt
+                      ? ` · 最近同步 ${dayjs(plantVrBindingQuery.data.lastSyncAt).format('YYYY-MM-DD HH:mm')}`
+                      : ''}
+                  </Typography.Text>
+                  {plantVrBatchQuery.data && (
+                    <Alert
+                      type={
+                        plantVrBatchQuery.data.batchStatus === 'failed'
+                          ? 'error'
+                          : plantVrBatchQuery.data.errorRows > 0
+                            ? 'warning'
+                            : 'success'
+                      }
+                      showIcon
+                      message={{
+                        syncing: '正在查询PlantVR成绩并匹配选手',
+                        ready: '全部成绩核验通过',
+                        ready_with_errors: '部分成绩需要处理',
+                        confirming: '正在写入统一成绩链路',
+                        completed: 'PlantVR成绩已写入',
+                        failed: 'PlantVR成绩同步失败',
+                      }[plantVrBatchQuery.data.batchStatus]}
+                      description={`查询 ${plantVrBatchQuery.data.totalRows} 条，核验通过 ${plantVrBatchQuery.data.validRows} 条，异常 ${plantVrBatchQuery.data.errorRows} 条，已写入 ${plantVrBatchQuery.data.confirmedRows} 条${plantVrBatchQuery.data.errorMessage ? `；${plantVrBatchQuery.data.errorMessage}` : ''}`}
+                      action={
+                        ['ready', 'ready_with_errors'].includes(
+                          plantVrBatchQuery.data.batchStatus,
+                        ) ? (
+                          <Button
+                            size="small"
+                            type="primary"
+                            loading={plantVrConfirmMutation.isPending}
+                            onClick={requestPlantVrConfirm}
+                          >
+                            确认写入
+                          </Button>
+                        ) : undefined
+                      }
+                    />
+                  )}
+                  {Boolean(plantVrRowsQuery.data?.items.length) && (
+                    <Table<CompetitionSimulationSyncRow>
+                      rowKey={(row) => idValue(row.id)}
+                      size="small"
+                      pagination={{ pageSize: 5, hideOnSinglePage: true }}
+                      dataSource={plantVrRowsQuery.data?.items || []}
+                      columns={[
+                        { title: '选手', dataIndex: 'playerName', width: 110 },
+                        {
+                          title: '仿真项目',
+                          dataIndex: 'moduleTitle',
+                          render: (value) => value || '未标注',
+                        },
+                        {
+                          title: '得分',
+                          dataIndex: 'rawScore',
+                          width: 90,
+                          render: (value) => <strong>{scoreValue(value)}</strong>,
+                        },
+                        {
+                          title: '核验',
+                          dataIndex: 'validationStatus',
+                          width: 110,
+                          render: (value: CompetitionSimulationSyncRow['validationStatus']) => (
+                            <Tag color={value === 'confirmed' || value === 'valid' ? 'green' : 'red'}>
+                              {{
+                                pending: '待核验',
+                                valid: '通过',
+                                invalid: '未通过',
+                                conflict: '需确认',
+                                confirmed: '已写入',
+                              }[value]}
+                            </Tag>
+                          ),
+                        },
+                        {
+                          title: '说明',
+                          dataIndex: 'errorMessage',
+                          render: (value) => value || '—',
+                        },
+                      ]}
+                    />
+                  )}
+                </Space>
+              ) : (
+                <Empty
+                  image={Empty.PRESENTED_IMAGE_SIMPLE}
+                  description="先绑定PlantVR中的赛事场次，再查询并核验选手仿真成绩"
+                />
+              )}
+            </Card>
+          )}
           {subject.type === 'simulation' && usesStageContentFormula && (
             <Alert
               className="competition-score-subject-alert"
@@ -3529,18 +4170,132 @@ export function CompetitionScoreRankingPage({
           },
         ]}
       />
-      <Drawer
-        title="选手成绩详情"
+      <Modal
+        title="配置 PlantVR 赛事场次"
+        open={plantVrBindingOpen}
+        okText="保存绑定"
+        confirmLoading={plantVrBindingMutation.isPending}
+        onCancel={() => setPlantVrBindingOpen(false)}
+        onOk={() => {
+          if (!stageId || !eventWorkTypeId) {
+            message.error('请先选择赛段和工种');
+            return;
+          }
+          if (!plantVrHostTenantId) {
+            message.error('请选择PlantVR租户');
+            return;
+          }
+          if (!plantVrSessionId) {
+            message.error('请选择该租户下的PlantVR赛事');
+            return;
+          }
+          plantVrBindingMutation.mutate({
+            stageId,
+            eventWorkTypeId,
+            eventWorkTypeLevelId,
+            externalHostTenantId: plantVrHostTenantId.trim(),
+            externalSessionId: plantVrSessionId.trim(),
+            moduleFilter: plantVrModuleFilter.trim() || undefined,
+          });
+        }}
+      >
+        <Space direction="vertical" size={16} style={{ width: '100%' }}>
+          <Alert
+            type="info"
+            showIcon
+            message="绑定的是两个平台的赛事场次接口，不是一次性文件导入"
+            description="查询时会从PlantVR获取该场次的成绩和评分明细，用身份证号匹配云平台选手，并用姓名做二次校验。"
+          />
+          <div>
+            <Typography.Text strong>1. PlantVR 租户</Typography.Text>
+            <Select
+              showSearch
+              allowClear
+              loading={plantVrSessionsQuery.isFetching}
+              value={plantVrHostTenantId || undefined}
+              placeholder="先选择PlantVR租户"
+              optionFilterProp="label"
+              options={plantVrTenantOptions}
+              style={{ width: '100%' }}
+              notFoundContent={
+                plantVrSessionsQuery.isError
+                  ? '租户查询失败，请点击重试'
+                  : plantVrSessionsQuery.isFetching
+                    ? '正在查询PlantVR租户…'
+                    : 'PlantVR暂无包含赛事的租户'
+              }
+              onChange={(value) => {
+                setPlantVrHostTenantId(value || '');
+                setPlantVrSessionId('');
+              }}
+            />
+            {plantVrSessionsQuery.isError && (
+              <Button
+                type="link"
+                size="small"
+                onClick={() => plantVrSessionsQuery.refetch()}
+              >
+                重试查询
+              </Button>
+            )}
+          </div>
+          <div>
+            <Typography.Text strong>2. PlantVR 赛事</Typography.Text>
+            <Select
+              showSearch
+              allowClear
+              disabled={!plantVrHostTenantId}
+              loading={plantVrSessionsQuery.isFetching}
+              value={plantVrSessionId || undefined}
+              placeholder={
+                plantVrHostTenantId
+                  ? '选择该租户下的PlantVR赛事'
+                  : '请先选择PlantVR租户'
+              }
+              optionFilterProp="label"
+              options={plantVrSessionOptions}
+              style={{ width: '100%' }}
+              notFoundContent={
+                plantVrHostTenantId
+                  ? '该租户暂无可选赛事'
+                  : '请先选择PlantVR租户'
+              }
+              onChange={(value) => setPlantVrSessionId(value || '')}
+            />
+            {selectedPlantVrSession && (
+              <Typography.Text type="secondary">
+                场次 ID：{plantVrSessionId} · 状态：
+                {selectedPlantVrSession.status || '—'}
+              </Typography.Text>
+            )}
+          </div>
+          <div>
+            <Typography.Text strong>仿真模块过滤（可选）</Typography.Text>
+            <Input
+              value={plantVrModuleFilter}
+              maxLength={128}
+              placeholder="留空表示接收该场次全部仿真模块"
+              onChange={(event) => setPlantVrModuleFilter(event.target.value)}
+            />
+          </div>
+        </Space>
+      </Modal>
+      <CompetitionScoreDetailOverlay
+        modal={isSimulationDetailModal}
         open={Boolean(selectedRow)}
-        width={560}
         onClose={() => {
           setSelectedMemberId(undefined);
           setAnswerSheetOpen(false);
         }}
-        destroyOnClose
       >
         {selectedRow && (
-          <div className="competition-score-detail">
+          <div
+            className={`competition-score-detail${
+              selectedSimulationSource?.sourceSystem === 'plantvr'
+                ? ' competition-score-detail--plantvr'
+                : ''
+            }`}
+          >
             <div className="competition-score-detail__hero">
               <Avatar size={48}>{selectedRow.candidateName.slice(0, 1)}</Avatar>
               <div>
@@ -3572,68 +4327,167 @@ export function CompetitionScoreRankingPage({
                   ? (selectedRow.total[sourceMeta[subject.type].scoreField] as
                       number | string | null | undefined)
                   : source?.rawScore;
+                const plantVrSimulationDetail =
+                  subject.type === 'simulation' &&
+                  source?.sourceSystem === 'plantvr';
                 return (
                   <Card
                     key={subject.type}
                     size="small"
-                    className="competition-score-detail__subject"
+                    className={
+                      plantVrSimulationDetail
+                        ? 'competition-score-detail__subject competition-score-detail__subject--simulation-detail'
+                        : 'competition-score-detail__subject'
+                    }
                   >
-                    <div className="competition-score-detail__subject-row">
-                      <span style={{ color: subject.color }}>
-                        {subject.icon} {subject.label}
-                      </span>
-                      <strong>{scoreValue(finalValue ?? cell?.value)}</strong>
-                    </div>
-                    <div className="competition-score-detail__subject-actions">
-                      {statusTag(cell?.status || 'not_started', true)}
-                      {subject.type === 'theory' && selectedTask && (
-                        <>
-                          <Button
-                            size="small"
-                            icon={<EyeOutlined />}
-                            loading={formalResultQuery.isFetching}
-                            disabled={
-                              formalResultQuery.isLoading ||
-                              !formalResultQuery.data?.questionScores?.length
-                            }
-                            onClick={() => {
-                              setSelectedAnswerQuestionId(undefined);
-                              setAnswerSheetOpen(true);
-                            }}
-                          >
-                            查看答题卡
-                          </Button>
-                          <Button
-                            size="small"
-                            icon={<DownloadOutlined />}
-                            disabled={
-                              formalResultQuery.isLoading ||
-                              !formalResultQuery.data?.questionScores?.length
-                            }
-                            loading={
-                              exportingAnswerSheetId ===
-                              idValue(selectedTask.candidateExamId)
-                            }
-                            onClick={() =>
-                              void exportOneAnswerSheet(
-                                selectedTask.candidateExamId,
-                                selectedRow.candidateName,
-                                selectedRow.candidateNo,
-                              )
-                            }
-                          >
-                            导出答题卡
-                          </Button>
-                        </>
-                      )}
-                    </div>
+                    {!plantVrSimulationDetail && (
+                      <>
+                        <div className="competition-score-detail__subject-row">
+                          <span style={{ color: subject.color }}>
+                            {subject.icon} {subject.label}
+                          </span>
+                          <strong>{scoreValue(finalValue ?? cell?.value)}</strong>
+                        </div>
+                        <div className="competition-score-detail__subject-actions">
+                          {statusTag(cell?.status || 'not_started', true)}
+                          {subject.type === 'theory' && selectedTask && (
+                            <>
+                              <Button
+                                size="small"
+                                icon={<EyeOutlined />}
+                                loading={formalResultQuery.isFetching}
+                                disabled={
+                                  formalResultQuery.isLoading ||
+                                  !formalResultQuery.data?.questionScores?.length
+                                }
+                                onClick={() => {
+                                  setSelectedAnswerQuestionId(undefined);
+                                  setAnswerSheetOpen(true);
+                                }}
+                              >
+                                查看答题卡
+                              </Button>
+                              <Button
+                                size="small"
+                                icon={<DownloadOutlined />}
+                                disabled={
+                                  formalResultQuery.isLoading ||
+                                  !formalResultQuery.data?.questionScores?.length
+                                }
+                                loading={
+                                  exportingAnswerSheetId ===
+                                  idValue(selectedTask.candidateExamId)
+                                }
+                                onClick={() =>
+                                  void exportOneAnswerSheet(
+                                    selectedTask.candidateExamId,
+                                    selectedRow.candidateName,
+                                    selectedRow.candidateNo,
+                                  )
+                                }
+                              >
+                                导出答题卡
+                              </Button>
+                            </>
+                          )}
+                        </div>
+                      </>
+                    )}
+                    {plantVrSimulationDetail && (
+                      <div className="competition-simulation-detail">
+                        {selectedSimulationDetailQuery.isFetching ? (
+                          <Spin size="small" />
+                        ) : selectedSimulationDetailQuery.data ? (
+                          <>
+                            <div className="competition-simulation-detail__meta">
+                              <Typography.Text strong>
+                                考核模块
+                              </Typography.Text>
+                              <span className="competition-simulation-detail__module">
+                                {firstDisplayText(
+                                  selectedSimulationDetailQuery.data.detail?.sheet?.moduleTitle,
+                                  selectedSimulationDetailQuery.data.moduleTitle,
+                                  selectedSimulationDetailQuery.data.appDisplayName,
+                                )}
+                              </span>
+                            </div>
+                            <Table
+                              className="competition-simulation-detail__table"
+                              size="small"
+                              bordered
+                              pagination={false}
+                              rowKey="key"
+                              dataSource={simulationDetailItems(
+                                selectedSimulationDetailQuery.data.detail,
+                              )}
+                              locale={{ emptyText: '暂无评分明细' }}
+                              scroll={{ x: 910 }}
+                              columns={[
+                                {
+                                  title: '序号',
+                                  dataIndex: 'sequence',
+                                  width: 100,
+                                  render: (value) => value || '',
+                                },
+                                {
+                                  title: '考核项目',
+                                  dataIndex: 'assessmentItem',
+                                  width: 230,
+                                  render: (value) => value || '',
+                                },
+                                {
+                                  title: '得分标准',
+                                  dataIndex: 'scoringStandard',
+                                  width: 280,
+                                  render: (value) => value || '',
+                                },
+                                {
+                                  title: '配分',
+                                  dataIndex: 'maxScore',
+                                  width: 72,
+                                  align: 'center',
+                                  render: (value) =>
+                                    value == null || value === ''
+                                      ? ''
+                                      : simulationScoreValue(value),
+                                },
+                                {
+                                  title: '扣分项',
+                                  dataIndex: 'deductionItems',
+                                  width: 150,
+                                  render: (value) => value || '',
+                                },
+                                {
+                                  title: '得分',
+                                  dataIndex: 'score',
+                                  width: 70,
+                                  align: 'center',
+                                  render: (value) =>
+                                    value == null || value === '' ? '' : (
+                                      <Typography.Text strong className="competition-simulation-detail__earned">
+                                        {simulationScoreValue(value)}
+                                      </Typography.Text>
+                                    ),
+                                },
+                              ]}
+                            />
+                          </>
+                        ) : (
+                          <Alert
+                            type="warning"
+                            showIcon
+                            message="PlantVR评分明细暂不可用"
+                          />
+                        )}
+                      </div>
+                    )}
                   </Card>
                 );
               })}
             </div>
           </div>
         )}
-      </Drawer>
+      </CompetitionScoreDetailOverlay>
       <Modal
         className="competition-answer-sheet-modal"
         title={

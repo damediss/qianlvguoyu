@@ -1263,6 +1263,140 @@ export interface CompetitionSimulationImportBatch {
   confirmedBy?: CompetitionId | null;
 }
 
+export interface CompetitionSimulationProviderBinding {
+  id: CompetitionId;
+  eventId: CompetitionId;
+  stageId: CompetitionId;
+  eventWorkTypeId: CompetitionId;
+  eventWorkTypeLevelId?: CompetitionId | null;
+  providerCode: 'plantvr';
+  externalHostTenantId: string;
+  externalSessionId: string;
+  moduleFilter?: string | null;
+  status: 'active' | 'disabled';
+  lastSyncAt?: string | null;
+}
+
+export interface CompetitionSimulationProviderBindingRequest {
+  stageId: CompetitionId;
+  eventWorkTypeId: CompetitionId;
+  eventWorkTypeLevelId?: CompetitionId | null;
+  externalHostTenantId: string;
+  externalSessionId: string;
+  moduleFilter?: string;
+}
+
+export interface PlantVrCompetitionSession {
+  id: string;
+  name: string;
+  hostTenantId: string;
+  hostTenantName?: string | null;
+  status: string;
+  startsAt?: string | null;
+  endsAt?: string | null;
+}
+
+export interface CompetitionSimulationSyncBatch {
+  id: CompetitionId;
+  bindingId: CompetitionId;
+  eventId: CompetitionId;
+  stageId: CompetitionId;
+  eventWorkTypeId: CompetitionId;
+  eventWorkTypeLevelId?: CompetitionId | null;
+  batchStatus:
+    | 'syncing'
+    | 'ready'
+    | 'ready_with_errors'
+    | 'confirming'
+    | 'completed'
+    | 'failed';
+  totalRows: number;
+  validRows: number;
+  errorRows: number;
+  confirmedRows: number;
+  correctionReason?: string | null;
+  errorMessage?: string | null;
+  confirmedAt?: string | null;
+  confirmedBy?: CompetitionId | null;
+}
+
+export interface CompetitionSimulationScoreDetailDeduction {
+  title?: string | null;
+  reason?: string | null;
+  score?: CompetitionDecimal | null;
+  points?: CompetitionDecimal | null;
+}
+
+export interface CompetitionSimulationScoreDetailItem {
+  key?: string | null;
+  sequence?: string | number | null;
+  title?: string | null;
+  name?: string | null;
+  phaseTitle?: string | null;
+  groupTitle?: string | null;
+  label?: string | null;
+  assessment?: string | string[] | null;
+  assessmentItem?: string | string[] | null;
+  project?: string | string[] | null;
+  criteria?: string | string[] | null;
+  standard?: string | string[] | null;
+  scoringStandard?: string | string[] | null;
+  score?: CompetitionDecimal | null;
+  earnedScore?: CompetitionDecimal | null;
+  value?: CompetitionDecimal | null;
+  maxScore?: CompetitionDecimal | null;
+  allocatedScore?: CompetitionDecimal | null;
+  hasMaxScore?: boolean;
+  hasScore?: boolean;
+  deductions?:
+    | string
+    | Array<string | CompetitionSimulationScoreDetailDeduction>
+    | null;
+  deductionItems?:
+    | string
+    | Array<string | CompetitionSimulationScoreDetailDeduction>
+    | null;
+  deduction?:
+    | string
+    | CompetitionSimulationScoreDetailDeduction
+    | null;
+  lines?: CompetitionSimulationScoreDetailItem[] | null;
+  items?: CompetitionSimulationScoreDetailItem[] | null;
+  criteriaItems?: CompetitionSimulationScoreDetailItem[] | null;
+  [key: string]: unknown;
+}
+
+export interface CompetitionSimulationScoreDetail {
+  totalScore?: CompetitionDecimal;
+  lines?: CompetitionSimulationScoreDetailItem[];
+  groups?: Array<CompetitionSimulationScoreDetailItem & { title?: string | null }>;
+  sheet?: {
+    moduleTitle?: string | null;
+    phases?: CompetitionSimulationScoreDetailItem[] | null;
+  } | null;
+  [key: string]: unknown;
+}
+
+export interface CompetitionSimulationSyncRow {
+  id: CompetitionId;
+  batchId: CompetitionId;
+  rowNo: number;
+  externalParticipantId?: string | null;
+  externalSessionId: string;
+  playerName?: string | null;
+  idCardMasked?: string | null;
+  contestantMemberId?: CompetitionId | null;
+  rawScore?: CompetitionDecimal | null;
+  moduleTitle?: string | null;
+  appDisplayName?: string | null;
+  durationSeconds?: number | null;
+  achievedAt?: string | null;
+  validationStatus: 'pending' | 'valid' | 'invalid' | 'conflict' | 'confirmed';
+  errorMessage?: string | null;
+  scoreSourceId?: CompetitionId | null;
+  detail?: CompetitionSimulationScoreDetail | null;
+}
+
 export interface CompetitionTheoryRequirement {
   id: CompetitionId;
   eventId: CompetitionId;

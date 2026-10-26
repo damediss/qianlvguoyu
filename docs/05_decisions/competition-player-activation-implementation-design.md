@@ -146,7 +146,7 @@ PII 仅存在于导入/单录入请求 DTO 和身份实体；管理端 VO 继续
 | POST /player-auth/send-code | 公开 | 仅 active player；不得枚举手机号 |
 | POST /player-auth/login | 公开 | 码验证后创建 Player 会话 |
 | GET /player-auth/me | 登录 | 返回脱敏手机号、身份状态、可访问赛事摘要 |
-| POST /player-auth/change-mobile/* | 登录 | 旧号验证凭证 + 新号验证；更新后撤销其他会话 |
+| POST /player-auth/change-mobile/verify | 登录 | 输入身份证号核验当前选手身份；更新全局登录手机号并撤销旧会话、签发新会话 |
 | POST /players/{playerId}/disable | 后台权限 | 停用、审计、事务后撤销全部会话 |
 
 公开接口统一响应：如信息匹配，验证码将发送至企业登记手机号。错误、过期和不存在均不得透露身份是否存在。

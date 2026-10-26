@@ -9,12 +9,14 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Objects;
 import java.util.regex.Pattern;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 @Service
+@Slf4j
 public class CompetitionPlayerIdentityDomainService {
 
   private static final Pattern MOBILE_PATTERN = Pattern.compile("^1[3-9]\\d{9}$");
@@ -35,7 +37,7 @@ public class CompetitionPlayerIdentityDomainService {
     this.passwordEncoder = passwordEncoder;
   }
 
-  @Transactional
+  @Transactional(noRollbackFor = CompetitionPlayerIdentityConflictException.class)
   public CompetitionPlayerIdentityEntity resolveOrCreate(
       Long tenantId, String idCardNo, String mobile) {
     if (tenantId == null) {
@@ -50,16 +52,8 @@ public class CompetitionPlayerIdentityDomainService {
     if (matches == null) {
       throw new BusinessException(ErrorCode.INTERNAL_ERROR, "选手身份查询失败");
     }
-    if (matches.size() == 1) {
-      CompetitionPlayerIdentityEntity match = matches.getFirst();
-      if (Objects.equals(match.getIdCardLookupHash(), idCardHash)
-          && Objects.equals(match.getMobileLookupHash(), mobileHash)) {
-        return match;
-      }
-      throw identityConflict();
-    }
-    if (matches.size() > 1) {
-      throw identityConflict();
+    if (!matches.isEmpty()) {
+      return resolveMatchedIdentity(matches, idCardHash, mobileHash);
     }
 
     CompetitionPlayerIdentityEntity player = new CompetitionPlayerIdentityEntity();
@@ -82,12 +76,8 @@ public class CompetitionPlayerIdentityDomainService {
     } catch (DuplicateKeyException ex) {
       List<CompetitionPlayerIdentityEntity> concurrentMatches = playerMapper.selectForUpdateByIdentityHashes(
           idCardHash, mobileHash);
-      if (concurrentMatches != null && concurrentMatches.size() == 1) {
-        CompetitionPlayerIdentityEntity match = concurrentMatches.getFirst();
-        if (Objects.equals(match.getIdCardLookupHash(), idCardHash)
-            && Objects.equals(match.getMobileLookupHash(), mobileHash)) {
-          return match;
-        }
+      if (concurrentMatches != null && !concurrentMatches.isEmpty()) {
+        return resolveMatchedIdentity(concurrentMatches, idCardHash, mobileHash);
       }
       throw identityConflict();
     }
@@ -110,11 +100,22 @@ public class CompetitionPlayerIdentityDomainService {
   }
 
   @Transactional
-  public CompetitionPlayerIdentityEntity changeMobile(Long playerId, String newMobile) {
-    String normalizedMobile = normalizeMobile(newMobile);
+  public CompetitionPlayerIdentityEntity changeMobile(
+      Long tenantId, Long playerId, String idCardNo, String newMobile) {
     CompetitionPlayerIdentityEntity player = playerMapper.selectForUpdateById(playerId);
-    if (player == null) {
+    if (player == null || !Objects.equals(tenantId, player.getTenantId())) {
       throw new BusinessException(ErrorCode.NOT_FOUND, "选手身份不存在");
+    }
+    String normalizedIdCard = normalizeIdCard(idCardNo);
+    String submittedIdCardHash = dataHash.lookupHash(normalizedIdCard);
+    if (!Objects.equals(player.getIdCardLookupHash(), submittedIdCardHash)) {
+      log.warn("Competition player mobile change identity verification failed, tenantId={}, playerId={}",
+          tenantId, playerId);
+      throw new BusinessException(ErrorCode.UNAUTHORIZED, "身份证号与当前选手身份不匹配");
+    }
+    String normalizedMobile = normalizeMobile(newMobile);
+    if (Objects.equals(player.getMobile(), normalizedMobile)) {
+      throw new BusinessException(ErrorCode.CONFLICT, "新手机号与当前手机号一致");
     }
     String newMobileHash = assertMobileAvailable(player.getId(), normalizedMobile);
     player.setMobile(normalizedMobile);
@@ -200,7 +201,29 @@ public class CompetitionPlayerIdentityDomainService {
     return ID_CARD_CHECK_CODES[sum % 11] == idCardNo.charAt(17);
   }
 
-  private BusinessException identityConflict() {
-    return new BusinessException(ErrorCode.CONFLICT, "身份证与手机号已分别绑定其他选手");
+  private CompetitionPlayerIdentityEntity resolveMatchedIdentity(
+      List<CompetitionPlayerIdentityEntity> matches,
+      String idCardHash,
+      String mobileHash) {
+    if (matches.size() == 1) {
+      CompetitionPlayerIdentityEntity match = matches.getFirst();
+      boolean idCardMatches = Objects.equals(match.getIdCardLookupHash(), idCardHash);
+      boolean mobileMatches = Objects.equals(match.getMobileLookupHash(), mobileHash);
+      if (idCardMatches && mobileMatches) {
+        return match;
+      }
+      if (idCardMatches) {
+        throw new CompetitionPlayerIdentityConflictException(
+            "该身份证对应的登记手机号与导入手机号不一致");
+      }
+      if (mobileMatches) {
+        throw new CompetitionPlayerIdentityConflictException("该手机号已绑定其他身份证");
+      }
+    }
+    throw identityConflict();
+  }
+
+  private CompetitionPlayerIdentityConflictException identityConflict() {
+    return new CompetitionPlayerIdentityConflictException("身份证与手机号已分别绑定其他选手");
   }
 }

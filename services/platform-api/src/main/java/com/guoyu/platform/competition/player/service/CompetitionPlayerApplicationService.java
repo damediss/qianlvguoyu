@@ -22,7 +22,6 @@ import com.guoyu.platform.competition.player.domain.CompetitionPlayerDataHash;
 import com.guoyu.platform.competition.player.dto.CompetitionPlayerActivationSendReq;
 import com.guoyu.platform.competition.player.dto.CompetitionPlayerActivationVerifyReq;
 import com.guoyu.platform.competition.player.dto.CompetitionPlayerLoginReq;
-import com.guoyu.platform.competition.player.dto.CompetitionPlayerChangeMobileSendNewCodeReq;
 import com.guoyu.platform.competition.player.dto.CompetitionPlayerChangeMobileVerifyReq;
 import com.guoyu.platform.competition.player.security.CompetitionPlayerPrincipal;
 import com.guoyu.platform.competition.player.security.CompetitionPlayerSecurityContext;
@@ -212,39 +211,13 @@ public class CompetitionPlayerApplicationService {
   }
 
   @Transactional
-  public CompetitionPlayerSmsChallengeVO sendOldMobileChangeCode(HttpServletRequest servletRequest) {
-    CompetitionPlayerIdentityEntity player = findPlayer(currentPlayer().getPlayerId());
-    assertPlayerActive(player);
-    CompetitionPlayerSmsChallengeResult challenge = smsChallengeService.requestChallenge(
-        currentTenantId(), player.getId(), player.getMobile(),
-        CompetitionPlayerSmsPurpose.CHANGE_MOBILE_OLD,
-        requestIpHash(servletRequest), requestDeviceHash(servletRequest));
-    return new CompetitionPlayerSmsChallengeVO(challenge.challengeId(), challenge.expiresAt());
-  }
-
-  @Transactional
-  public CompetitionPlayerSmsChallengeVO sendNewMobileChangeCode(
-      CompetitionPlayerChangeMobileSendNewCodeReq request, HttpServletRequest servletRequest) {
-    CompetitionPlayerIdentityEntity player = findPlayer(currentPlayer().getPlayerId());
-    assertPlayerActive(player);
-    smsChallengeService.verifyChallenge(player.getId(), request.oldChallengeId(),
-        CompetitionPlayerSmsPurpose.CHANGE_MOBILE_OLD, request.oldCode());
-    String newMobile = playerIdentityService.normalizeMobile(request.newMobile());
-    playerIdentityService.assertMobileAvailable(player.getId(), newMobile);
-    CompetitionPlayerSmsChallengeResult challenge = smsChallengeService.requestChallenge(
-        currentTenantId(), player.getId(), newMobile, CompetitionPlayerSmsPurpose.CHANGE_MOBILE_NEW,
-        requestIpHash(servletRequest), requestDeviceHash(servletRequest));
-    return new CompetitionPlayerSmsChallengeVO(challenge.challengeId(), challenge.expiresAt());
-  }
-
-  @Transactional
   public CompetitionPlayerSessionVO verifyMobileChange(CompetitionPlayerChangeMobileVerifyReq request) {
-    CompetitionPlayerIdentityEntity player = findPlayer(currentPlayer().getPlayerId());
+    CompetitionPlayerPrincipal principal = currentPlayer();
+    CompetitionPlayerIdentityEntity player = findPlayer(principal.getPlayerId());
+    assertCurrentTenant(player.getTenantId());
     assertPlayerActive(player);
-    String newMobile = playerIdentityService.normalizeMobile(request.newMobile());
-    smsChallengeService.verifyChallenge(player.getId(), request.newChallengeId(),
-        CompetitionPlayerSmsPurpose.CHANGE_MOBILE_NEW, request.newCode());
-    CompetitionPlayerIdentityEntity changed = playerIdentityService.changeMobile(player.getId(), newMobile);
+    CompetitionPlayerIdentityEntity changed = playerIdentityService.changeMobile(
+        player.getTenantId(), player.getId(), request.idCardNo(), request.newMobile());
     competitionPlayerStpLogic.logout(changed.getId());
     return issueSession(changed);
   }

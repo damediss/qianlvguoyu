@@ -14,6 +14,7 @@ import com.guoyu.platform.competition.entity.CompetitionRosterItemEntity;
 import com.guoyu.platform.competition.entity.CompetitionPlayerIdentityEntity;
 import com.guoyu.platform.competition.mapper.CompetitionRosterImportMapper;
 import com.guoyu.platform.competition.mapper.CompetitionRosterItemMapper;
+import com.guoyu.platform.competition.player.domain.CompetitionPlayerIdentityConflictException;
 import com.guoyu.platform.competition.player.domain.CompetitionPlayerIdentityDomainService;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
@@ -318,6 +319,45 @@ class CompetitionRosterImportServiceTest {
     verify(itemMapper, Mockito.times(2)).insert(itemCaptor.capture());
     assertThat(itemCaptor.getAllValues()).allSatisfy(item ->
         assertThat(item.getErrorMessage()).contains("选手在当前批次中重复报名"));
+  }
+
+  @Test
+  void directImportStoresChangedMobileConflictAsRowValidationError() throws Exception {
+    when(playerIdentityService.normalizeIdCard(any())).thenAnswer(invocation -> invocation.getArgument(0));
+    when(playerIdentityService.normalizeMobile(any())).thenAnswer(invocation -> invocation.getArgument(0));
+    when(playerIdentityService.resolveOrCreate(any(), any(), any()))
+        .thenThrow(new CompetitionPlayerIdentityConflictException(
+            "该身份证对应的登记手机号与导入手机号不一致"));
+    when(importMapper.insert(any(CompetitionRosterImportEntity.class))).thenAnswer(invocation -> {
+      CompetitionRosterImportEntity batch = invocation.getArgument(0);
+      batch.setId(7013L);
+      return 1;
+    });
+
+    CompetitionRosterImportService.DirectImportReferenceData references =
+        new CompetitionRosterImportService.DirectImportReferenceData(
+            List.of(new CompetitionRosterImportService.OrganizationReference(
+                3001L, "示例企业", true)),
+            List.of(new CompetitionRosterImportService.WorkTypeReference(
+                5001L, "电工", "electrician",
+                List.of(new CompetitionRosterImportService.LevelReference(
+                    6001L, "1", "高级", "高级")))));
+
+    CompetitionRosterImportEntity batch = service.precheckDirect(
+        1L, 1001L, 8013L, null,
+        workbook(
+            new String[]{"企业名称", "姓名", "身份证号", "手机号", "报名工种", "报名等级"},
+            new String[][]{{"示例企业", "Alice", "11010519491231002X",
+                "13900139000", "电工", "高级"}}),
+        references);
+
+    assertThat(batch.getStatus()).isEqualTo("validation_failed");
+    assertThat(batch.getInvalidCount()).isEqualTo(1);
+    ArgumentCaptor<CompetitionRosterItemEntity> itemCaptor =
+        ArgumentCaptor.forClass(CompetitionRosterItemEntity.class);
+    verify(itemMapper).insert(itemCaptor.capture());
+    assertThat(itemCaptor.getValue().getErrorMessage())
+        .isEqualTo("该身份证对应的登记手机号与导入手机号不一致");
   }
 
   private byte[] workbook(String[][] rows) throws Exception {

@@ -13,6 +13,7 @@ import com.guoyu.platform.system.entity.AuditLogEntity;
 import com.guoyu.platform.system.mapper.AuditLogMapper;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.Part;
+import java.lang.reflect.Method;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -21,6 +22,7 @@ import java.util.Map;
 import org.aspectj.lang.JoinPoint;
 import org.aspectj.lang.annotation.AfterReturning;
 import org.aspectj.lang.annotation.Aspect;
+import org.aspectj.lang.reflect.MethodSignature;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Component;
@@ -53,17 +55,19 @@ public class AuditLogAspect {
     }
 
     HttpServletRequest request = currentRequest();
+    AuditLogOptions options = auditLogOptions(joinPoint);
     AuditLogEntity entity = new AuditLogEntity();
     entity.setTenantId(actor.tenantId());
     entity.setUserId(actor.userId());
     entity.setModule(auditLog.module());
     entity.setAction(auditLog.action());
     entity.setTargetType(auditLog.targetType());
-    entity.setTargetId(resolveTargetId(joinPoint));
+    entity.setTargetId(options != null && options.targetIdFromActor()
+        ? actor.userId() : resolveTargetId(joinPoint));
     entity.setRequestId(TraceIdHolder.getTraceId());
     entity.setIp(request == null ? null : resolveClientIp(request));
     entity.setUserAgent(request == null ? null : request.getHeader("User-Agent"));
-    entity.setDetailJson(toDetailJson(joinPoint, result, auditLog));
+    entity.setDetailJson(toDetailJson(joinPoint, result, auditLog, options));
     entity.setCreatedAt(LocalDateTime.now());
     entity.setDeleted(0);
     try {
@@ -91,6 +95,14 @@ public class AuditLogAspect {
       }
     }
     return null;
+  }
+
+  private AuditLogOptions auditLogOptions(JoinPoint joinPoint) {
+    if (!(joinPoint.getSignature() instanceof MethodSignature signature)) {
+      return null;
+    }
+    Method method = signature.getMethod();
+    return method.getAnnotation(AuditLogOptions.class);
   }
 
   private record AuditActor(Long tenantId, Long userId) {
@@ -147,7 +159,8 @@ public class AuditLogAspect {
     return request.getRemoteAddr();
   }
 
-  private String toDetailJson(JoinPoint joinPoint, Object result, AuditLog auditLog) {
+  private String toDetailJson(
+      JoinPoint joinPoint, Object result, AuditLog auditLog, AuditLogOptions options) {
     Map<String, Object> detail = new LinkedHashMap<>();
     detail.put("method", joinPoint.getSignature().toShortString());
     BotActorContext actorContext = BotActorContextHolder.get();
@@ -156,8 +169,10 @@ public class AuditLogAspect {
     }
     if (auditLog.includeResult()) {
       detail.put("result", sanitizeArg(result));
-    } else if (auditLog.includeArgs()) {
+    } else if (auditLog.includeArgs() && (options == null || options.includeArguments())) {
       detail.put("args", sanitizeArgs(joinPoint.getArgs()));
+    } else if (options != null && !options.includeArguments()) {
+      detail.put("args", "excluded");
     }
     // includeArgs=false 且 includeResult=false：只保留方法/操作者/时间/traceId 等
     // 元数据（教材 W3 自动保存等含整篇正文的入口必须如此，防止正文灌入审计日志）。

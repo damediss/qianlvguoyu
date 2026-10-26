@@ -1,10 +1,11 @@
 package com.guoyu.platform.competition.player.controller;
 
 import com.guoyu.platform.common.api.ApiResponse;
+import com.guoyu.platform.common.audit.AuditLog;
+import com.guoyu.platform.common.audit.AuditLogOptions;
 import com.guoyu.platform.competition.player.dto.CompetitionPlayerActivationSendReq;
 import com.guoyu.platform.competition.player.dto.CompetitionPlayerActivationVerifyReq;
 import com.guoyu.platform.competition.player.dto.CompetitionPlayerLoginReq;
-import com.guoyu.platform.competition.player.dto.CompetitionPlayerChangeMobileSendNewCodeReq;
 import com.guoyu.platform.competition.player.dto.CompetitionPlayerChangeMobileVerifyReq;
 import com.guoyu.platform.competition.player.service.CompetitionPlayerApplicationService;
 import com.guoyu.platform.competition.player.vo.CompetitionPlayerEntryVO;
@@ -70,20 +71,10 @@ public class CompetitionPlayerAuthController {
     return ApiResponse.ok();
   }
 
-  @PostMapping("/auth/change-mobile/send-old-code")
-  public ApiResponse<CompetitionPlayerSmsChallengeVO> sendOldMobileChangeCode(
-      HttpServletRequest servletRequest) {
-    return ApiResponse.ok(service.sendOldMobileChangeCode(servletRequest));
-  }
-
-  @PostMapping("/auth/change-mobile/send-new-code")
-  public ApiResponse<CompetitionPlayerSmsChallengeVO> sendNewMobileChangeCode(
-      @Valid @RequestBody CompetitionPlayerChangeMobileSendNewCodeReq request,
-      HttpServletRequest servletRequest) {
-    return ApiResponse.ok(service.sendNewMobileChangeCode(request, servletRequest));
-  }
-
   @PostMapping("/auth/change-mobile/verify")
+  @AuditLog(module = "competition-player", action = "change-mobile",
+      targetType = "competition_player_identity")
+  @AuditLogOptions(includeArguments = false, targetIdFromActor = true)
   public ApiResponse<CompetitionPlayerSessionVO> verifyMobileChange(
       @Valid @RequestBody CompetitionPlayerChangeMobileVerifyReq request) {
     return ApiResponse.ok(service.verifyMobileChange(request));

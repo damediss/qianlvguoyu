@@ -229,6 +229,9 @@ public class CompetitionRosterImportService {
           playerId = player.getId();
         }
       } catch (BusinessException ex) {
+        if (!ErrorCode.CONFLICT.equals(ex.getCode())) {
+          throw ex;
+        }
         baseErrors.add(ex.getMessage());
       }
     }

@@ -205,6 +205,7 @@ public class CompetitionPlayerManagementService {
     PlatformUserPrincipal principal = currentUser();
     CompetitionRegistrationEntity registration = findRegistration(principal.getTenantId(), registrationId);
     CompetitionEventEntity event = assertEventOrgAccess(principal, registration.getEventId(), req.orgId());
+    assertLoginMobileUnchanged(principal.getTenantId(), registration.getPlayerId(), req.mobile());
     if (req.workTypes() != null) {
       return updateMultipleWorkTypes(principal, registration, event, req);
     }
@@ -684,6 +685,19 @@ public class CompetitionPlayerManagementService {
   private String findPlayerSensitiveValue(Long tenantId, Long playerId, boolean idCard) {
     var player = playerIdentityService.resolveExisting(tenantId, playerId);
     return idCard ? player.getIdCardNo() : player.getMobile();
+  }
+
+  private void assertLoginMobileUnchanged(Long tenantId, Long playerId, String requestedMobile) {
+    if (!StringUtils.hasText(requestedMobile)) {
+      return;
+    }
+    String currentMobile = findPlayerSensitiveValue(tenantId, playerId, false);
+    String normalizedCurrentMobile = playerIdentityService.normalizeMobile(currentMobile);
+    String normalizedRequestedMobile = playerIdentityService.normalizeMobile(requestedMobile);
+    if (!Objects.equals(normalizedCurrentMobile, normalizedRequestedMobile)) {
+      throw new BusinessException(ErrorCode.CONFLICT,
+          "登录手机号请在选手端“我的-更换手机号”通过身份证验证后修改");
+    }
   }
 
   private void ensureOrganization(Long tenantId, Long orgId) {

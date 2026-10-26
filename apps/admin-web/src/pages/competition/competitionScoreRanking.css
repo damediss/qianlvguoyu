@@ -422,6 +422,30 @@
   margin: 0 0 3px;
 }
 
+.competition-score-detail--plantvr .competition-score-detail__hero h4 {
+  font-size: 40px;
+  line-height: 1.2;
+}
+
+.competition-score-detail--plantvr .competition-score-detail__hero,
+.competition-score-detail--plantvr .competition-score-detail__section-head,
+.competition-score-detail--plantvr .competition-score-detail__subjects {
+  width: 910px;
+  max-width: 100%;
+  margin-inline: auto;
+}
+
+.competition-score-detail--plantvr .competition-score-detail__section-head {
+  justify-content: flex-start;
+}
+
+.competition-score-detail--plantvr .competition-simulation-detail__meta,
+.competition-score-detail--plantvr .competition-simulation-detail__table {
+  width: 100%;
+  max-width: 100%;
+  margin-inline: 0;
+}
+
 .competition-score-detail__total {
   display: flex;
   align-items: flex-end;
@@ -466,6 +490,15 @@
   justify-content: space-between;
 }
 
+.competition-score-detail__subject--simulation-detail {
+  border: 0;
+}
+
+.competition-score-detail__subject--simulation-detail > .ant-card-body {
+  display: block;
+  padding: 0;
+}
+
 .competition-score-detail__subject-row {
   display: flex;
   align-items: center;
@@ -481,6 +514,11 @@
 
 .competition-score-detail__subject strong {
   font-size: 18px;
+}
+
+.competition-score-detail-modal .ant-modal-body {
+  max-height: calc(100vh - 180px);
+  overflow-y: auto;
 }
 
 .competition-score-muted {
@@ -630,6 +668,67 @@
 .competition-answer-sheet__answer-summary .ant-typography-paragraph,
 .competition-answer-sheet__fill-answers .ant-typography-paragraph {
   margin: 5px 0 0;
+}
+
+.competition-score-plantvr-card {
+  margin-bottom: 14px;
+  border-color: #ded1f5;
+  background: linear-gradient(135deg, #fbf9ff 0%, #fff 58%);
+}
+
+.competition-simulation-detail {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid #eee8f8;
+}
+
+.competition-score-detail__subject--simulation-detail .competition-simulation-detail {
+  margin-top: 0;
+  padding-top: 0;
+  border-top: 0;
+}
+
+.competition-simulation-detail__meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-bottom: 10px;
+  padding: 10px 12px;
+  border: 1px solid #edf1f7;
+  border-radius: 8px;
+  background: #fff;
+}
+
+.competition-simulation-detail__module {
+  color: #344054;
+  font-weight: 600;
+}
+
+.competition-simulation-detail__table {
+  overflow: hidden;
+  border: 1px solid #ece7f5;
+  border-radius: 9px;
+}
+
+.competition-simulation-detail__table .ant-table {
+  background: #fff;
+}
+
+.competition-simulation-detail__table .ant-table-thead > tr > th {
+  color: #475467;
+  background: #f8f8f8;
+  font-weight: 600;
+}
+
+.competition-simulation-detail__table .ant-table-cell {
+  white-space: normal;
+  word-break: break-word;
+}
+
+.competition-simulation-detail__earned {
+  color: #5b21a8;
+  white-space: nowrap;
 }
 
 @media (max-width: 900px) {

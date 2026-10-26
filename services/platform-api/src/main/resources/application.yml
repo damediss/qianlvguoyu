@@ -99,6 +99,10 @@ spring:
     user: ${spring.datasource.username}
     password: ${spring.datasource.password}
   rabbitmq:
+    # 与本地 docker-compose.platform-api-dev.yml 中的开发账号保持一致；部署环境用变量覆盖。
+    username: ${SPRING_RABBITMQ_USERNAME:guoyu}
+    password:${SPRING_RABBITMQ_PASSWORD:}
+    virtual-host: ${SPRING_RABBITMQ_VIRTUAL_HOST:/}
     publisher-confirm-type: correlated
     publisher-returns: true
     template:
@@ -191,6 +195,13 @@ platform:
     # MCP 与 platform-api 必须配置相同的随机值（至少 32 字符），禁止提交真实密钥。
     actor-context-secret:${BOT_ACTOR_CONTEXT_SECRET:}
   competition:
+    plantvr:
+      enabled: ${PLANTVR_COMPETITION_ENABLED:false}
+      base-url: ${PLANTVR_BASE_URL:http://127.0.0.1:8189/api}
+      internal-secret:${PLANTVR_INTERNAL_SECRET:}
+      connect-timeout-seconds: ${PLANTVR_CONNECT_TIMEOUT_SECONDS:5}
+      read-timeout-seconds: ${PLANTVR_READ_TIMEOUT_SECONDS:30}
+      page-size: ${PLANTVR_PAGE_SIZE:100}
     question-import:
       batch-size: ${COMPETITION_QUESTION_IMPORT_BATCH_SIZE:200}
     player:
