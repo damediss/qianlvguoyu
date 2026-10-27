@@ -1,8 +1,10 @@
 # AI 同步学 · 学习方法论优化实施方案
 
-> 版本：**v1.3**　日期：2026-10-14（初版）／2026-10-17（二期方案审核修订）／2026-10-18（拍板落地 + 测试/验收补齐）　状态：**二期方案定稿，待实施**
+> 版本：**v1.5**　日期：2026-10-14（初版）／2026-10-17（二期方案审核修订）／2026-10-18（拍板落地 + 测试/验收补齐）／2026-10-26（W8.1 统一解析 + “使用即建设”修订）　状态：**二期方案定稿，待实施**
+> **v1.5 修订说明**：① 解析资产改为“使用即建设”——统一能力与内部 shadow 小样验收通过后立即开放学员按需使用，不做全量资产建设前置；② O-7 改为全库背景 + 近 30 天作答题使用侧覆盖率双口径，W8.2 按使用侧数据评估；③ W8.1 默认门禁由 `star` 放宽为 `wrong`（首次答错即可讲），`star` 为成本收紧档；④ 与《试题解析Markdown表格化_一期实施方案》v2.1 对齐。
+> **v1.4 修订说明**：① W8.1 与《试题解析Markdown表格化_一期实施方案》v2.0 共用同一份标准解析，取消独立三段式 prompt、独立 `ai_review_explain` draft 与独立 Caffeine 缓存；② W8.1 只保留门禁与 App 入口，内容统一走 `QuestionResolveAssistService.ensureResolve`；③ O-7 已补生产实测，覆盖率 <50%，W8.2 继续暂缓；④ §10.3/§13/§14.7 已同步，§17 为历史审核留痕，涉及 W8.1 的旧表述以本版为准。
 > **v1.3 修订说明**：① 需求方拍板 O-10/O-11/O-12 全部接受推荐，相关口径已改为定稿（不再“二选一”）；② 审核测试与验收清单，发现 2 处遗漏（D19 补救期被总量封顶反噬、D20 文案冻结批次已过期）并补全；③ 新增 §13.10 二期测试覆盖矩阵与缺口补全、§14.9 上线闸门与证据要求。
-> **v1.2 修订说明**：一期（W1+W2）已落地并上线；本次只审核二期（W3 → W8.1 → W8.2 + W5）方案，逐条对照 platform-api 与 gjjd_appnext 现状后修订。**审核结论与缺陷清单见 §17，与 §5~§16 冲突处以 §17 为准。**
+> **v1.2 修订说明**：一期（W1+W2）已落地并上线；本次只审核二期（W3/W8/W5，v1.4 顺序见⑤）方案，逐条对照 platform-api 与 gjjd_appnext 现状后修订。**审核结论与缺陷清单见 §17，与 §5~§16 冲突处以 §17 为准；W8.1 以 v1.4 §10.3 为准。**
 > 依据文档：《AI同步学学习方法论_STORM多视角分析报告(草稿)》（docs/02_drafts，2026-10-13）+ 两端代码实证审核（2026-10-14，platform-api `exam/reviewsync`/`app/reviewsync` 与 gjjd_appnext 全量核对）
 > 关联文档：《AI同步学（学员复习）实现方案》v1.7、《AI同步学统计功能设计方案》v1.3、《AI同步学-学员介绍页文案设计方案》v1.0
 >
@@ -13,12 +15,17 @@
 > ④ 真实成绩回流**暂无数据源，只做设计**（表结构+链路+校准方法成文，不建表不接数）。
 >
 > **需求方追加拍板（2026-10-16）**：
-> ⑤ 新增 **W8 知识漏洞提示与 AI 讲解补实现**（§10），排入**二期**，顺序锁定 `W3 → W8.1 → W8.2 + W5`；W8.4 同类题加练**不进二期**（排 W4 之后）；W8.2 准入需先过 O-7（官方解析覆盖率实测）。
+> ⑤ 新增 **W8 知识漏洞提示与 AI 讲解补实现**（§10），排入**二期**，顺序锁定 `W3 → 试题解析统一方案 → W8.1 → W8.2 + W5`；W8.4 同类题加练**不进二期**（排 W4 之后）；W8.2 准入看 O-7 使用侧覆盖率复测，全库覆盖率只作背景。
 >
 > **需求方追加拍板（2026-10-18）**：
 > ⑥ **O-10 接受推荐**：阶段 1 最后一天不再“全量清空”，改为按 cap 下发、剩余顺延阶段 2（§6.2-1）；
 > ⑦ **O-11 接受推荐**：绿牌再错缺陷（`applyWrongCard` 未复位 `removed`）**纳入二期**，随 W5 同批修复并回刷存量坏行；
 > ⑧ **O-12 接受推荐**：W8.1 采用**方案 1**——提示词去掉“学员错答”，只讲题本身，按 questionId 跨学员复用缓存。
+>
+> **需求方追加拍板（2026-10-26）**：
+> ⑨ **W8.1 与标准解析共用同一份内容**：不再独立生成三段式讲解；统一调用 `QuestionResolveAssistService.ensureResolve`，有 `resolve` 直接展示，没有才按《试题解析Markdown表格化_一期实施方案》生成一次。
+> ⑩ **O-7 全库实测留档**：生产有效题 138,981 行中 `resolve` 非空 353 行、answer JSON 官方解析 0 行；该全库覆盖率只作背景，不作为学员功能开放前置。
+> ⑪ **解析资产“使用即建设”**：统一能力与内部 shadow 小样验收通过后立即开放学员按需使用；学员点击即生成并共享，后续读缓存。W8.2 改按近 30 天作答题覆盖率与生成成功率评估，批量预生成只作高频题补充；W8.1 默认门禁放宽为 `wrong`，`star` 为收紧档。
 
 ---
 
@@ -133,9 +140,9 @@ STORM 报告基于三份文档写成；本次审核将报告 60+ 项事实性论
 | W5 | 可证伪数据层：鼓励曝光落库、4 个成效指标、掉队预警清单、成绩回流设计（仅设计） | M6 M8 M13 M15 | 埋点/统计 | 二期 | **2.5 天**（完结率口径要改，见 §17-D6） |
 | W6 | 入口摸底测验 + 三路分流 | M12 | 机制级 | 三期（灰度，依赖 W3-B 基建） | 2~3 天 |
 | W7 | 模考蓝图锚定（题型/难度/及格线参数位） | M21 | 配置位 | 待 §11 O-1 业务核实 | 0.5 天 |
-| **W8** | **知识漏洞提示 + AI 讲解补实现**（W8.1 补接口 / W8.2 每日漏洞提示 / W8.3 埋点并入 W5 / W8.4 同类题加练**不进二期**） | **M23 M24** | 名实欠账 + 提示层（规则算、模型说） | **二期**（顺序：W3 → W8.1 → W8.2+W5） | **4~5 天**（含 App 入口与复用改造，见 §17-D10/D11） |
+| **W8** | **知识漏洞提示 + AI 讲解补实现**（W8.1 补接口 / W8.2 每日漏洞提示 / W8.3 埋点并入 W5 / W8.4 同类题加练**不进二期**） | **M23 M24** | 名实欠账 + 提示层（规则算、模型说） | **二期**（顺序：W3 → 试题解析统一方案 → W8.1 → W8.2+W5） | **4~5 天**（含 App 入口与复用改造，见 §17-D10/D11） |
 
-依赖关系：W3-B 的摸底基建（quiz 卷）被 W6 复用；W4 依赖 W2.1（清洗开关）先落地；W5.2 的中断指标依赖 W3 的中断日志表；**W8.3 并入 W5 同批（共用 `ai_review_encourage_log`，建表即含 `log_type`/`hint_key`）**；**W8.4 依赖 W4 落地后排四期**；**W8.2 准入依赖 O-7（解析覆盖率实测）**。
+依赖关系：W3-B 的摸底基建（quiz 卷）被 W6 复用；W4 依赖 W2.1（清洗开关）先落地；W5.2 的中断指标依赖 W3 的中断日志表；**W8.3 并入 W5 同批（共用 `ai_review_encourage_log`，建表即含 `log_type`/`hint_key`）**；**W8.4 依赖 W4 落地后排四期**；**W8.2 准入看 O-7 使用侧覆盖率复测，全库覆盖率只作背景**。
 
 **二期新增前置**（v1.2 审核后）：W4/W5 的“绿牌再错率”依赖 §17-D14 的 `applyWrongCard` 缺陷修复，须与 W5 同批；W8.2 的错因分类依赖 §17-D7 的模考计时修复（否则模考行全部误判为“秒错”）。
 
@@ -475,68 +482,54 @@ STORM 报告基于三份文档写成；本次审核将报告 60+ 项事实性论
 | 路径 | `POST /appreviewsync/explain`（App 端，走 `AppTokenAuthFilter` + `gateGrayRelease`） |
 | 入参 | `{examId, questionId}` |
 | 出参 | `{explainText, fromCache: 0/1, source: official_resolve\|llm\|none}` |
-| 门禁 | `ai_review_explain_gate=star`（默认，现口径）：仅加星红牌可讲；`=wrong`：首次答错即可讲 |
+| 门禁 | `ai_review_explain_gate=wrong`（v1.5 默认）：首次答错即可讲；`=star`：仅加星红牌可讲，作为成本收紧档 |
 | 越权 | 非本学员的 plan/question → 业务异常（不绕过权限，AGENTS.md 全栈硬规则 5） |
 
-#### 10.3.2 讲解生成（三段式，≤200 字）
+出参与统一解析服务的映射（保持原 App 契约不变）：
 
-提示词输入**只有五项**（O-12 已拍板：去掉“学员错答”）：题干、选项、正确答案、官方解析（若有）、知识点名称。**不含学员作答、不含学员身份信息**——讲解是“这题怎么答”，不是“你哪里错了”，缓存可跨学员复用，也不存在跨学员信息串味。
+- `ensureResolve.source=db|official` → `source=official_resolve`、`fromCache=1`；
+- `ensureResolve.source=draft` → `source=llm`、`fromCache=1`（AI 生成但命中缓存）；
+- `ensureResolve.source=ai` → `source=llm`、`fromCache=0`（本次新生成）；
+- `ensureResolve.source=empty` → `source=none`、`explainText=null`；
+- `explainText` 直接等于统一服务返回的 `resolve`。shadow 只允许在解析方案的测试/预发环境出现，生产不得映射下发。
 
-输出结构（提示词内约束，后处理校验长度）：
+#### 10.3.2 讲解内容：与标准解析完全同源（v1.4 改）
 
-```
-① 最容易错在哪（≤60 字）——点出题干陷阱/干扰项/常见错法，不复述题干、不提"你选了 X"
-② 记住什么（≤80 字）——该知识点最该记的一句，不得超出题面与官方解析范围
-③ 下次怎么辨（≤60 字）——给一个可执行的读题动作（如"先圈否定词""逐项判断再选"）
-```
+**取消原三段式 prompt 与独立生成链。** W8.1 门禁通过后只调用 `QuestionResolveAssistService.ensureResolve`：
 
-> O-12 方案 1 的直接后果：讲解是**题目级**的，不是学员级。三段式第一段由“你为什么错”改为“这题最容易错在哪”，否则模型只能编（它看不到学员作答）。
+- `resolve` 列或 answer JSON 有官方/历史/已生成解析 → 直接返回，**零 LLM 调用**；
+- 仍为空 → 由统一服务按《试题解析Markdown表格化_一期实施方案》v2.0 的 prompt v2、输入清洗、答案硬结构、表格规则与 S1~S14 质量门生成一次；
+- 内容形态为【考点】【正确】【干扰】【记法】四行（主观题无【干扰】），可含受控 Markdown 表格，不再使用原“①最容易错在哪/②记住什么/③下次怎么辨”三段式；
+- 生成输入不含学员作答、不含学员身份信息，题目级缓存跨学员复用的 O-12 结论继续成立；
+- 质量验收、prompt 版本、sourceHash 失效、失败冷却、跨实例锁、写回与 draft 留痕全部复用解析方案，W8.1 不另设一套。
 
-**护栏（硬约束，写进提示词与后处理）**：
-
-- 禁止引入题外知识、禁止给出与官方解析冲突的说法；官方解析与题面冲突时以题面为准并记 warn
-- 禁止"保过/必过/稳过"类保证性表述（沿用文案方案 §3 第 4 条）
-- 不出现参数名/表名/模型名/内部文档名（沿用文案方案 §3 第 3 条）
-- 安全规程、法律法规、工艺参数类知识点命中关键词白名单 → **跳过 LLM**，直接返回官方解析（与教材生成方案的护栏同口径）
-- 输出标注：App 端讲解卡片底部固定一行"AI 生成，以官方教材为准"
+W8.1 上线前，解析方案的生产 `question_resolve_generation_enabled/writeback_enabled` 必须已按 shadow 验收流程开放；否则本入口只能读已有解析，不能绕过开关生成。
 
 #### 10.3.3 缓存、降级、限流
 
 | 环节 | 策略 |
 |---|---|
-| 缓存 | 三级：Caffeine 进程内（`questionId`，TTL 24h）→ `ai_generation_draft` 查重（`source_type='ai_review_question'`，`source_id=questionId`）→ 调 LLM。**同题跨学员复用，调用量≈去重错题数而非人×次**（输入已不含学员错答，见 §10.3.4-①，O-12 已拍板） |
-| 降级 | LLM 异常/超时/配置缺失 → 返回官方解析（`source=official_resolve`）；无官方解析 → `source=none` + "该题暂无解析，建议先记住正确答案"（**不编造**） |
-| 限流 | 每日每学员上限 `ai_review_explain_daily_limit`（默认 10）；超限返回降级文案，不调 LLM |
-| 留痕 | `ai_generation_draft`：`draftType='ai_review_explain'`、`sourceType='ai_review_question'`、prompt/result/modelName 齐全（AGENTS.md AI 规则）；留痕失败不影响主链路 |
+| 缓存 | `resolve` 列 + `question_resolve` generated draft，键均为 questionId/sourceHash；同题跨学员复用，**无独立 Caffeine、无 `ai_review_explain` draft** |
+| 降级 | 官方解析在生成之前已优先返回；无官方解析且 LLM 异常/超时/配置缺失/质量拒绝 → `source=none` + “该题暂无解析，建议先记住正确答案”（不编造） |
+| 限流 | W8.1 保留每日每学员上限 `ai_review_explain_daily_limit`（默认 10），超限返回降级文案；真实 LLM 前还受统一 `question_resolve_daily_limit` 约束 |
+| 留痕 | 统一写 `ai_generation_draft`：`draftType='question_resolve'`，prompt/result/modelName/status 齐全；W8.1 不再写 `ai_review_explain` |
 | 主链路隔离 | 讲解是独立接口，**作答链路不依赖它**；LLM 超时时 `answer` 仍 200（沿用 §13.8 测试断言） |
 
-#### 10.3.4 缓存键、复用与 App 入口（v1.2 新增，三条都影响能否落地）
+#### 10.3.4 复用与 App 入口（v1.4 改）
 
-**① 缓存键必须与输入对齐（O-12 已拍板 2026-10-18：采用方案 1）**
+**① 不新建第二套“题目解析”服务**
 
-提示词输入已去掉“学员错答”，因此**题目级缓存成立**：缓存键 = `questionId`，Caffeine 与 `ai_generation_draft`（`source_type='ai_review_question'`, `source_id=questionId`）同键；同题跨学员只调一次 LLM，§10.7 成本口径成立。
+`QuestionResolveAssistService` 是唯一生成与缓存入口；W8.1 只新增 controller 薄封装与 `explainAvailable` 门禁。`OfficialResolveResolver` 负责 resolve 列/answer JSON/失效 AI 解析的统一判定，禁止在 reviewsync 内私有复制。
 
-- 被否决的方案 2（保留错答 + `sha256` 键）不再实现，文档中相关表述一并删除；
-- 若产品后续要求“指出你错在哪”，必须作为**独立增量**重新评估：缓存键加错答哈希、成本重估、`ai_review_explain_daily_limit` 下调，不得在本期偷加；
-- 讲解文案不得出现“你选了 X”这类依赖个人作答的表述（提示词与后处理双重约束）。
+**② App 端入口必须补（当前完全不存在）**
 
-**② 不要新建第二套“题目解析”服务**
+已核实：`gjjd_appnext` 全仓零处消费 `explainAvailable`，`syncExam.vue` 只是内联展示后端下发的 `q.result.resolve`。修订为：
 
-`QuestionResolveAssistService`（`app/exam/service`）已经实现“查库 → draft 查重 → LLM → 回写 `exam_exam_detail.resolve`”，并有 `QuestionResolveAssistServiceTest`。再建 `ReviewExplainDomainService` 会形成第二份实现（违反 AGENTS.md “统一语言 / 禁止私有复制公共能力”）。修订：
-
-- 扩展现有服务，增加 `explainForReview(Long questionId)`：复用其模型配置解析、限流、留痕、回写链路；**不带学员作答**（O-12 方案 1），故缓存与并发锁均可直接按 questionId；
-- 复用其 `ConcurrentHashMap` 题级锁做并发去重；
-- 新增的只有“三段式提示词 + 200 字长度校验 + 安全类白名单 + 复盘门禁”这一层，其余全部复用。
-
-**③ App 端入口必须补（当前完全不存在）**
-
-已核实：`gjjd_appnext` 全仓 **零处** 消费 `explainAvailable`（`grep` 无命中），`syncExam.vue:57` 只是把后端下发的 `q.result.resolve` 直接内联打印。也就是说 M23 的真实形态不是“点了没落点”，而是“**连按钮都没有**”，§14.7 原验收条目（“explainAvailable=1 的题点进去不再落空”）按现状无法成立。修订：
-
-- 结果区（`syncExam.vue:52-59`）：`explainAvailable==1` 时在“解析”下方新增按钮「让 AI 讲讲这题」（**不写“我为什么错”**，避免承诺模型看不到的个人信息）；
-- 去重规则：官方解析已存在且非空 → 默认展示官方解析，按钮文案改「还有疑问？看 AI 讲解」，避免同一段内容出现两次；
-- 无官方解析 → 按钮为主入口（`source=none` 时展示“该题暂无解析，建议先记住正确答案”）；
-- 错题本/复盘卡同款按钮（可选，二期可只做答题结果区，但需在验收里写明范围）；
-- 验收改为：“按钮可见 + 可调用 + 三段落结构 + 底部标注‘AI 生成，以官方教材为准’”。
+- 结果区已有解析 → 直接展示（含表格时按解析方案的 `resolveTable.js` 渲染），**不再显示第二个讲解按钮，不重复内容**；
+- 结果区无解析且 `explainAvailable==1` → 显示「让 AI 讲讲这题」；点击调 `/appreviewsync/explain`，加载中禁用按钮，成功把返回的 `explainText` 回填到同一 `resolve` 展示位；
+- `source=llm` 时卡片底部固定一行“AI 生成，以官方教材为准”；`source=none` 展示“该题暂无解析，建议先记住正确答案”；
+- 错题本/复盘卡入口仍为可选二期项，若做也必须复用同一 `ensureResolve`，不得另发 LLM 请求；
+- 验收改为：“按钮仅在无解析且 explainAvailable=1 时出现 + 可调用 + 展示标准四行解析 + AI 来源标注 + 第二次同题请求不再生成”。
 
 ### 10.4 W8.2 漏洞提示（每日一条）
 
@@ -654,7 +647,7 @@ coverageGap   = 1 - 已做题数 / 必做池该题数
 | 风险 | 等级 | 处置 |
 |---|---|---|
 | **讲解幻觉**（讲错知识点） | 高 | grounded 五项输入 + 题外知识禁入 + 安全类白名单不调 LLM + 底部固定"AI 生成，以官方教材为准" + `ai_generation_draft` 可追溯 |
-| 官方解析覆盖率不足，提示"去看解析"落空 | 中 | **O-7 准入**：先实测覆盖率；<50% 时 W8.2 暂缓，先立"解析预生成"小包 |
+| 使用侧解析覆盖不足，泛化提示"去看解析"体验差 | 中 | 有解析直接展示、无解析点击生成，学员功能不被全库覆盖率卡住；W8.2 按近 30 天作答题覆盖率与生成成功率评估，未达标不主动泛化引导；批量预生成只作高频补充 |
 | 学员把提示当"考试重点"死记 | 中 | 文案只说"你哪里弱"，不说"考什么"；遵守文案方案 §3 禁保证性承诺 |
 | 提示变成新噪音，学员忽略 | 中 | 每日仅 1 条、≤100 字、带一个明确动作；W8.3 埋点观察点击率，低于阈值则收敛 |
 | 讲解接口被调用爆（成本/滥用） | 低 | 门禁 + 每日上限 + 题级缓存三重叠加 |
@@ -691,9 +684,9 @@ coverageGap   = 1 - 已做题数 / 必做池该题数
 | O-4 | W4 扩展间隔参数 1→3→7 天 | 按报告建议值（Landauer & Bjork 扩展间隔方向） | 灰度观察再错率回校 |
 | O-5 | 成绩回流数据源何时可用 | 本期仅设计（§8.4） | 数据源明确后立项建表 |
 | O-6 | D 案 100/天与战线拉长在考试日临近时的压缩口径 | 阶段 3 至少保 1 天，其余顺延 | 单测覆盖即冻结 |
-| O-7 | **官方解析覆盖率**：题库中多少题真正有解析（`exam_exam_detail.resolve` 为空且 answer JSON 无 resolve/analysis/jiexi/explain/解析 的比例） | **先测后做**：覆盖率 ≥70% → W8.2 全量上线（可引导"看解析"）；50%~70% → 只上线"漏洞点+错因"，不引导看解析；<50% → **W8.2 暂缓**，先跑解析批量预生成（复用 `AppExamSmartService` 官方解析优先+LLM 兜底链路） | 一条 SQL 实测并留档；低覆盖率时另立"解析预生成"小工作包 |
+| O-7 | **解析覆盖率（双口径）**：全库 `resolve` + answer JSON 仅作背景；准入看近 30 天作答题的解析覆盖率与生成成功率 | **全库已实测**：138,981 行中 `resolve` 非空 353、answer JSON 官方 0，仅作背景。**使用即建设**：统一能力与内部 shadow 小样验收通过后立即开放学员按需生成，不做全量资产前置；W8.2 改按近 30 天作答题复测，≥70% 可评全量、50%~70% 不主动引导看解析、<50% 暂缓泛化引导 | 全库 SQL 留档于解析方案 §3.1；使用侧 SQL 与阈值见解析方案 §10.4；**使用侧基线=13,986 道作答题/166 道有解析（1.19%）**；门槛不阻碍 W8.1/标准解析按需使用 |
 | O-8 | W8.2 提示文案是否并入 W1 冻结批次 | **并入**（避免二次评审与文案冻结流程走两遍） | 文案方案 v1.1 一并含提示文案族（§10.6），同批冻结 |
-| O-9 | 讲解门禁是否放宽到"首次答错即可讲"（`ai_review_explain_gate=wrong`） | **一期保持 star**（现口径，成本可控）；讲师/运营反馈"讲得太晚"后再切 wrong | 开关切换即可，零代码 |
+| O-9 | 讲解门禁是否放宽到"首次答错即可讲"（`ai_review_explain_gate=wrong`） | **v1.5 起默认 wrong**：配合“使用即建设”，让更多真实作答题能生成并共享解析；成本异常时切回 `star` 收紧 | 开关切换即可，零代码 |
 | O-10 | **阶段 1 最后一天的“强制清空”与 A 案 180 上限冲突**（§6.2-1） | **已拍板（2026-10-18）：按推荐口径**——最后一天不再全量清空，剩余顺延阶段 2 薄弱取题；`strategyText` 不再出现“最后一天清完”的表述 | 单测断言“末日按 cap 下发 + 剩余进入阶段 2” |
 | O-11 | **绿牌再错缺陷修复是否纳入二期**（§17-D14） | **已拍板（2026-10-18）：纳入**，随 W5 同批修复并回刷存量坏行（先出清单） | 随 W5 实施；回刷前后计数对账 |
 | O-12 | **W8.1 缓存策略**（个性化错答 vs 跨学员复用，§10.3.4-①） | **已拍板（2026-10-18）：方案 1**——去掉“学员错答”，只讲题本身；成本口径成立 | 提示词固化五项输入；单测断言同题只调一次 LLM |
@@ -722,7 +715,7 @@ coverageGap   = 1 - 已做题数 / 必做池该题数
 > `ai_review_plan.dropped_question_ids` 列已存在，无需迁移（激活写入即可）。
 > `ai_review_exam_outcome` **不建**（§8.4 仅设计）。
 > **一期已落地的迁移（review 2026-10-16 订正）**：`V20261014_004` 已建 `ai_review_interrupt_log` 并种入 `ai_review_interrupt_clean_enabled`。上表原"V（待定）_003"条目已作废——**W3/W5 只需使用该表，不得再建**；重复建表即便带 `IF NOT EXISTS` 不报错，一旦版本号撞号会导致 jar 全环境无法启动。
-> **W8 不新建业务表**：讲解内容缓存复用 `ai_generation_draft`（`source_type='ai_review_question'` + `source_id=questionId` 查重）+ Caffeine 进程内缓存；提示文案随当日物化生成、不落表（曝光埋点走 `ai_review_encourage_log`）。
+> **W8 不新建业务表**：讲解内容缓存复用 `exam_exam_detail.resolve` + `ai_generation_draft`（`draft_type='question_resolve'`、`source_type='exam_exam_detail'`、`source_id=questionId`，按 sourceHash 判旧），**不使用独立 Caffeine**；提示文案随当日物化生成、不落表（曝光埋点走 `ai_review_encourage_log`）。
 
 ### 12.2 sys_dict 新增/变更清单（tenant_id=10159，幂等种子）
 
@@ -739,9 +732,9 @@ coverageGap   = 1 - 已做题数 / 必做池该题数
 | ai_review_gap_hint_enabled | 0 | 0/1 | 灰度开关（W8.2 上线后开） |
 | ai_review_gap_hint_top_n | 3 | [1,5] | 工程拍板（学员一次记不住更多） |
 | ai_review_gap_hint_max_len | 100 | [60,200] | 工程拍板（一线工人阅读耐心） |
-| ai_review_explain_gate | star | star/wrong | 现口径保持；=wrong 为放宽档 |
+| ai_review_explain_gate | wrong | star/wrong | v1.5 默认 wrong（使用即建设）；star 为成本收紧档 |
 | ai_review_explain_daily_limit | 10 | [1,50] | 工程拍板（成本护栏） |
-| ai_review_explain_max_len | 200 | [100,400] | 工程拍板 |
+| ~~ai_review_explain_max_len~~ | 不再使用 | — | v1.4 起长度由解析方案按题型 240/300/400 字、清洗器 800 字及表格规则统一控制 |
 | ai_review_case_d_daily_new | 100 | [20,200] | 工程拍板 |
 | ai_review_spaced_review_enabled | 0 | 0/1 | 灰度开关 |
 | ai_review_recall_percent | 10 | [0,30] | 工程拍板（报告 N11 方向） |
@@ -755,7 +748,7 @@ coverageGap   = 1 - 已做题数 / 必做池该题数
 ### 12.3 实体/代码联动
 
 - `AiReviewPlanEntity` +`recoveryCase` / `recoveryUntilDay`；`AiReviewPlanDayEntity` +`recallQuestionIds`（W4，三期）；`AiReviewWrongItemEntity` +`nextDueDate`；`AiReviewMockPaperEntity` +`paperType`；新实体 `AiReviewEncourageLogEntity`（+`logType` / `hintKey` / `bizKey`）；
-- W8 新增：`GapHintVO`（提示文案+Top3 漏洞+动作跳转）、`ExplainVO`（explainText/fromCache/source）、`ReviewGapHintDomainService`（规则层：漏洞分+错因分类，**纯逻辑无 IO，可单测**）；讲解**不新建 DomainService**，改为扩展 `QuestionResolveAssistService.explainForReview(questionId)`（O-12 方案 1，复用缓存/留痕/回写/限流）；
+- W8 新增：`GapHintVO`（提示文案+Top3 漏洞+动作跳转）、`ExplainVO`（explainText/fromCache/source）、`ReviewGapHintDomainService`（规则层：漏洞分+错因分类，**纯逻辑无 IO，可单测**）；讲解**不新建 DomainService**，由 controller 薄封装直接调用 `QuestionResolveAssistService.ensureResolve`，`ExplainVO` 只做 §10.3.1 的 source/fromCache 映射（O-12 方案 1，复用缓存/留痕/回写/限流）；
 - **W8 挂点**：`ReviewPlanApplicationService` 每日物化末尾（现 `generateAsync` 调用处，1626-1628 行附近）追加 `generateGapHintAsync`，**不新增定时任务**（物化 job 已移除，入口为 overview/today/advance-day 懒触发）；
 - 讲解缓存复用 `ai_generation_draft` 查重，不建表；`explain` 接口走 App 鉴权（`AppTokenAuthFilter`），复用 `gateGrayRelease` 拦截；
 - 删除死代码：`caseATailTrimCount` 等常量激活后重写注释；`php_synced=2` 死状态注释修正（实体注释与现状对齐）；`WCDS:12` "未来 3 天每日必出"注释删除或实现对齐（本方案取"加星每日必出"，注释按此改写）；
@@ -847,14 +840,13 @@ coverageGap   = 1 - 已做题数 / 必做池该题数
 - 首答口径：`attempt_seq=1` 才计入漏洞分分子分母（重答不污染，与 W5 首答正确率同口径）
 - 提示文案：长度 ≤`ai_review_gap_hint_max_len`；禁用词零命中（保过/必过/稳过/参数名/表名/LLM）
 
-**LLM 链路单测（Mock `FaqLlmClient`）**
-- 提示词 grounded 断言：prompt 仅含题干/选项/正确答案/官方解析/知识点名，不含学员作答、不含题库外知识注入
-- 降级链三段：LLM 正常 → 讲解；LLM 抛异常/超时 → 官方解析；无官方解析 → "该题暂无解析"（不编造、不空白）
-- 缓存：同 questionId 第二次调用零 LLM 调用（断言 `llmClient` 调用次数=1）
-- 门禁：`ai_review_explain_gate=star` 时非加星题请求 → 业务异常；`=wrong` 时首次答错即可讲
+**W8.1 统一解析链路单测（Mock `QuestionResolveAssistService`；prompt/质量门测试归解析方案）**
+- source 映射：db/official → `official_resolve + fromCache=1`；draft → `llm + fromCache=1`；ai → `llm + fromCache=0`；empty → `none`
+- 有官方/历史解析时直接返回，不新增 LLM 调用；同 questionId 的缓存、sourceHash 失效、失败冷却与跨实例锁由解析方案测试覆盖，W8.1 不重复实现
+- 门禁：默认 `ai_review_explain_gate=wrong` 时首次答错即可讲；切回 `star` 时非加星题请求 → 业务异常
 - 上限：超出 `ai_review_explain_daily_limit` 后返回降级文案，不调 LLM
-- 安全类白名单：知识点命中安全类关键词 → 跳过 LLM，直接返官方解析
-- 留痕：`ai_generation_draft` 一行，draft_type/prompt/result/model 齐全；留痕失败不影响主链路
+- 留痕只允许 `draft_type='question_resolve'`；禁止独立 `ai_review_explain` draft 与 Caffeine 缓存
+- 输出为统一四行标准解析（可含受控表格），**不得再出现三段式第二实现**；`source=llm` 时 App 必须标注“AI 生成，以官方教材为准”
 
 **规则兜底单测（W8.2 不依赖 LLM）**
 - LLM 不可用时 `generateGapHint` 仍返回非空模板提示，且不抛异常、不返回 null
@@ -998,18 +990,19 @@ coverageGap   = 1 - 已做题数 / 必做池该题数
 
 ### 14.7 W8 知识漏洞提示与 AI 讲解
 
-**W8.1 讲解补实现（名实欠账）**
+**W8.1 讲解补实现（名实欠账，v1.4 统一标准解析）**
 - [ ] `POST /appreviewsync/explain` 真实存在且可调用
-- [ ] **App 端入口真实存在**：答题结果区在 `explainAvailable=1` 时渲染「让 AI 讲讲这题」按钮，点击可拉取并展示三段式内容（现状 App 零消费该字段，原验收条目无法成立，见 §10.3.4-③）
-- [ ] 与内联官方解析去重（官方解析非空时按钮降级为“还有疑问？”，不重复展示同段文字）
-- [ ] 复用 `QuestionResolveAssistService` 的模型配置/留痕/回写链路，**未新建第二套解析实现**（违反则视为不通过）
-- [ ] 门禁参数化生效：`ai_review_explain_gate=star` 保持现口径；`=wrong` 时首次答错即可讲
-- [ ] 讲解 grounded：提示词只喂题干/选项/正确答案/官方解析/知识点名（**不含学员作答**），**无题外知识注入**（单测断言 prompt 不含题库外内容）
-- [ ] 三段式输出 ≤200 字；缓存按 questionId 复用（同题第二次调用零 LLM）
-- [ ] 降级链：LLM 失败/超时 → 展示官方解析；无官方解析 → "该题暂无解析"提示，不编造
-- [ ] 安全规程类知识点走"仅展示官方解析"白名单，不调 LLM
-- [ ] 留痕 `ai_generation_draft`（draft_type=ai_review_explain，模型/时间/来源齐全）
-- [ ] 每日每学员调用上限生效（`ai_review_explain_daily_limit`）
+- [ ] **App 端入口真实存在**：结果区无解析且 `explainAvailable=1` 时才显示「让 AI 讲讲这题」，点击后拉取并展示统一标准四行解析（可含受控表格）
+- [ ] 与内联官方解析去重：已有解析直接展示，不再出现第二个讲解按钮或重复内容
+- [ ] 复用 `QuestionResolveAssistService.ensureResolve` 与 `OfficialResolveResolver`，**未新建第二套解析实现、无独立三段式、无独立 Caffeine/ai_review_explain draft**（违反则视为不通过）
+- [ ] 门禁参数化生效：默认 `ai_review_explain_gate=wrong` 时首次答错即可讲；切回 `star` 时仅加星红牌可讲
+- [ ] 统一 source 映射正确：db/official → official_resolve+fromCache=1；draft → llm+fromCache=1；ai → llm+fromCache=0；empty → none
+- [ ] 同题第二次调用零 LLM；缓存失效/失败冷却/跨实例锁按解析方案验收通过
+- [ ] 降级链：无官方解析且 LLM 失败/超时/质量拒绝 → "该题暂无解析，建议先记住正确答案"，不编造
+- [ ] 安全/质量准入：解析方案 S1~S14 与 shadow 样本验收已通过，生产生成与写回开关已开放
+- [ ] 留痕 `ai_generation_draft`（draft_type=question_resolve，模型/时间/来源/hash 齐全）
+- [ ] 每日每学员调用上限生效（`ai_review_explain_daily_limit`），统一 `question_resolve_daily_limit` 同时生效
+- [ ] `source=llm` 时卡片底部固定标注“AI 生成，以官方教材为准”
 
 **W8.2 漏洞提示**
 - [ ] 开关=0 时学情页与今日页零变化（对拍）
@@ -1018,7 +1011,7 @@ coverageGap   = 1 - 已做题数 / 必做池该题数
 - [ ] 规则兜底：LLM 不可用时仍能出模板提示（不空白、不报错）
 - [ ] 错因分类（漏选/错选/犹豫答对/秒错）单测覆盖四类判定
 - [ ] 漏洞分 Top3 排序可复现（同输入同输出，与 LLM 无关）
-- [ ] **准入门槛已过**：O-7 官方解析覆盖率实测完成且结论记录在案
+- [ ] **使用侧准入口径已落地**：全库 O-7 实测仅作背景；近 30 天作答题覆盖率与生成成功率可按解析方案 §10.4 SQL/日志复测，W8.2 是否开放按使用侧阈值评估，不以全库覆盖率为学员功能前置
 - [ ] **缓存键与输入对齐**（O-12 方案 1）：同题不同学员只调一次 LLM；prompt 与输出均不含个人作答信息（单测断言）
 - [ ] **异步租户上下文**：Worker 内 `TenantContextHolder` 已 set/clear，跨租户无越界查询（§10.4.5）
 - [ ] **懒生成兜底**：开关=1 但当天提示为空时，`overview` 走模板同步返回非空提示（不空白、不报错）
@@ -1102,12 +1095,12 @@ coverageGap   = 1 - 已做题数 / 必做池该题数
 | 期 | 工作包 | 出口标准 |
 |---|---|---|
 | 一期（**已上线 2026-10-17**） | W1 + W2 | §14.1/§14.2 全勾；对外宣称风险清零。**遗留两项见 §17.2：模考计时 App 半程、中断文案不持久** |
-| 二期（**方案已修订，待实施**） | W3 → W8.1 → W8.2 + W5（**顺序锁定**） | §14.3/§14.7/§14.5 全勾；可证伪数据开始积累；**§17-D1/D2/D3 三个 P0 阻断项必须先解决**（§17.3）；D6 模考日收尾随 W3-5 同批修复（§17.5） |
+| 二期（**方案已修订，待实施**） | W3 → 试题解析统一方案 → W8.1 → W8.2 + W5（**顺序锁定**） | §14.3/§14.7/§14.5 全勾；可证伪数据开始积累；**§17-D1/D2/D3 三个 P0 阻断项必须先解决**（§17.3）；D6 模考日收尾随 W3-5 同批修复（§17.5） |
 | 三期（灰度） | W4 + W6（依赖 W3-B） | §14.4/§14.6 全勾 + 灰度观察 2 周 |
 | 四期（或并入 W6 灰度批） | W8.4 同类题加练（依赖 W4 落地后） | §14.7 增补条目 |
 | 待证触发 | W7（O-1 核实后）、成绩回流（O-5 数据源到位后） | 对应验收节 |
 
-**二期顺序为何锁定为 W3 → W8.1 → W8.2 + W5**：二期主体是"补课"（补死代码、建数据管道），业务侧零感知，排期评审时最易被砍；W8.2 是二期唯一学员看得见的东西，天然更容易活下来。若不锁顺序，会出现"新功能挤掉 P0 欠账"的倒挂——而真正消除风险的是 W3。故约定：**W3 未过验收，W8.2 不得上线**（W8.1 为名实欠账，可与 W3 并行或紧随）。W8.2 另带独立开关 `ai_review_gap_hint_enabled`，工期紧张时可单独滑出二期而不拖累欠账。
+**二期顺序为何锁定为 W3 → 试题解析统一方案 → W8.1 → W8.2 + W5**：二期主体是"补课"（补死代码、建数据管道），业务侧零感知，排期评审时最易被砍；W8.2 是二期唯一学员看得见的东西，天然更容易活下来。若不锁顺序，会出现"新功能挤掉 P0 欠账"的倒挂——而真正消除风险的是 W3。故约定：**W3 未过验收，W8.2 不得上线**；W8.1 为名实欠账，可与其他 W3 工作并行，但**不得早于试题解析统一方案的 shadow 验收与生产写回开放**。W8.2 另带独立开关 `ai_review_gap_hint_enabled`，工期紧张时可单独滑出二期而不拖累欠账。
 
 **审核方式建议**：按工作包逐项回复“通过/调整/不做”。**2026-10-18 已完成拍板（O-10/O-11/O-12 全部接受推荐），方案冻结为 v1.3**，二期按 §17.5 顺序实施，测试与验收按 §13.10/§14.9 执行。
 
@@ -1115,7 +1108,7 @@ coverageGap   = 1 - 已做题数 / 必做池该题数
 
 ## 17. 二期方案审核结论（2026-10-17 初审 / 2026-10-18 补审，v1.3）
 
-> 审核对象：本方案二期范围 **W3 → W8.1 → W8.2 + W5**（一期 W1/W2 已上线，只核对落地状态，不重审）。
+> 审核对象：本方案二期范围 **W3 → 试题解析统一方案 → W8.1 → W8.2 + W5**（一期 W1/W2 已上线，只核对落地状态，不重审）。
 > 审核方法：逐条读 platform-api 现行主干（`exam/reviewsync`、`app/reviewsync`、`app/exam`）与 gjjd_appnext 现行源码，以 `file:line` 为证；凡方案与代码机制不一致处，一律以代码为准修订方案，**本机未改任何代码**。
 
 ### 17.1 一期落地核对
@@ -1193,7 +1186,7 @@ W3-1 迁移（recovery 列 / paper_type / recall_question_ids）
 ### 17.6 审核边界（未验证项，如实报告）
 
 - 本机**未运行** `mvn compile` / `mvn test` / `npm run build`：本次只读代码，未产生编译与测试证据；
-- **未连库**实测 O-7（官方解析覆盖率），该项仍为实施前必须完成的准入动作；
+- O-7 全库已于 2026-10-26 实测留档（仅作背景）；实施前把解析方案 §10.4 的使用侧 SQL 跑通并记录基线即可，**不以全库覆盖率作为学员功能开放前置**。
 - **未做真机验证**（App 入口、模考计时打点均为代码级核对）；
 - 所有 `file:line` 基于 2026-10-17 主干，实施前需按 §10 引用约定复核行号；
 - 一期 W1 的文案改动只核对了 App 侧关键句与测试文件存在，未逐字比对介绍页全文。
@@ -1254,9 +1247,9 @@ W3-1 迁移（recovery 列 / paper_type / recall_question_ids）
 | ai_review_gap_hint_enabled | 0 | 0/1 | 灰度开关 | W8.2；上线验收后开 |
 | ai_review_gap_hint_top_n | 3 | [1,5] | 工程拍板（一次记不住更多） | W8.2 实施时接 clamp |
 | ai_review_gap_hint_max_len | 100 | [60,200] | 工程拍板（阅读耐心） | W8.2 实施时接 clamp |
-| ai_review_explain_gate | star | star/wrong | 现口径保持（O-9） | W8.1；=wrong 为放宽档 |
+| ai_review_explain_gate | wrong | star/wrong | v1.5 默认 wrong（O-9，使用即建设）；star 为成本收紧档 | W8.1 实施时接 clamp |
 | ai_review_explain_daily_limit | 10 | [1,50] | 工程拍板（成本护栏） | W8.1 实施时接 clamp |
-| ai_review_explain_max_len | 200 | [100,400] | 工程拍板 | W8.1 实施时接 clamp |
+| ~~ai_review_explain_max_len~~ | 不再使用 | — | v1.4 起长度由解析方案统一控制 | 不再接 clamp |
 
 > 一期（W2.2）已上线 7 个既有参数的 clamp+warn；W3/W4/W6 新参数在各自实施时接入同一
 > `dictIntInRange` 读取（越界按边界生效 + warn 日志"参数 X=Y 超出已论证区间 [a,b]"）。
