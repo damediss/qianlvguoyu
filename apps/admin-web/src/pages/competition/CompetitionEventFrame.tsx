@@ -2,6 +2,7 @@ import {
   CalendarOutlined,
   HomeOutlined,
   TeamOutlined,
+  ToolOutlined,
   UploadOutlined,
 } from '@ant-design/icons';
 import { Button, Space, Tag, Typography } from 'antd';
@@ -9,7 +10,7 @@ import type { ReactNode } from 'react';
 import type { CompetitionEvent, CompetitionEventStatus } from '../../types/competition';
 import { useAuthStore } from '../../stores/authStore';
 
-type EventSection = 'overview' | 'organizations' | 'rosters' | 'notices' | 'theory-exam' | 'scores';
+type EventSection = 'overview' | 'organizations' | 'rosters' | 'work-types' | 'notices' | 'theory-exam' | 'scores';
 
 interface CompetitionEventFrameProps {
   event: CompetitionEvent;
@@ -40,6 +41,7 @@ const sections: Array<{
   anyPermissions?: string[];
 }> = [
   { key: 'overview', label: '计划总览', icon: <HomeOutlined />, path: (id) => `/competition/events/${id}` },
+  { key: 'work-types', label: '参赛工种', icon: <ToolOutlined />, path: (id) => `/competition/events/${id}/work-types`, permission: 'competition:event-work-type:view' },
   { key: 'organizations', label: '参与企业', icon: <TeamOutlined />, path: (id) => `/competition/events/${id}/organizations`, permission: 'competition:event-org:view' },
   { key: 'rosters', label: '名单导入', icon: <UploadOutlined />, path: (id) => `/competition/events/${id}/rosters`, permission: 'competition:roster:view' },
 ];
@@ -78,9 +80,6 @@ export function CompetitionEventFrame({
               </Space>
             </div>
           </div>
-          <Typography.Paragraph className="competition-event-hero__description">
-            {event.description || '围绕竞赛计划、参与企业、名单导入和公告设置，统一管理赛事运营链路。'}
-          </Typography.Paragraph>
           <div className="competition-event-meta">
             <span><CalendarOutlined /> 报名/竞赛时间</span>
             <strong>{formatDate(event.startAt)} — {formatDate(event.endAt)}</strong>

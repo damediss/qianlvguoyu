@@ -42,7 +42,6 @@ import {
   Progress,
   Result,
   Row,
-  Segmented,
   Select,
   Space,
   Spin,
@@ -67,7 +66,6 @@ import {
   confirmCompetitionSubjectScoreImport,
   downloadCompetitionSimulationImportErrors,
   downloadCompetitionSubjectScoreImportErrors,
-  downloadCompetitionSubjectScoreTemplate,
   getCompetitionSubjectScoreImport,
   getCompetitionEvent,
   downloadCompetitionFormalCandidateAnswerSheet,
@@ -99,7 +97,6 @@ import {
   saveCompetitionSimulationProviderBinding,
   startCompetitionSimulationSync,
   uploadCompetitionSimulationScores,
-  uploadCompetitionSubjectScores,
 } from '../../api/competition';
 import { usePaneActive } from '../../layouts/TabKeepAlive';
 import { useAuthStore } from '../../stores/authStore';
@@ -1913,32 +1910,6 @@ export function CompetitionScoreRankingPage({
       },
     });
   };
-  const subjectUploadMutation = useMutation({
-    mutationFn: ({
-      sourceType,
-      file,
-    }: {
-      sourceType: 'practical' | 'simulation';
-      file: File;
-    }) =>
-      uploadCompetitionSubjectScores(
-        {
-          eventId,
-          stageId: stageId!,
-          eventWorkTypeId: eventWorkTypeId!,
-          eventWorkTypeLevelId,
-          sourceType,
-        },
-        file,
-      ),
-    onSuccess: (batch, variables) => {
-      setSubjectBatchIds((current) => ({
-        ...current,
-        [variables.sourceType]: idValue(batch.id),
-      }));
-      message.success('文件已接收，正在校验；通过后会写入成绩并计算综合分');
-    },
-  });
   const subjectConfirmMutation = useMutation({
     mutationFn: ({
       batchId,
@@ -2058,20 +2029,6 @@ export function CompetitionScoreRankingPage({
     simulationIdCardImportQuery.data,
     subjectConfirmMutation,
   ]);
-  const downloadSubjectTemplate = async (
-    sourceType: 'practical' | 'simulation',
-  ) => {
-    try {
-      downloadBlob(
-        await downloadCompetitionSubjectScoreTemplate(sourceType),
-        sourceType === 'practical'
-          ? '实操成绩导入模板.xlsx'
-          : '仿真成绩导入模板.xlsx',
-      );
-    } catch {
-      message.error('导入模板下载失败');
-    }
-  };
   const requestRankingPublish = (snapshotId: CompetitionId) => {
     const replacingPublished = rankingSnapshots.some(
       (snapshot) =>
@@ -3282,92 +3239,6 @@ export function CompetitionScoreRankingPage({
             >
               导出选中 ({selectedRowKeys.length})
             </Button>
-            <Button
-              icon={<CalculatorOutlined />}
-              onClick={() => setActiveTab('summary')}
-            >
-              汇总 / 发布
-            </Button>
-            {canCalculate && !theoryOnly && (
-              <Button
-                icon={<CalculatorOutlined />}
-                loading={calculateMutation.isPending}
-                disabled={
-                  !contextReady ||
-                  calculationReadyContestants.length === 0 ||
-                  readinessQuery.data?.ready === false
-                }
-                onClick={() => calculateMutation.mutate()}
-              >
-                计算总分 ({calculationReadyContestants.length})
-              </Button>
-            )}
-            {canImportSimulation &&
-              !usesStageContentFormula &&
-              Boolean(scoreRuleId) &&
-              subjects.some((subject) => subject.type === 'simulation') && (
-                <Upload
-                  accept=".xlsx,.xls"
-                  showUploadList={false}
-                  beforeUpload={(file) => {
-                    simulationUploadMutation.mutate(file);
-                    return false;
-                  }}
-                >
-                  <Button
-                    type="primary"
-                    icon={<UploadOutlined />}
-                    loading={simulationUploadMutation.isPending}
-                  >
-                    导入仿真
-                  </Button>
-                </Upload>
-              )}
-            {usesStageContentFormula &&
-              canImportSimulation &&
-              contextReady &&
-              importableSubjects.length > 0 &&
-              activeImportSubject && (
-                <Space size={8}>
-                  <Segmented
-                    value={activeImportSubject}
-                    options={importableSubjects.map((sourceType) => ({
-                      value: sourceType,
-                      label: sourceMeta[sourceType].shortLabel,
-                    }))}
-                    onChange={(value) => {
-                      const sourceType = value as 'practical' | 'simulation';
-                      setImportSubject(sourceType);
-                      setWorkbenchSubject(sourceType);
-                    }}
-                  />
-                  <Button
-                    icon={<DownloadOutlined />}
-                    onClick={() => void downloadSubjectTemplate(activeImportSubject)}
-                  >
-                    下载模板
-                  </Button>
-                  <Upload
-                    accept=".xlsx,.xls"
-                    showUploadList={false}
-                    beforeUpload={(file) => {
-                      subjectUploadMutation.mutate({
-                        sourceType: activeImportSubject,
-                        file,
-                      });
-                      return false;
-                    }}
-                  >
-                    <Button
-                      type="primary"
-                      icon={<UploadOutlined />}
-                      loading={subjectUploadMutation.isPending}
-                    >
-                      导入成绩
-                    </Button>
-                  </Upload>
-                </Space>
-              )}
           </Space>
         </div>
         <div className="competition-score-scope-selectors">

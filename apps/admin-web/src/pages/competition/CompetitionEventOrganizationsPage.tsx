@@ -17,6 +17,7 @@ import {
   Spin,
   Table,
   Tag,
+  Typography,
   message,
 } from 'antd';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -92,6 +93,7 @@ export function CompetitionEventOrganizationsPage({
   const canManage = permissions.includes('competition:event-org:manage');
   const [query, setQuery] = useState<CompetitionEventOrgPageQuery>({ page: 1, pageSize: 10 });
   const [addOpen, setAddOpen] = useState(false);
+  const [orgCodeDetail, setOrgCodeDetail] = useState<{ orgName: string; orgCode: string } | null>(null);
   const [updatingStatusOrgId, setUpdatingStatusOrgId] = useState<CompetitionId>();
   const [updatingPermissionOrgId, setUpdatingPermissionOrgId] = useState<CompetitionId>();
   const [addForm] = Form.useForm<OrganizationFormValues>();
@@ -147,17 +149,32 @@ export function CompetitionEventOrganizationsPage({
     {
       title: '企业名称',
       dataIndex: 'orgName',
+      align: 'left',
       render: (value: string | null | undefined, record: CompetitionEventOrg) => value || idValue(record.orgId),
     },
     {
       title: '企业编码',
       key: 'orgCode',
-      width: 180,
-      render: (_: unknown, record: CompetitionEventOrg) => record.orgCode || idValue(record.orgId),
+      align: 'left',
+      width: 72,
+      render: (_: unknown, record: CompetitionEventOrg) => (
+        <Button
+          type="link"
+          size="small"
+          aria-label={`查看${record.orgName || idValue(record.orgId)}的企业编码详情`}
+          onClick={() => setOrgCodeDetail({
+            orgName: record.orgName || idValue(record.orgId),
+            orgCode: record.orgCode || idValue(record.orgId),
+          })}
+        >
+          详细
+        </Button>
+      ),
     },
     {
       title: '状态',
       dataIndex: 'status',
+      align: 'left',
       width: 140,
       render: (value: CompetitionEventOrgStatus, record: CompetitionEventOrg) => canManage ? (
         <Select<EditableCompetitionEventOrgStatus>
@@ -176,12 +193,14 @@ export function CompetitionEventOrganizationsPage({
     {
       title: '参赛名额',
       dataIndex: 'quota',
+      align: 'left',
       width: 100,
       render: (value: number | null | undefined) => value ?? '-',
     },
     {
       title: '名单导入权限',
       dataIndex: 'importPermission',
+      align: 'left',
       width: 150,
       render: (value: number | null | undefined, record: CompetitionEventOrg) => canManage ? (
         <Select<0 | 1>
@@ -264,7 +283,7 @@ export function CompetitionEventOrganizationsPage({
           loading={organizationsQuery.isFetching}
           dataSource={organizations}
           columns={columns}
-          scroll={{ x: 900 }}
+          tableLayout="fixed"
           pagination={{
             current: query.page,
             pageSize: query.pageSize,
@@ -275,6 +294,30 @@ export function CompetitionEventOrganizationsPage({
           }}
         />
       </Card>
+
+      <Modal
+        title="企业编码详情"
+        open={Boolean(orgCodeDetail)}
+        centered
+        footer={null}
+        destroyOnClose
+        onCancel={() => setOrgCodeDetail(null)}
+      >
+        {orgCodeDetail && (
+          <Space direction="vertical" size={8} style={{ width: '100%' }}>
+            <Typography.Text type="secondary">企业名称</Typography.Text>
+            <Typography.Text>{orgCodeDetail.orgName}</Typography.Text>
+            <Typography.Text type="secondary">企业编码</Typography.Text>
+            <Typography.Paragraph
+              code
+              copyable={{ text: orgCodeDetail.orgCode }}
+              style={{ marginBottom: 0, overflowWrap: 'anywhere' }}
+            >
+              {orgCodeDetail.orgCode}
+            </Typography.Paragraph>
+          </Space>
+        )}
+      </Modal>
 
       <Modal
         title="添加参与企业"

@@ -47,7 +47,11 @@ public class MenuApplicationService {
     return SecurityContext.currentUser().getTenantId();
   }
 
-  @Cacheable(value = "menuTree", key = "#root.target.tenantId() + ':#ROOT'", unless = "#result == null")
+  // Bump the key with the competition menu order/visibility migration to bypass stale Redis entries.
+  @Cacheable(
+      value = "menuTree",
+      key = "#root.target.tenantId() + ':#ROOT:v20261027_001'",
+      unless = "#result == null")
   @Transactional(readOnly = true)
   public List<MenuTreeVO> tree() {
     Long tenantId = SecurityContext.currentUser().getTenantId();
