@@ -1,8 +1,9 @@
 package com.guoyu.platform.app.exam.service;
 
-import com.fasterxml.jackson.core.type.TypeReference;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.guoyu.platform.exam.reviewsync.support.QuestionTypes;
+import com.guoyu.platform.exam.service.OfficialResolveResolver;
+import com.guoyu.platform.exam.service.OfficialResolveResolver.OfficialResolve;
 import com.guoyu.platform.app.exam.entity.AppExamMockPaperEntity;
 import com.guoyu.platform.app.exam.entity.AppExamUserAnswerLogEntity;
 import com.guoyu.platform.app.exam.mapper.AppExamMockPaperMapper;
@@ -72,7 +73,6 @@ public class AppExamSmartService {
   private static final int DEFAULT_TIME_LIMIT_MIN = 30;
   /** 错题重练默认题量 */
   private static final int WRONG_REPLAY_LIMIT = 20;
-  private static final ObjectMapper JSON = new ObjectMapper();
 
   private final ExamExamDetailMapper examDetailMapper;
   private final ExamKnowledgeStructureMapper knowledgeMapper;
@@ -86,6 +86,7 @@ public class AppExamSmartService {
   private final TrainClassReviewSyncMapper classReviewSyncMapper;
   private final AiReviewPlanMapper reviewPlanMapper;
   private final AiReviewWrongItemMapper reviewWrongItemMapper;
+  private final OfficialResolveResolver officialResolveResolver;
 
   public AppExamSmartService(ExamExamDetailMapper examDetailMapper,
                              ExamKnowledgeStructureMapper knowledgeMapper,
@@ -98,7 +99,8 @@ public class AppExamSmartService {
                              FollowTaskBankQuestionConverter bankQuestionConverter,
                              TrainClassReviewSyncMapper classReviewSyncMapper,
                              AiReviewPlanMapper reviewPlanMapper,
-                             AiReviewWrongItemMapper reviewWrongItemMapper) {
+                             AiReviewWrongItemMapper reviewWrongItemMapper,
+                             OfficialResolveResolver officialResolveResolver) {
     this.examDetailMapper = examDetailMapper;
     this.knowledgeMapper = knowledgeMapper;
     this.mockPaperMapper = mockPaperMapper;
@@ -111,6 +113,7 @@ public class AppExamSmartService {
     this.classReviewSyncMapper = classReviewSyncMapper;
     this.reviewPlanMapper = reviewPlanMapper;
     this.reviewWrongItemMapper = reviewWrongItemMapper;
+    this.officialResolveResolver = officialResolveResolver;
   }
 
   // ============================================================
@@ -340,16 +343,8 @@ public class AppExamSmartService {
   }
 
   private static String normalizeQuestionType(String raw) {
-    if (raw == null || raw.isBlank()) {
-      return null;
-    }
-    String t = raw.trim().toLowerCase(Locale.ROOT);
-    return switch (t) {
-      case "single", "danxuan", "单选", "1" -> "single";
-      case "multi", "duoxuan", "多选", "2" -> "multi";
-      case "judge", "pandan", "判断", "3" -> "judge";
-      default -> t;
-    };
+    // 题型归一唯一来源：QuestionTypes（§5.2 全映射；null 与客观三型行为不变）
+    return QuestionTypes.normalize(raw);
   }
 
   /** 客观三型判定（错题重练 wrongReplay 反查过滤用，方案 Q-C；题型归一复用 normalizeQuestionType） */
@@ -1803,39 +1798,11 @@ public class AppExamSmartService {
     m.put("options", pq.options());
     if (showAnswer) {
       m.put("answer", pq.correctAnswer());
-      String resolve = q.getResolve();
-      if (!StringUtils.hasText(resolve)) {
-        // 兼容：部分题解析写在 answer JSON 根字段 analysis/resolve
-        resolve = extractResolveFromAnswerJson(q.getAnswer());
-      }
-      m.put("resolve", resolve);
-      m.put("analysis", resolve);
+      OfficialResolve official = officialResolveResolver.resolve(q);
+      m.put("resolve", official.text());
+      m.put("analysis", official.text());
     }
     return m;
-  }
-
-  /** 从 answer JSON 根节点尝试读取解析文案（题库历史脏数据兼容）。 */
-  @SuppressWarnings("unchecked")
-  private String extractResolveFromAnswerJson(String answerRaw) {
-    if (!StringUtils.hasText(answerRaw)) {
-      return null;
-    }
-    String s = answerRaw.trim();
-    if (!s.startsWith("{")) {
-      return null;
-    }
-    try {
-      Map<String, Object> root = JSON.readValue(s, new TypeReference<Map<String, Object>>() {});
-      for (String key : List.of("resolve", "analysis", "jiexi", "explain", "解析")) {
-        Object v = root.get(key);
-        if (v != null && StringUtils.hasText(String.valueOf(v))) {
-          return String.valueOf(v).trim();
-        }
-      }
-    } catch (Exception ignored) {
-      // ignore
-    }
-    return null;
   }
 
   /**

@@ -188,6 +188,8 @@ public class ExamExamDetailApplicationService {
     entity.setKnowledgeId(req.knowledgeId());
     entity.setDifficulty(req.difficulty() != null ? req.difficulty() : 2);
     entity.setScore(req.score());
+    // §5.8 第三道闸门：手工编辑解析 ≤2000 字
+    ResolvePlainText.assertEditableLength(req.resolve());
     entity.setResolve(req.resolve());
     entity.setKeyword(req.keyword());
     entity.setSource(req.source() != null ? req.source() : 0);
@@ -215,7 +217,10 @@ public class ExamExamDetailApplicationService {
     if (req.knowledgeId() != null) entity.setKnowledgeId(req.knowledgeId());
     if (req.difficulty() != null) entity.setDifficulty(req.difficulty());
     if (req.score() != null) entity.setScore(req.score());
-    if (req.resolve() != null) entity.setResolve(req.resolve());
+    if (req.resolve() != null) {
+      ResolvePlainText.assertEditableLength(req.resolve());
+      entity.setResolve(req.resolve());
+    }
     if (req.keyword() != null) entity.setKeyword(req.keyword());
     if (req.source() != null) entity.setSource(req.source());
     if (req.status() != null) entity.setStatus(req.status());
@@ -499,6 +504,12 @@ public class ExamExamDetailApplicationService {
           }
           answer = answerCol != null ? getCellString(row.getCell(answerCol)) : null;
           resolve = resolveCol != null ? getCellString(row.getCell(resolveCol)) : null;
+          try {
+            ResolvePlainText.assertEditableLength(resolve);
+          } catch (BusinessException ex) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST,
+                "第 " + (i + 1) + " 行：" + ex.getMessage());
+          }
           difficulty = parseDifficulty(
               difficultyCol != null ? getCellString(row.getCell(difficultyCol)) : null);
           keyword = keywordCol != null ? getCellString(row.getCell(keywordCol)) : null;

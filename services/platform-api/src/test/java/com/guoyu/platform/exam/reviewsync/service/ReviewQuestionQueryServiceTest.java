@@ -20,6 +20,7 @@ import com.guoyu.platform.exam.mapper.ExamKnowledgeStructureMapper;
 import com.guoyu.platform.exam.reviewsync.dto.ReviewCourseWeights;
 import com.guoyu.platform.exam.reviewsync.dto.ReviewExamPlanInfo;
 import com.guoyu.platform.exam.reviewsync.dto.ReviewQuestion;
+import com.guoyu.platform.exam.service.OfficialResolveResolver;
 import com.guoyu.platform.exam.reviewsync.dto.ReviewQuestionDetail;
 import com.guoyu.platform.trainingdepartment.entity.TrainExamListEntity;
 import com.guoyu.platform.trainingdepartment.entity.TrainExamWorkTypeListEntity;
@@ -66,6 +67,8 @@ class ReviewQuestionQueryServiceTest {
   private ExamKnowledgeRateDetailMapper knowledgeRateDetailMapper;
   @Mock
   private ExamExamDetailMapper examDetailMapper;
+  @Mock
+  private OfficialResolveResolver officialResolveResolver;
 
   private ReviewQuestionQueryService service;
 
@@ -83,7 +86,15 @@ class ReviewQuestionQueryServiceTest {
   void setUp() {
     service = new ReviewQuestionQueryService(trainExamListMapper, workTypeListMapper, peopleListMapper,
         examCourseMapper, knowledgeStructureMapper, knowledgeRateMapper, knowledgeRateDetailMapper,
-        examDetailMapper);
+        examDetailMapper, officialResolveResolver);
+    // 统一读取器打桩：resolve 列非空 → db 直读；空 → empty（避免 toDetail NPE）
+    when(officialResolveResolver.resolve(any())).thenAnswer(inv -> {
+      ExamExamDetailEntity d = inv.getArgument(0);
+      String r = d.getResolve();
+      boolean hasText = r != null && !r.isBlank();
+      return new OfficialResolveResolver.OfficialResolve(
+          hasText ? r.trim() : null, hasText ? "db" : "empty");
+    });
   }
 
   private static TrainExamListEntity plan(long id) {
@@ -240,6 +251,71 @@ class ReviewQuestionQueryServiceTest {
     assertThat(second).isSameAs(first);
     // 第二次命中 Caffeine 缓存，不再回源
     verify(examDetailMapper, times(1)).selectOne(any());
+  }
+
+  @Test
+  void cachedEmptyResolveRefreshesFromDatabase() {
+    ExamExamDetailEntity emptyRow = new ExamExamDetailEntity();
+    emptyRow.setId(9002);
+    emptyRow.setType("single");
+    emptyRow.setContent("题干");
+    emptyRow.setResolve(null);
+    ExamExamDetailEntity resolvedRow = new ExamExamDetailEntity();
+    resolvedRow.setId(9002);
+    resolvedRow.setType("single");
+    resolvedRow.setContent("题干");
+    resolvedRow.setResolve("新解析");
+    // 第一次回源（miss）缓存空解析；第二次命中缓存但为空 → 回源拿到新解析并更新缓存
+    when(examDetailMapper.selectOne(any())).thenReturn(emptyRow, resolvedRow);
+
+    ReviewQuestionDetail first = service.loadQuestionDetail(9002L);
+    ReviewQuestionDetail second = service.loadQuestionDetail(9002L);
+    ReviewQuestionDetail third = service.loadQuestionDetail(9002L);
+
+    assertThat(first.resolve()).isNull();
+    assertThat(second.resolve()).isEqualTo("新解析");
+    // 第三次命中新解析缓存，不再回源
+    assertThat(third).isSameAs(second);
+    verify(examDetailMapper, times(2)).selectOne(any());
+  }
+
+  @Test
+  void batchLoadRefreshesCachedEmptyResolve() {
+    ExamExamDetailEntity emptyRow = new ExamExamDetailEntity();
+    emptyRow.setId(9101);
+    emptyRow.setType("single");
+    emptyRow.setContent("题干");
+    emptyRow.setResolve(null);
+    ExamExamDetailEntity resolvedRow = new ExamExamDetailEntity();
+    resolvedRow.setId(9101);
+    resolvedRow.setType("single");
+    resolvedRow.setContent("题干");
+    resolvedRow.setResolve("批量新解析");
+    when(examDetailMapper.selectList(any())).thenReturn(List.of(emptyRow), List.of(resolvedRow));
+
+    java.util.Map<Long, ReviewQuestionDetail> first = service.loadQuestionDetails(List.of(9101L));
+    assertThat(first.get(9101L).resolve()).isNull();
+
+    java.util.Map<Long, ReviewQuestionDetail> second = service.loadQuestionDetails(List.of(9101L));
+    assertThat(second.get(9101L).resolve()).isEqualTo("批量新解析");
+  }
+
+  @Test
+  void evictQuestionDetailForcesNextReadFromDatabase() {
+    ExamExamDetailEntity row = new ExamExamDetailEntity();
+    row.setId(9201);
+    row.setType("single");
+    row.setContent("题干");
+    row.setResolve("旧解析");
+    when(examDetailMapper.selectOne(any())).thenReturn(row);
+
+    ReviewQuestionDetail first = service.loadQuestionDetail(9201L);
+    assertThat(first.resolve()).isEqualTo("旧解析");
+
+    service.evictQuestionDetail(9201L);
+    ReviewQuestionDetail second = service.loadQuestionDetail(9201L);
+    assertThat(second.resolve()).isEqualTo("旧解析");
+    verify(examDetailMapper, times(2)).selectOne(any());
   }
 
   // ------------------------------------------------------------------

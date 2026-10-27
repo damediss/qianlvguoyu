@@ -20,12 +20,15 @@ import org.springframework.stereotype.Component;
 public class ExamFaqConverter {
 
   private final ObjectMapper objectMapper;
+  private final OfficialResolveResolver officialResolveResolver;
 
   /** answer JSON 中的选项 */
   private static final Pattern HTML_TAG_PATTERN = Pattern.compile("<[^>]+>");
 
-  public ExamFaqConverter(ObjectMapper objectMapper) {
+  public ExamFaqConverter(ObjectMapper objectMapper,
+      OfficialResolveResolver officialResolveResolver) {
     this.objectMapper = objectMapper;
+    this.officialResolveResolver = officialResolveResolver;
   }
 
   /**
@@ -86,9 +89,10 @@ public class ExamFaqConverter {
       answers.add(stripped);
     }
 
-    // 拼接 resolve（解析）
-    if (exam.getResolve() != null && !exam.getResolve().isBlank()) {
-      answers.add("解析：" + exam.getResolve());
+    // 拼接解析（§5.12）：先经统一官方读取器，再把表格扁平化，保证 WeKnora 无裸管道符
+    OfficialResolveResolver.OfficialResolve official = officialResolveResolver.resolve(exam);
+    if (official.text() != null && !official.text().isBlank()) {
+      answers.add("解析：" + ResolvePlainText.flatten(official.text()));
     }
 
     try {

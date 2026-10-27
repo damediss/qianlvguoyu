@@ -123,6 +123,8 @@ public class CompanyQuestionApplicationService {
     entity.setKnowledgeId(null);
     entity.setDifficulty(req.difficulty() != null ? req.difficulty() : 2);
     entity.setScore(req.score());
+    // §5.8 第三道闸门：手工编辑解析 ≤2000 字
+    ResolvePlainText.assertEditableLength(req.resolve());
     entity.setResolve(req.resolve());
     entity.setKeyword(req.keyword());
     entity.setSource(0);
@@ -150,7 +152,10 @@ public class CompanyQuestionApplicationService {
     if (req.orgName() != null) entity.setOrgName(req.orgName());
     if (req.difficulty() != null) entity.setDifficulty(req.difficulty());
     if (req.score() != null) entity.setScore(req.score());
-    if (req.resolve() != null) entity.setResolve(req.resolve());
+    if (req.resolve() != null) {
+      ResolvePlainText.assertEditableLength(req.resolve());
+      entity.setResolve(req.resolve());
+    }
     if (req.keyword() != null) entity.setKeyword(req.keyword());
     if (req.status() != null) entity.setStatus(req.status());
     if (req.sortNumber() != null) entity.setSortNumber(req.sortNumber());
@@ -212,6 +217,12 @@ public class CompanyQuestionApplicationService {
         String optD = getCellString(row.getCell(5));
         String answer = getCellString(row.getCell(6));
         String resolve = getCellString(row.getCell(7));
+        try {
+          ResolvePlainText.assertEditableLength(resolve);
+        } catch (BusinessException ex) {
+          throw new BusinessException(ErrorCode.BAD_REQUEST,
+              "第 " + (i + 1) + " 行：" + ex.getMessage());
+        }
         Integer difficulty = parseDifficulty(getCellString(row.getCell(8)));
         String keyword = getCellString(row.getCell(9));
 

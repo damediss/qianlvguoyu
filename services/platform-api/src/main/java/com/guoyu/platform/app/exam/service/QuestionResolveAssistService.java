@@ -1,15 +1,26 @@
 package com.guoyu.platform.app.exam.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.guoyu.platform.ai.entity.AiGenerationDraftEntity;
 import com.guoyu.platform.ai.infrastructure.FaqLlmClient;
 import com.guoyu.platform.ai.mapper.AiGenerationDraftMapper;
 import com.guoyu.platform.app.sms.AppSmsException;
+import com.guoyu.platform.common.exception.BusinessException;
 import com.guoyu.platform.common.tenant.TenantContextHolder;
 import com.guoyu.platform.exam.entity.ExamExamDetailEntity;
 import com.guoyu.platform.exam.entity.ExamFaqModelConfigEntity;
 import com.guoyu.platform.exam.mapper.ExamExamDetailMapper;
 import com.guoyu.platform.exam.service.FaqModelConfigApplicationService;
+import com.guoyu.platform.exam.service.OfficialResolveResolver;
+import com.guoyu.platform.exam.service.OfficialResolveResolver.OfficialResolve;
+import com.guoyu.platform.exam.service.QuestionResolveInputFactory;
+import com.guoyu.platform.exam.service.QuestionResolveInputFactory.QuestionPromptInput;
+import com.guoyu.platform.exam.service.QuestionResolvePromptPolicy;
+import com.guoyu.platform.exam.service.QuestionResolveRateLimitService;
+import com.guoyu.platform.exam.reviewsync.service.ReviewQuestionQueryService;
+import com.guoyu.platform.exam.service.ResolveMarkdownSanitizer;
+import com.guoyu.platform.security.SecurityContext;
 import com.guoyu.platform.system.entity.DictEntity;
 import com.guoyu.platform.system.mapper.DictMapper;
 import com.guoyu.platform.trainingdepartment.dto.FollowTaskQuestionReq;
@@ -17,16 +28,24 @@ import com.guoyu.platform.trainingdepartment.support.FollowTaskBankQuestionConve
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
+import java.util.UUID;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.data.redis.core.script.DefaultRedisScript;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
 /**
- * 题目解析：先查库 → 无则 LLM 生成 → 回写题库（并留痕 draft）。
+ * 题目解析统一入口（《试题解析Markdown表格化_一期实施方案》§5.3~§5.4）。
  *
- * <p>用于精准学/班级练习答错后补解析；不阻塞组卷主链路，按题按需拉取。
+ * <p>一份解析资产，一条获取链：官方读取器（resolve 列 → answer JSON → empty）→
+ * 同 sourceHash 的 generated/shadow draft 缓存 → 按需 LLM 生成一次 → 全员读缓存。
+ * 整个公开方法不使用 {@code @Transactional}，LLM HTTP 不在事务内；draft 与 resolve
+ * 两次写入各自幂等可恢复，单步失败只记 warn，不让学员主链路炸掉。
+ *
+ * <p>写回由 {@code question_resolve_writeback_enabled} 控制：默认 0 只写 shadow draft
+ * （影子验收，§10.1）；生产 resolve 列改 text 且 shadow 验收通过前不得置 1。
+ * 已删除旧 250 字截断与「≥245 字查 draft 找全文」分支（§5.8）。
  */
 @Slf4j
 @Service
@@ -34,10 +53,26 @@ public class QuestionResolveAssistService {
 
   private static final String DICT_MODEL_CODE = "ai_review_model_code";
   private static final String DEFAULT_MODEL_CODE = "deepseek-review";
-  private static final String DRAFT_TYPE = "question_resolve";
-  private static final String SOURCE_TYPE = "exam_exam_detail";
-  /** exam_exam_detail.resolve 现网多为 varchar(255) */
-  private static final int RESOLVE_DB_MAX = 250;
+  private static final String DICT_GENERATION_ENABLED = "question_resolve_generation_enabled";
+  private static final String DICT_WRITEBACK_ENABLED = "question_resolve_writeback_enabled";
+  private static final String DICT_OFFICIAL_ONLY_KEYWORDS = "question_resolve_official_only_keywords";
+  /** 解析模型独立配置键：与 ai_review_model_code（同步学鼓励语共用）隔离 */
+  private static final String DICT_RESOLVE_MODEL_CODE = "question_resolve_model_code";
+
+  private static final String DRAFT_TYPE = OfficialResolveResolver.DRAFT_TYPE;
+  private static final String SOURCE_TYPE = OfficialResolveResolver.SOURCE_TYPE;
+  private static final String PROMPT_PREFIX = OfficialResolveResolver.PROMPT_PREFIX;
+  private static final String PROMPT_PREFIX_REJECTED = OfficialResolveResolver.PROMPT_PREFIX_REJECTED;
+
+  private static final long LOCK_TTL_MILLIS = 120_000L;
+  private static final long FAIL_COOLDOWN_SECONDS = 86_400L;
+  private static final DefaultRedisScript<Long> RELEASE_LOCK = new DefaultRedisScript<>("""
+      if redis.call('GET', KEYS[1]) == ARGV[1] then
+        return redis.call('DEL', KEYS[1])
+      else
+        return 0
+      end
+      """, Long.class);
 
   private final ExamExamDetailMapper examDetailMapper;
   private final FollowTaskBankQuestionConverter bankQuestionConverter;
@@ -45,7 +80,11 @@ public class QuestionResolveAssistService {
   private final FaqModelConfigApplicationService modelConfigService;
   private final DictMapper dictMapper;
   private final AiGenerationDraftMapper draftMapper;
-  private final ConcurrentHashMap<Integer, Object> locks = new ConcurrentHashMap<>();
+  private final OfficialResolveResolver officialResolver;
+  private final QuestionResolveInputFactory inputFactory;
+  private final QuestionResolveRateLimitService rateLimitService;
+  private final ReviewQuestionQueryService reviewQuestionQueryService;
+  private final StringRedisTemplate redisTemplate;
 
   public QuestionResolveAssistService(
       ExamExamDetailMapper examDetailMapper,
@@ -53,105 +92,290 @@ public class QuestionResolveAssistService {
       FaqLlmClient llmClient,
       FaqModelConfigApplicationService modelConfigService,
       DictMapper dictMapper,
-      AiGenerationDraftMapper draftMapper) {
+      AiGenerationDraftMapper draftMapper,
+      OfficialResolveResolver officialResolver,
+      QuestionResolveInputFactory inputFactory,
+      QuestionResolveRateLimitService rateLimitService,
+      ReviewQuestionQueryService reviewQuestionQueryService,
+      StringRedisTemplate redisTemplate) {
     this.examDetailMapper = examDetailMapper;
     this.bankQuestionConverter = bankQuestionConverter;
     this.llmClient = llmClient;
     this.modelConfigService = modelConfigService;
     this.dictMapper = dictMapper;
     this.draftMapper = draftMapper;
+    this.officialResolver = officialResolver;
+    this.inputFactory = inputFactory;
+    this.rateLimitService = rateLimitService;
+    this.reviewQuestionQueryService = reviewQuestionQueryService;
+    this.redisTemplate = redisTemplate;
   }
 
   /**
-   * 获取解析：db → draft 缓存 → AI 生成并落库。
-   *
-   * @return questionId / resolve / source(db|draft|ai|empty) / generated
+   * App 控制器入口（§5.3）：强制登录 + 每学员每日限流；匿名一律「请先登录」，
+   * 匿名不再能读缓存或触发生成。缓存命中/锁竞争/冷却命中不计限流。
    */
-  @Transactional
-  public Map<String, Object> ensureResolve(Integer questionId) {
-    if (questionId == null || questionId <= 0) {
-      throw new AppSmsException(-1, "题目 id 无效");
+  public Map<String, Object> ensureResolveForApp(Integer questionId) {
+    Long userId;
+    try {
+      userId = SecurityContext.currentUser().getUserId();
+    } catch (IllegalStateException ex) {
+      throw new AppSmsException(-1, "请先登录");
     }
-    Object lock = locks.computeIfAbsent(questionId, k -> new Object());
-    synchronized (lock) {
-      try {
-        return ensureResolveLocked(questionId);
-      } finally {
-        locks.remove(questionId, lock);
-      }
+    if (userId == null || userId <= 0) {
+      throw new AppSmsException(-1, "请先登录");
     }
+    return ensureInternal(questionId, userId);
   }
 
   /**
-   * 只读解析与题干，不触发 AI 生成。供小培讲题/上下文快路径。
+   * 内部受信入口（小培讲题/后续 W8.1/批量预生成）：不强制 App 登录、不限流，
+   * 与 {@link #ensureResolveForApp} 共用同一缓存/生成实现。
+   */
+  public Map<String, Object> ensureResolve(Integer questionId) {
+    return ensureInternal(questionId, null);
+  }
+
+  /**
+   * 只读解析与题干，不触发 AI 生成（§5.3）。固定顺序：官方读取器 → 与当前 sourceHash
+   * 一致的 generated draft → empty；绝不读 shadow/rejected，绝不调用 LLM。
    */
   public Map<String, Object> peekResolve(Integer questionId) {
     if (questionId == null || questionId <= 0) {
       throw new AppSmsException(-1, "题目 id 无效");
     }
-    ExamExamDetailEntity detail = examDetailMapper.selectById(questionId);
-    if (detail == null || (detail.getDeleted() != null && detail.getDeleted() != 0)) {
-      throw new AppSmsException(-1, "题目不存在");
-    }
+    ExamExamDetailEntity detail = loadDetail(questionId);
     String stem = extractStem(detail);
-    if (StringUtils.hasText(detail.getResolve())) {
-      String dbText = detail.getResolve().trim();
-      if (dbText.length() >= RESOLVE_DB_MAX - 5) {
-        AiGenerationDraftEntity draft = findDraft(questionId);
-        if (draft != null && StringUtils.hasText(draft.getResultText())
-            && draft.getResultText().trim().length() > dbText.length()) {
-          return result(questionId, draft.getResultText().trim(), "draft", false, stem);
-        }
+
+    OfficialResolve official = officialResolver.resolve(detail);
+    if (!official.isEmpty()) {
+      return result(questionId, official.text(), official.source(), false, stem, null);
+    }
+    QuestionPromptInput input = inputFactory.build(detail);
+    if (input != null) {
+      AiGenerationDraftEntity draft = findLatestDraft(questionId, "generated");
+      if (draft != null && StringUtils.hasText(draft.getResultText())
+          && OfficialResolveResolver.promptHashEquals(draft.getPrompt(), input.sourceHash())) {
+        return result(questionId, draft.getResultText().trim(), "draft", false, stem, null);
       }
-      return result(questionId, dbText, "db", false, stem);
     }
-    AiGenerationDraftEntity draft = findDraft(questionId);
-    if (draft != null && StringUtils.hasText(draft.getResultText())) {
-      return result(questionId, draft.getResultText().trim(), "draft", false, stem);
-    }
-    return result(questionId, null, "empty", false, stem);
+    return result(questionId, null, "empty", false, stem, null);
   }
 
-  private Map<String, Object> ensureResolveLocked(Integer questionId) {
-    ExamExamDetailEntity detail = examDetailMapper.selectById(questionId);
-    if (detail == null || (detail.getDeleted() != null && detail.getDeleted() != 0)) {
-      throw new AppSmsException(-1, "题目不存在");
+  /** §5.4 逐步流程；appUserId 非空表示 App 链路（真实 LLM 前做每学员每日限流）。 */
+  private Map<String, Object> ensureInternal(Integer questionId, Long appUserId) {
+    // 1. 校验 questionId、题目存在且未删除；读取当前有效租户（默认 10159）
+    if (questionId == null || questionId <= 0) {
+      throw new AppSmsException(-1, "题目 id 无效");
     }
+    ExamExamDetailEntity detail = loadDetail(questionId);
     String stem = extractStem(detail);
-
-    if (StringUtils.hasText(detail.getResolve())) {
-      String dbText = detail.getResolve().trim();
-      // varchar(255) 截断时优先返回 draft 全文
-      if (dbText.length() >= RESOLVE_DB_MAX - 5) {
-        AiGenerationDraftEntity draft = findDraft(questionId);
-        if (draft != null && StringUtils.hasText(draft.getResultText())
-            && draft.getResultText().trim().length() > dbText.length()) {
-          return result(questionId, draft.getResultText().trim(), "draft", false, stem);
-        }
-      }
-      return result(questionId, dbText, "db", false, stem);
-    }
-
-    AiGenerationDraftEntity draft = findDraft(questionId);
-    if (draft != null && StringUtils.hasText(draft.getResultText())) {
-      String full = draft.getResultText().trim();
-      backfillResolveColumn(detail, full);
-      return result(questionId, full, "draft", false, stem);
-    }
-
     Long tenantId = TenantContextHolder.getTenantId();
     if (tenantId == null || tenantId <= 0) {
       tenantId = TenantContextHolder.DEFAULT_TENANT_ID;
     }
 
-    String generated = generateByLlm(detail, tenantId);
-    if (!StringUtils.hasText(generated)) {
-      return result(questionId, null, "empty", false, stem);
+    // 2. 官方读取器非 empty → 直接返回（db/official/draft），不调 LLM、不计限流
+    OfficialResolve official = officialResolver.resolve(detail);
+    if (!official.isEmpty()) {
+      return result(questionId, official.text(), official.source(), false, stem, null);
     }
-    String text = generated.trim();
-    writeDraft(questionId, text, tenantId);
-    backfillResolveColumn(detail, text);
-    return result(questionId, text, "ai", true, stem);
+
+    // 3. 输入资格（缺题干/缺选项/缺答案 → invalid_input，不调 LLM）
+    QuestionPromptInput input = inputFactory.build(detail);
+    if (input == null) {
+      return result(questionId, null, "empty", false, stem, "invalid_input");
+    }
+
+    // 4. generated/shadow draft 缓存（同 sourceHash 才用；writeback=0 时 shadow 可直接返回）
+    Map<String, Object> cached = readDraftCache(questionId, detail, input, tenantId);
+    if (cached != null) {
+      return cached;
+    }
+
+    // 5. 生成开关（默认 0；缓存读取不受开关影响）
+    if (dictInt(DICT_GENERATION_ENABLED, 0) != 1) {
+      return result(questionId, null, "empty", false, stem, "disabled");
+    }
+
+    // 6. 失败冷却：同 sourceHash 24h 内不重复；sourceHash 变了说明题目已改，可重试
+    String failKey = "question_resolve:fail:" + questionId;
+    try {
+      String failedHash = redisTemplate.opsForValue().get(failKey);
+      if (input.sourceHash().equals(failedHash)) {
+        return result(questionId, null, "empty", false, stem, "cooldown");
+      }
+    } catch (Exception e) {
+      log.warn("[题目解析] 冷却读取失败 questionId={} err={}", questionId, e.getMessage());
+    }
+
+    // 7. Redis 题级锁（跨实例防重）；拿不到锁不重复调 LLM
+    String lockKey = "question_resolve:lock:" + questionId;
+    String lockValue = UUID.randomUUID().toString();
+    boolean locked = false;
+    try {
+      locked = Boolean.TRUE.equals(
+          redisTemplate.opsForValue().setIfAbsent(lockKey, lockValue, java.time.Duration.ofMillis(LOCK_TTL_MILLIS)));
+    } catch (Exception e) {
+      log.warn("[题目解析] 获取锁失败 questionId={} err={}", questionId, e.getMessage());
+    }
+    if (!locked) {
+      AiGenerationDraftEntity draft = findLatestDraft(questionId, "generated");
+      if (draft != null && StringUtils.hasText(draft.getResultText())
+          && OfficialResolveResolver.promptHashEquals(draft.getPrompt(), input.sourceHash())) {
+        return result(questionId, draft.getResultText().trim(), "draft", false, stem, null);
+      }
+      return result(questionId, null, "empty", false, stem, "generating");
+    }
+
+    try {
+      // 8. 锁内二次检查：等待期间另一实例可能已生成（重新跑 2~4 步）
+      ExamExamDetailEntity freshDetail = examDetailMapper.selectById(questionId);
+      if (freshDetail != null && (freshDetail.getDeleted() == null || freshDetail.getDeleted() == 0)) {
+        detail = freshDetail;
+        stem = extractStem(detail);
+        official = officialResolver.resolve(detail);
+        if (!official.isEmpty()) {
+          return result(questionId, official.text(), official.source(), false, stem, null);
+        }
+        input = inputFactory.build(detail);
+        if (input == null) {
+          return result(questionId, null, "empty", false, stem, "invalid_input");
+        }
+        cached = readDraftCache(questionId, detail, input, tenantId);
+        if (cached != null) {
+          return cached;
+        }
+      }
+
+      // 9. App 链路真实 LLM 前每学员每日限流（缓存命中/锁竞争/冷却命中不计次）
+      if (appUserId != null) {
+        try {
+          rateLimitService.acquire(tenantId, appUserId);
+        } catch (BusinessException ex) {
+          return result(questionId, null, "empty", false, stem, "rate_limited");
+        }
+      }
+
+      // 10~11. 调 LLM → 写 draft（shadow/generated）；失败写 rejected draft + 冷却
+      return generateAndPersist(questionId, detail, input, tenantId, stem);
+    } finally {
+      releaseLock(lockKey, lockValue);
+    }
+  }
+
+  /** §5.4 步骤 4：generated draft 同 hash 命中 → draft（writeback=1 且列空补回写）；writeback=0 再查 shadow draft。 */
+  private Map<String, Object> readDraftCache(Integer questionId, ExamExamDetailEntity detail,
+      QuestionPromptInput input, Long tenantId) {
+    AiGenerationDraftEntity generated = findLatestDraft(questionId, "generated");
+    if (generated != null && StringUtils.hasText(generated.getResultText())) {
+      if (OfficialResolveResolver.promptHashEquals(generated.getPrompt(), input.sourceHash())) {
+        if (dictInt(DICT_WRITEBACK_ENABLED, 0) == 1 && !StringUtils.hasText(detail.getResolve())) {
+          backfillResolveColumn(detail.getId(), generated.getResultText().trim());
+        }
+        return result(questionId, generated.getResultText().trim(), "draft", false,
+            extractStem(detail), null);
+      }
+      // sourceHash 不一致 → 旧 draft，不使用，继续生成流程
+      return null;
+    }
+    if (dictInt(DICT_WRITEBACK_ENABLED, 0) != 1) {
+      AiGenerationDraftEntity shadow = findLatestDraft(questionId, "shadow");
+      if (shadow != null && StringUtils.hasText(shadow.getResultText())
+          && OfficialResolveResolver.promptHashEquals(shadow.getPrompt(), input.sourceHash())) {
+        return result(questionId, shadow.getResultText().trim(), "shadow", false,
+            extractStem(detail), null);
+      }
+    }
+    return null;
+  }
+
+  /** §5.4 步骤 10~11：LLM 生成 → 质量门（§5.7）→ shadow/generated draft；失败 → rejected + 冷却。 */
+  private Map<String, Object> generateAndPersist(Integer questionId, ExamExamDetailEntity detail,
+      QuestionPromptInput input, Long tenantId, String stem) {
+    // S13：安全/法规白名单命中不调用 LLM：不写 rejected、不进冷却
+    // 白名单默认 安全规程,法律法规；sys_dict question_resolve_official_only_keywords 可按环境扩展（§5.7）
+    if (ResolveMarkdownSanitizer.isOfficialOnlyKnowledge(
+        input.knowledgeTitle(), officialOnlyKeywords())) {
+      log.info("[题目解析] 知识点命中安全/法规白名单，不生成 questionId={} knowledge={}",
+          questionId, input.knowledgeTitle());
+      return result(questionId, null, "empty", false, stem, "official_only");
+    }
+
+    ExamFaqModelConfigEntity config = resolveModelConfig(tenantId);
+    if (config == null || !StringUtils.hasText(config.getApiKey())) {
+      log.warn("[题目解析] 模型配置缺失，无法 AI 生成 questionId={}", questionId);
+      onGenerationFailed(questionId, input, tenantId, null);
+      return result(questionId, null, "empty", false, stem, "llm_failed");
+    }
+
+    int maxTokens = QuestionResolvePromptPolicy.maxTokensFor(config.getThinking(), config.getMaxTokens());
+    String systemPrompt = QuestionResolvePromptPolicy.systemPrompt(
+        QuestionResolvePromptPolicy.budgetFor(input.normalizedType()));
+    String userPrompt = QuestionResolvePromptPolicy.userPrompt(input);
+
+    String content;
+    try {
+      content = llmClient.chatCompletion(
+          config.getBaseUrl(), config.getApiKey(), config.getModelId(),
+          systemPrompt, userPrompt, maxTokens,
+          config.getThinking(), config.getReasoningEffort(), false, tenantId);
+    } catch (Exception e) {
+      log.warn("[题目解析] LLM 失败 questionId={} err={}", questionId, e.getMessage());
+      onGenerationFailed(questionId, input, tenantId, null);
+      return result(questionId, null, "empty", false, stem, "llm_failed");
+    }
+    if (!StringUtils.hasText(content)) {
+      log.warn("[题目解析] LLM 空响应 questionId={}", questionId);
+      onGenerationFailed(questionId, input, tenantId, content);
+      return result(questionId, null, "empty", false, stem, "llm_failed");
+    }
+
+    // 质量门：拒绝 → rejected draft + 冷却；表格整表丢弃只记日志
+    ResolveMarkdownSanitizer.SanitizeResult sanitized = ResolveMarkdownSanitizer.sanitize(content, input);
+    if (sanitized.rejectedReason() != null) {
+      log.info("[题目解析] 质量门拒绝 questionId={} reason={}", questionId, sanitized.rejectedReason());
+      onGenerationFailed(questionId, input, tenantId, content);
+      return result(questionId, null, "empty", false, stem, "quality_rejected");
+    }
+    if (sanitized.tableDropped()) {
+      log.info("[题目解析] 表格超限整表丢弃 questionId={}", questionId);
+    }
+
+    String text = sanitized.text().trim();
+    boolean writeback = dictInt(DICT_WRITEBACK_ENABLED, 0) == 1;
+    if (writeback) {
+      backfillResolveColumn(detail.getId(), text);
+      writeDraft(questionId, input.sourceHash(), text, tenantId, "generated", false);
+      return result(questionId, text, "ai", true, stem, null);
+    }
+    writeDraft(questionId, input.sourceHash(), text, tenantId, "shadow", false);
+    return result(questionId, text, "shadow", true, stem, null);
+  }
+
+  /** 失败处理（§5.4 步骤 10）：rejected draft（失败文本永不进入读取链）+ 24h 冷却。 */
+  private void onGenerationFailed(Integer questionId, QuestionPromptInput input,
+      Long tenantId, String rawOutput) {
+    try {
+      writeDraft(questionId, input.sourceHash(), rawOutput, tenantId, "rejected", true);
+    } catch (Exception e) {
+      log.warn("[题目解析] rejected draft 留痕失败 questionId={} err={}", questionId, e.getMessage());
+    }
+    try {
+      redisTemplate.opsForValue().set(
+          "question_resolve:fail:" + questionId, input.sourceHash(),
+          java.time.Duration.ofSeconds(FAIL_COOLDOWN_SECONDS));
+    } catch (Exception e) {
+      log.warn("[题目解析] 冷却写入失败 questionId={} err={}", questionId, e.getMessage());
+    }
+  }
+
+  private ExamExamDetailEntity loadDetail(Integer questionId) {
+    ExamExamDetailEntity detail = examDetailMapper.selectById(questionId);
+    if (detail == null || (detail.getDeleted() != null && detail.getDeleted() != 0)) {
+      throw new AppSmsException(-1, "题目不存在");
+    }
+    return detail;
   }
 
   private String extractStem(ExamExamDetailEntity detail) {
@@ -161,147 +385,92 @@ public class QuestionResolveAssistService {
     try {
       FollowTaskQuestionReq snap = bankQuestionConverter.convert(detail, 0);
       if (snap != null && StringUtils.hasText(snap.getStem())) {
-        return stripHtml(snap.getStem());
+        return QuestionResolveInputFactory.stripHtml(snap.getStem());
       }
     } catch (Exception ignored) {
-      // fall through
+      // fall through：非客观题或快照失败时退回题干列
     }
-    return stripHtml(detail.getContent());
+    return QuestionResolveInputFactory.stripHtml(detail.getContent());
   }
 
-  /** 题干常带 &lt;p&gt; 等富文本，展示前去掉标签。 */
-  private static String stripHtml(String raw) {
-    if (!StringUtils.hasText(raw)) {
-      return null;
-    }
-    String t = raw
-        .replaceAll("(?is)<br\\s*/?>", "\n")
-        .replaceAll("(?is)</p>", "\n")
-        .replaceAll("(?is)<[^>]+>", "")
-        .replace("&nbsp;", " ")
-        .replace("&lt;", "<")
-        .replace("&gt;", ">")
-        .replace("&amp;", "&")
-        .replace("&quot;", "\"")
-        .replace("&#39;", "'")
-        .replaceAll("[ \\t\\x0B\\f\\r]+", " ")
-        .replaceAll("\\n{3,}", "\n\n")
-        .trim();
-    return StringUtils.hasText(t) ? t : null;
-  }
-
-  private String generateByLlm(ExamExamDetailEntity detail, Long tenantId) {
-    ExamFaqModelConfigEntity config = resolveModelConfig(tenantId);
-    if (config == null || !StringUtils.hasText(config.getApiKey())) {
-      log.warn("[题目解析] 模型配置缺失，无法 AI 生成 questionId={}", detail.getId());
-      return null;
-    }
-
-    String stem;
-    String optionsText;
-    String correct;
-    try {
-      FollowTaskQuestionReq snap = bankQuestionConverter.convert(detail, 0);
-      stem = snap.getStem() == null ? "" : snap.getStem();
-      StringBuilder optSb = new StringBuilder();
-      if (snap.getOptions() != null) {
-        for (Object raw : snap.getOptions()) {
-          if (raw instanceof Map<?, ?> om) {
-            optSb.append(om.get("key")).append(". ").append(om.get("text")).append('\n');
-          }
-        }
-      }
-      optionsText = optSb.toString().trim();
-      correct = snap.getAnswer() == null ? "" : String.valueOf(snap.getAnswer());
-    } catch (Exception e) {
-      stem = detail.getContent() == null ? "" : detail.getContent();
-      optionsText = "";
-      correct = detail.getAnswer() == null ? "" : detail.getAnswer();
-    }
-
-    String systemPrompt = "你是职业技能等级认定考试的辅导老师。"
-        + "请用简洁中文写解析。第一行必须是：考点：xxx；易错：xxx。"
-        + "随后用一两句说明为什么选该答案。"
-        + "要求：总长不超过 180 字，不要 markdown，不要 emoji，不要复述整道题干。";
-    String userPrompt = "题型：" + (detail.getType() == null ? "" : detail.getType()) + "\n"
-        + "题干：\n" + truncate(stem, 800) + "\n"
-        + (StringUtils.hasText(optionsText) ? "选项：\n" + truncate(optionsText, 600) + "\n" : "")
-        + "正确答案：" + truncate(correct, 200) + "\n"
-        + "请按格式写出解析（首行含考点与易错）：";
-
-    try {
-      String content = llmClient.chatCompletion(
-          config.getBaseUrl(),
-          config.getApiKey(),
-          config.getModelId(),
-          systemPrompt,
-          userPrompt,
-          800,
-          config.getThinking(),
-          config.getReasoningEffort(),
-          false,
-          tenantId);
-      if (!StringUtils.hasText(content)) {
-        return null;
-      }
-      String text = content.trim();
-      if (text.length() > 400) {
-        text = text.substring(0, 400);
-      }
-      return text;
-    } catch (Exception e) {
-      log.warn("[题目解析] LLM 失败 questionId={} err={}", detail.getId(), e.getMessage());
-      return null;
-    }
-  }
-
-  private void backfillResolveColumn(ExamExamDetailEntity detail, String fullText) {
-    if (detail == null || detail.getId() == null || !StringUtils.hasText(fullText)) {
-      return;
-    }
-    if (StringUtils.hasText(detail.getResolve())) {
+  /**
+   * 回写 resolve 列：全文写入、无 250 截断；条件更新「仅当列为空」——LLM 生成期间
+   * 管理员手工填写时影响 0 行，AI 结果不覆盖人工内容（§5.11）。
+   */
+  private void backfillResolveColumn(Integer questionId, String fullText) {
+    if (questionId == null || !StringUtils.hasText(fullText)) {
       return;
     }
     try {
-      String store = fullText.trim();
-      if (store.length() > RESOLVE_DB_MAX) {
-        store = store.substring(0, RESOLVE_DB_MAX);
+      int updated = examDetailMapper.update(null,
+          new LambdaUpdateWrapper<ExamExamDetailEntity>()
+              .eq(ExamExamDetailEntity::getId, questionId)
+              .and(wrapper -> wrapper.isNull(ExamExamDetailEntity::getResolve)
+                  .or().eq(ExamExamDetailEntity::getResolve, ""))
+              .set(ExamExamDetailEntity::getResolve, fullText.trim()));
+      if (updated == 0) {
+        // 未回写（已有人工内容）不 evict：缓存里的人工解析仍然有效
+        log.info("[题目解析] resolve 列已有人工内容，跳过重写 questionId={}", questionId);
+      } else {
+        evictQuestionDetailCache(questionId);
       }
-      ExamExamDetailEntity patch = new ExamExamDetailEntity();
-      patch.setId(detail.getId());
-      patch.setResolve(store);
-      examDetailMapper.updateById(patch);
-      detail.setResolve(store);
     } catch (Exception e) {
-      log.warn("[题目解析] 回写 resolve 失败 questionId={} err={}", detail.getId(), e.getMessage());
+      log.warn("[题目解析] 回写 resolve 失败 questionId={} err={}", questionId, e.getMessage());
     }
   }
 
-  private AiGenerationDraftEntity findDraft(Integer questionId) {
-    return draftMapper.selectOne(new LambdaQueryWrapper<AiGenerationDraftEntity>()
-        .eq(AiGenerationDraftEntity::getDraftType, DRAFT_TYPE)
-        .eq(AiGenerationDraftEntity::getSourceType, SOURCE_TYPE)
-        .eq(AiGenerationDraftEntity::getSourceId, questionId.longValue())
-        .eq(AiGenerationDraftEntity::getDeleted, 0)
-        .orderByDesc(AiGenerationDraftEntity::getId)
-        .last("LIMIT 1"));
+  /** 回写成功后失效同步学 6h 详情缓存，避免"生成了却读不到"。 */
+  private void evictQuestionDetailCache(Integer questionId) {
+    try {
+      reviewQuestionQueryService.evictQuestionDetail(questionId.longValue());
+    } catch (Exception e) {
+      log.warn("[题目解析] 缓存失效失败 questionId={} err={}", questionId, e.getMessage());
+    }
   }
 
-  private void writeDraft(Integer questionId, String resultText, Long tenantId) {
+  private AiGenerationDraftEntity findLatestDraft(Integer questionId, String status) {
+    try {
+      return draftMapper.selectOne(new LambdaQueryWrapper<AiGenerationDraftEntity>()
+          .eq(AiGenerationDraftEntity::getDraftType, DRAFT_TYPE)
+          .eq(AiGenerationDraftEntity::getSourceType, SOURCE_TYPE)
+          .eq(AiGenerationDraftEntity::getSourceId, questionId.longValue())
+          .eq(AiGenerationDraftEntity::getStatus, status)
+          .eq(AiGenerationDraftEntity::getDeleted, 0)
+          .orderByDesc(AiGenerationDraftEntity::getId)
+          .last("LIMIT 1"));
+    } catch (Exception e) {
+      log.debug("[题目解析] draft 查询失败 questionId={} status={} err={}",
+          questionId, status, e.getMessage());
+      return null;
+    }
+  }
+
+  /** draft 留痕（§5.10）；rejected 用独立 prompt 前缀。单步失败只记 warn。 */
+  private void writeDraft(Integer questionId, String sourceHash, String resultText,
+      Long tenantId, String status, boolean rejected) {
     try {
       AiGenerationDraftEntity draft = new AiGenerationDraftEntity();
       draft.setTenantId(tenantId);
       draft.setDraftType(DRAFT_TYPE);
       draft.setSourceType(SOURCE_TYPE);
       draft.setSourceId(questionId.longValue());
-      draft.setPrompt("question_resolve#" + questionId);
+      draft.setPrompt((rejected ? PROMPT_PREFIX_REJECTED : PROMPT_PREFIX) + sourceHash);
       draft.setResultText(resultText);
       draft.setModelName(readModelCode(tenantId));
-      draft.setStatus("generated");
+      draft.setStatus(status);
       draft.setDeleted(0);
       draftMapper.insert(draft);
     } catch (Exception e) {
-      log.warn("[题目解析] 留痕失败 questionId={} err={}", questionId, e.getMessage());
+      log.warn("[题目解析] draft 留痕失败 questionId={} status={} err={}",
+          questionId, status, e.getMessage());
+    }
+  }
+
+  private void releaseLock(String lockKey, String lockValue) {
+    try {
+      redisTemplate.execute(RELEASE_LOCK, List.of(lockKey), lockValue);
+    } catch (Exception e) {
+      log.warn("[题目解析] 锁释放失败 key={} err={}", lockKey, e.getMessage());
     }
   }
 
@@ -314,23 +483,70 @@ public class QuestionResolveAssistService {
     }
   }
 
+  /**
+   * 解析模型选择（模型隔离）：优先独立键 {@code question_resolve_model_code}；
+   * 未配置时兼容存量环境回退 {@code ai_review_model_code}（该键同时被同步学鼓励语使用，
+   * 不得改动其值）；都未配置用默认 deepseek-review。
+   * 注意：只在新键【未配置】时才回退旧键——新键配置了但对应模型配置缺失时由
+   * {@link #resolveModelConfig} 返回 null → llm_failed，不静默换回旧模型。
+   */
   private String readModelCode(Long tenantId) {
+    String resolveModelCode = dictValue(DICT_RESOLVE_MODEL_CODE);
+    if (StringUtils.hasText(resolveModelCode)) {
+      return resolveModelCode.trim();
+    }
+    String sharedModelCode = dictValue(DICT_MODEL_CODE);
+    if (StringUtils.hasText(sharedModelCode)) {
+      return sharedModelCode.trim();
+    }
+    return DEFAULT_MODEL_CODE;
+  }
+
+  private String dictValue(String code) {
     List<DictEntity> dicts = dictMapper.selectList(new LambdaQueryWrapper<DictEntity>()
-        .eq(DictEntity::getCode, DICT_MODEL_CODE)
+        .eq(DictEntity::getCode, code)
         .eq(DictEntity::getDeleted, 0)
         .last("LIMIT 1"));
     if (!dicts.isEmpty() && StringUtils.hasText(dicts.get(0).getValue())) {
       return dicts.get(0).getValue().trim();
     }
-    return DEFAULT_MODEL_CODE;
+    return null;
   }
 
-  private static Map<String, Object> result(Integer questionId, String resolve, String source, boolean generated) {
-    return result(questionId, resolve, source, generated, null);
+  /** S13 白名单（sys_dict 逗号分隔）；未配置用默认常量。 */
+  private java.util.List<String> officialOnlyKeywords() {
+    try {
+      List<DictEntity> dicts = dictMapper.selectList(new LambdaQueryWrapper<DictEntity>()
+          .eq(DictEntity::getCode, DICT_OFFICIAL_ONLY_KEYWORDS)
+          .eq(DictEntity::getDeleted, 0)
+          .last("LIMIT 1"));
+      if (!dicts.isEmpty() && StringUtils.hasText(dicts.get(0).getValue())) {
+        return java.util.Arrays.stream(dicts.get(0).getValue().split("[,，]"))
+            .map(String::trim).filter(s -> !s.isEmpty()).toList();
+      }
+    } catch (Exception e) {
+      log.warn("[题目解析] 读取白名单字典失败，用默认值：{}", e.getMessage());
+    }
+    return null;
+  }
+
+  private int dictInt(String code, int defaultValue) {
+    try {
+      List<DictEntity> dicts = dictMapper.selectList(new LambdaQueryWrapper<DictEntity>()
+          .eq(DictEntity::getCode, code)
+          .eq(DictEntity::getDeleted, 0)
+          .last("LIMIT 1"));
+      if (!dicts.isEmpty() && dicts.get(0).getValue() != null) {
+        return Integer.parseInt(dicts.get(0).getValue().trim());
+      }
+    } catch (Exception e) {
+      log.warn("[题目解析] 读取字典 {} 失败，用默认值 {}：{}", code, defaultValue, e.getMessage());
+    }
+    return defaultValue;
   }
 
   private static Map<String, Object> result(
-      Integer questionId, String resolve, String source, boolean generated, String stem) {
+      Integer questionId, String resolve, String source, boolean generated, String stem, String reason) {
     Map<String, Object> out = new LinkedHashMap<>();
     out.put("questionId", questionId);
     out.put("resolve", resolve);
@@ -340,14 +556,9 @@ public class QuestionResolveAssistService {
     if (StringUtils.hasText(stem)) {
       out.put("stem", stem);
     }
-    return out;
-  }
-
-  private static String truncate(String s, int max) {
-    if (s == null) {
-      return "";
+    if (reason != null) {
+      out.put("reason", reason);
     }
-    String t = s.trim();
-    return t.length() <= max ? t : t.substring(0, max);
+    return out;
   }
 }

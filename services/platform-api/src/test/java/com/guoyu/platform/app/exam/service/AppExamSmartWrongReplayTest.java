@@ -10,6 +10,7 @@ import com.guoyu.platform.app.exam.mapper.AppExamMockPaperMapper;
 import com.guoyu.platform.app.exam.mapper.AppExamUserAnswerLogMapper;
 import com.guoyu.platform.common.tenant.TenantContextHolder;
 import com.guoyu.platform.exam.entity.ExamExamDetailEntity;
+import com.guoyu.platform.exam.service.OfficialResolveResolver;
 import com.guoyu.platform.exam.mapper.ExamExamDetailMapper;
 import com.guoyu.platform.exam.mapper.ExamKnowledgeStructureMapper;
 import com.guoyu.platform.exam.reviewsync.mapper.AiReviewPlanMapper;
@@ -70,6 +71,8 @@ class AppExamSmartWrongReplayTest {
   private AiReviewPlanMapper reviewPlanMapper;
   @Mock
   private AiReviewWrongItemMapper reviewWrongItemMapper;
+  @Mock
+  private OfficialResolveResolver officialResolveResolver;
 
   private AppExamSmartService service;
 
@@ -78,7 +81,15 @@ class AppExamSmartWrongReplayTest {
     service = new AppExamSmartService(examDetailMapper, knowledgeMapper, mockPaperMapper,
         answerLogMapper, peopleListMapper, practiceScopeMapper, practiceCourseMapper,
         practiceKnowledgeMapper, bankQuestionConverter, classReviewSyncMapper, reviewPlanMapper,
-        reviewWrongItemMapper);
+        reviewWrongItemMapper, officialResolveResolver);
+    // 统一读取器打桩：默认按 resolve 列直读（db/empty），避免 toQuestionView NPE
+    when(officialResolveResolver.resolve(any())).thenAnswer(inv -> {
+      ExamExamDetailEntity d = inv.getArgument(0);
+      String r = d.getResolve();
+      boolean hasText = r != null && !r.isBlank();
+      return new OfficialResolveResolver.OfficialResolve(
+          hasText ? r.trim() : null, hasText ? "db" : "empty");
+    });
     PlatformUserPrincipal principal = new PlatformUserPrincipal(7L, 10159L, "u", "u", "app",
         List.of(), List.of(), null);
     SecurityContextHolder.getContext().setAuthentication(

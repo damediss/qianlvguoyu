@@ -19,6 +19,8 @@ import com.guoyu.platform.exam.reviewsync.dto.ReviewKnowledgeNode;
 import com.guoyu.platform.exam.reviewsync.dto.ReviewQuestion;
 import com.guoyu.platform.exam.reviewsync.dto.ReviewQuestionDetail;
 import com.guoyu.platform.exam.reviewsync.support.QuestionTypes;
+import com.guoyu.platform.exam.service.OfficialResolveResolver;
+import com.guoyu.platform.exam.service.OfficialResolveResolver.OfficialResolve;
 import com.guoyu.platform.trainingdepartment.entity.TrainExamListEntity;
 import com.guoyu.platform.trainingdepartment.entity.TrainExamPeopleListEntity;
 import com.guoyu.platform.trainingdepartment.entity.TrainExamWorkTypeListEntity;
@@ -44,6 +46,8 @@ import org.springframework.stereotype.Service;
  * TenantContextFilter 强制 10159），逻辑删除由 @TableLogic 自动拼 deleted=0；复用的合并表实体
  * 均不继承 BaseEntity、主键 IdType.AUTO（合并表只有 create_time/update_time）。
  * 题目详情走 Caffeine 读穿缓存（TTL 6h），缓存 miss 回源主库；返回值均做 null 检查。
+ * 解析走统一官方读取器（§4.1）；缓存命中但 resolve 为空时回源当前行刷新，
+ * 新解析非空才更新缓存，避免"生成了却读不到"被空解析缓存 6 小时。
  */
 @Slf4j
 @Service
@@ -57,6 +61,7 @@ public class ReviewQuestionQueryService {
   private final ExamKnowledgeRateMapper knowledgeRateMapper;
   private final ExamKnowledgeRateDetailMapper knowledgeRateDetailMapper;
   private final ExamExamDetailMapper examDetailMapper;
+  private final OfficialResolveResolver officialResolveResolver;
   private final Cache<Long, ReviewQuestionDetail> detailCache;
 
   public ReviewQuestionQueryService(
@@ -67,7 +72,8 @@ public class ReviewQuestionQueryService {
       ExamKnowledgeStructureMapper knowledgeStructureMapper,
       ExamKnowledgeRateMapper knowledgeRateMapper,
       ExamKnowledgeRateDetailMapper knowledgeRateDetailMapper,
-      ExamExamDetailMapper examDetailMapper) {
+      ExamExamDetailMapper examDetailMapper,
+      OfficialResolveResolver officialResolveResolver) {
     this.trainExamListMapper = trainExamListMapper;
     this.workTypeListMapper = workTypeListMapper;
     this.peopleListMapper = peopleListMapper;
@@ -76,6 +82,7 @@ public class ReviewQuestionQueryService {
     this.knowledgeRateMapper = knowledgeRateMapper;
     this.knowledgeRateDetailMapper = knowledgeRateDetailMapper;
     this.examDetailMapper = examDetailMapper;
+    this.officialResolveResolver = officialResolveResolver;
     this.detailCache = Caffeine.newBuilder()
         .maximumSize(50_000)
         .expireAfterWrite(Duration.ofHours(6))
@@ -213,7 +220,22 @@ public class ReviewQuestionQueryService {
   public ReviewQuestionDetail loadQuestionDetail(long questionId) {
     ReviewQuestionDetail cached = detailCache.getIfPresent(questionId);
     if (cached != null) {
-      return cached;
+      if (hasText(cached.resolve())) {
+        return cached;
+      }
+      // 命中缓存但 resolve 为空（解析后生成/回写）：回源当前行刷新，非空才更新缓存
+      ExamExamDetailEntity refreshed = examDetailMapper.selectOne(new LambdaQueryWrapper<ExamExamDetailEntity>()
+          .eq(ExamExamDetailEntity::getId, questionId)
+          .last("LIMIT 1"));
+      if (refreshed == null) {
+        return cached;
+      }
+      ReviewQuestionDetail detail = toDetail(refreshed);
+      if (detail != null && hasText(detail.resolve())) {
+        detailCache.put(questionId, detail);
+        return detail;
+      }
+      return detail != null ? detail : cached;
     }
     ExamExamDetailEntity entity = examDetailMapper.selectOne(new LambdaQueryWrapper<ExamExamDetailEntity>()
         .eq(ExamExamDetailEntity::getId, questionId)
@@ -228,16 +250,31 @@ public class ReviewQuestionQueryService {
     return detail;
   }
 
+  /** 供生成回写后主动失效缓存（§5.11：AI 回写 resolve 立即对同步学可见）。 */
+  public void evictQuestionDetail(long questionId) {
+    detailCache.invalidate(questionId);
+  }
+
+  private static boolean hasText(String s) {
+    return s != null && !s.isBlank();
+  }
+
   public Map<Long, ReviewQuestionDetail> loadQuestionDetails(List<Long> questionIds) {
     Map<Long, ReviewQuestionDetail> result = new HashMap<>();
     List<Long> misses = new ArrayList<>();
+    List<Long> emptyResolveHits = new ArrayList<>();
     for (Long id : questionIds) {
       if (id == null) {
         continue;
       }
       ReviewQuestionDetail cached = detailCache.getIfPresent(id);
-      if (cached != null) {
+      if (cached != null && hasText(cached.resolve())) {
+        // 非空缓存继续直接使用
         result.put(id, cached);
+      } else if (cached != null) {
+        // 缓存了空解析：先放旧值兜底，随后回源刷新
+        result.put(id, cached);
+        emptyResolveHits.add(id);
       } else {
         misses.add(id);
       }
@@ -248,6 +285,18 @@ public class ReviewQuestionQueryService {
               .in(ExamExamDetailEntity::getId, chunk))) {
         ReviewQuestionDetail detail = toDetail(row);
         if (detail != null) {
+          detailCache.put(detail.id(), detail);
+          result.put(detail.id(), detail);
+        }
+      }
+    }
+    // 缓存命中但 resolve 为空的 id：回源当前行，新解析非空则更新缓存与返回值
+    for (List<Long> chunk : chunked(emptyResolveHits, 200)) {
+      for (ExamExamDetailEntity row : examDetailMapper.selectList(
+          new LambdaQueryWrapper<ExamExamDetailEntity>()
+              .in(ExamExamDetailEntity::getId, chunk))) {
+        ReviewQuestionDetail detail = toDetail(row);
+        if (detail != null && hasText(detail.resolve())) {
           detailCache.put(detail.id(), detail);
           result.put(detail.id(), detail);
         }
@@ -384,10 +433,12 @@ public class ReviewQuestionQueryService {
         row.getScore());
   }
 
-  private static ReviewQuestionDetail toDetail(ExamExamDetailEntity row) {
+  private ReviewQuestionDetail toDetail(ExamExamDetailEntity row) {
     if (row == null || row.getId() == null) {
       return null;
     }
+    // resolve 统一走官方读取器（resolve 列 → answer JSON 官方解析 → empty），§4.1
+    OfficialResolve official = officialResolveResolver.resolve(row);
     return new ReviewQuestionDetail(
         row.getId().longValue(),
         row.getKnowledgeId() != null ? row.getKnowledgeId().longValue() : null,
@@ -396,7 +447,7 @@ public class ReviewQuestionQueryService {
         row.getScore(),
         row.getContent(),
         row.getAnswer(),
-        row.getResolve());
+        official.text());
   }
 
   /** train_exam_work_type_list.level 实体为 String（合并库实为 tinyint）：数字串/数值表示均容错解析 */

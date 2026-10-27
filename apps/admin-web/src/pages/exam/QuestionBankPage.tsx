@@ -288,7 +288,7 @@ function QuestionFormModal({ open, editing, knowledgeTreeData, courseId, onClose
           <InputNumber min={0} max={9999} style={{ width: '100%' }} placeholder="分值" />
         </Form.Item>
         <Form.Item name="resolve" label="解析">
-          <TextArea rows={3} placeholder="请输入解析" />
+          <TextArea rows={3} placeholder="请输入解析" maxLength={2000} />
         </Form.Item>
         <Form.Item name="keyword" label="关键词">
           <Input placeholder="关键词，多个用逗号分隔" />

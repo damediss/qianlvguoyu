@@ -86,7 +86,8 @@ public class AppExamSmartController {
   }
 
   /**
-   * 5d. 题目解析：先查库，无则 AI 生成并回写题库（精准学/班级练习答错补解析）
+   * 5d. 题目解析：官方读取 → 缓存 → 按需 AI 生成（精准学/班级练习答错补解析）。
+   * App 入口强制登录 + 每学员每日限流；匿名一律「请先登录」（401）。
    * body: { questionId }
    */
   @PostMapping("/question/resolve")
@@ -102,7 +103,7 @@ public class AppExamSmartController {
         // leave null
       }
     }
-    return LegacyAppResponse.ok("成功", resolveAssistService.ensureResolve(questionId));
+    return LegacyAppResponse.ok("成功", resolveAssistService.ensureResolveForApp(questionId));
   }
 
   /** AI 精准学 E-P0：首页四宫格摘要（聚合层，不改原错题/预测契约） */
