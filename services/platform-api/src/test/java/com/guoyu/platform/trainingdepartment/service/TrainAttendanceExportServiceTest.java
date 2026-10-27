@@ -51,7 +51,7 @@ class TrainAttendanceExportServiceTest {
     assertEquals(List.of("10-08"), model.dateColumns());
     RowModel row = model.rows().get(0);
     assertEquals("出勤", row.cells().get(0));
-    assertEquals(1, row.present());
+    assertEquals(1, row.effectivePresent());
     assertEquals(0, row.late());
     assertEquals(0, row.early());
     assertEquals(0, row.absent());
@@ -68,7 +68,7 @@ class TrainAttendanceExportServiceTest {
     RowModel row = assembleSheet(List.of(s), atts).rows().get(0);
 
     assertEquals(List.of("出勤"), row.cells());
-    assertEquals(1, row.present());
+    assertEquals(1, row.effectivePresent());
     assertEquals(0, row.absent());
   }
 
@@ -99,9 +99,28 @@ class TrainAttendanceExportServiceTest {
     RowModel row = assembleSheet(List.of(s), atts).rows().get(0);
 
     assertEquals("迟到", row.cells().get(0));
+    assertEquals(1, row.effectivePresent());
     assertEquals(1, row.late());
     assertEquals(0, row.early());
     assertEquals(0, row.absent());
+  }
+
+  @Test
+  void assemble_effectivePresent_sumsOnTimeLateEarlyDays() {
+    // 有效出勤 = 出勤日 + 迟到日 + 早退日（与详情抽屉 present+late+early 同口径）
+    TrainPeopleListEntity s = student(1L, "黄毅坚");
+    List<TrainAttendanceEntity> atts = List.of(
+        attendance(1L, "2026-10-08", 1),
+        attendance(1L, "2026-10-09", 2),
+        attendance(1L, "2026-10-10", 3),
+        attendance(1L, "2026-10-11", 0));
+
+    RowModel row = assembleSheet(List.of(s), atts).rows().get(0);
+
+    assertEquals(3, row.effectivePresent());
+    assertEquals(1, row.late());
+    assertEquals(1, row.early());
+    assertEquals(1, row.absent());
   }
 
   @Test
@@ -113,7 +132,7 @@ class TrainAttendanceExportServiceTest {
 
     RowModel row = model.rows().get(0);
     assertEquals("", row.cells().get(0));
-    assertEquals(0, row.present());
+    assertEquals(0, row.effectivePresent());
     assertEquals(0, row.absent());
   }
 
@@ -301,7 +320,7 @@ class TrainAttendanceExportServiceTest {
       assertEquals("身份证号", header.getCell(3).getStringCellValue());
       assertEquals("10-08", header.getCell(4).getStringCellValue());
       assertEquals("10-09", header.getCell(5).getStringCellValue());
-      assertEquals("出勤", header.getCell(6).getStringCellValue());
+      assertEquals("有效出勤", header.getCell(6).getStringCellValue());
       assertEquals("签名", header.getCell(12).getStringCellValue());
 
       Row data = sheet.getRow(4);
@@ -311,7 +330,7 @@ class TrainAttendanceExportServiceTest {
       assertEquals("452600199001011234", data.getCell(3).getStringCellValue());
       assertEquals("出勤", data.getCell(4).getStringCellValue());
       assertEquals("缺勤", data.getCell(5).getStringCellValue());
-      assertEquals("1", data.getCell(6).getStringCellValue());
+      assertEquals("1", data.getCell(6).getStringCellValue()); // 有效出勤
       assertEquals("1", data.getCell(9).getStringCellValue());
       assertEquals("32.0", data.getCell(10).getStringCellValue());
       assertEquals("25.4%", data.getCell(11).getStringCellValue());
@@ -334,7 +353,7 @@ class TrainAttendanceExportServiceTest {
     try (XSSFWorkbook wb = new XSSFWorkbook(new ByteArrayInputStream(bytes))) {
       Sheet sheet = wb.getSheetAt(0);
       Row header = sheet.getRow(3);
-      assertEquals("出勤", header.getCell(4).getStringCellValue());
+      assertEquals("有效出勤", header.getCell(4).getStringCellValue());
       assertEquals("签名", header.getCell(10).getStringCellValue());
       Row data = sheet.getRow(4);
       assertEquals("黄毅坚", data.getCell(1).getStringCellValue());
@@ -368,7 +387,7 @@ class TrainAttendanceExportServiceTest {
       Row lastRow = sheet.getRow(4 + 49);
       assertEquals("学员50", lastRow.getCell(1).getStringCellValue());
       assertEquals("出勤", lastRow.getCell(4 + 59).getStringCellValue()); // 第60天
-      assertEquals("60", lastRow.getCell(4 + 60).getStringCellValue()); // 出勤计数
+      assertEquals("60", lastRow.getCell(4 + 60).getStringCellValue()); // 有效出勤计数
     }
   }
 

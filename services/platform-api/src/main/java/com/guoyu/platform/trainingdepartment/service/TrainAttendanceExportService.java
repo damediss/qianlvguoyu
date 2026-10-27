@@ -53,7 +53,8 @@ import org.springframework.util.StringUtils;
  *
  * <p>口径（docs/04_requirements/跟班考勤导出考勤表方案.md）：全部考勤日期、
  * 同日多课次按日合并取最优（出勤>迟到>早退>缺勤，与跟班考勤页同口径）、
- * 行末出勤/迟到/早退/缺勤天数 + 已上课时 + 完成率（复用 FollowClassHourCalculator）+ 签名列。</p>
+ * 行末有效出勤（出勤+迟到+早退）/迟到/早退/缺勤天数 + 已上课时 + 完成率（复用 FollowClassHourCalculator）+ 签名列。
+ * 「有效出勤」与学员考勤详情抽屉 {@code present+late+early} 同口径（按合并日后计）。</p>
  */
 @Service
 @Slf4j
@@ -68,9 +69,9 @@ public class TrainAttendanceExportService {
   private static final int ROW_HEADER = 3;
   private static final int ROW_PROTO = 4;
 
-  /** 0-based 固定列：序号/姓名/手机/身份证号 | 出勤/迟到/早退/缺勤/已上课时/完成率/签名 */
+  /** 0-based 固定列：序号/姓名/手机/身份证号 | 有效出勤/迟到/早退/缺勤/已上课时/完成率/签名 */
   private static final int FIXED_COL_COUNT = 11;
-  /** 日期列插在 身份证号(3) 之后、出勤(4) 之前 */
+  /** 日期列插在 身份证号(3) 之后、有效出勤(4) 之前 */
   private static final int DATE_COL_START = 4;
   /** 日期列宽：需容纳跨年列头 yyyy-MM-dd（10 字符）一行显示，过窄会换行截断 */
   private static final int DATE_COL_WIDTH_UNIT = 11 * 256;
@@ -116,14 +117,18 @@ public class TrainAttendanceExportService {
       List<String> dateColumns,
       List<RowModel> rows) {}
 
-  /** 一行学员：固定列 + 日期格（空串=无记录）+ 汇总统计 */
+  /**
+   * 一行学员：固定列 + 日期格（空串=无记录）+ 汇总统计。
+   *
+   * @param effectivePresent 有效出勤天数（合并日后 status∈{出勤,迟到,早退}），与详情抽屉同口径
+   */
   record RowModel(
       int seq,
       String name,
       String phone,
       String idCard,
       List<String> cells,
-      int present,
+      int effectivePresent,
       int late,
       int early,
       int absent,
@@ -187,7 +192,7 @@ public class TrainAttendanceExportService {
     for (TrainPeopleListEntity student : students) {
       Map<String, Integer> byDate = bestByUserDate.get(student.getId());
       List<String> cells = new ArrayList<>(dates.size());
-      int present = 0;
+      int onTime = 0;
       int late = 0;
       int early = 0;
       int absent = 0;
@@ -199,13 +204,15 @@ public class TrainAttendanceExportService {
         }
         cells.add(STATUS_LABELS[status]);
         switch (status) {
-          case 1 -> present++;
+          case 1 -> onTime++;
           case 2 -> late++;
           case 3 -> early++;
           case 0 -> absent++;
           default -> { }
         }
       }
+      // 有效出勤 = 出勤 + 迟到 + 早退（与 StudentAttendanceDetailDrawer 同口径）
+      int effectivePresent = onTime + late + early;
       StudentHours hours = hoursByPeople.get(student.getId());
       rows.add(new RowModel(
           seq++,
@@ -213,7 +220,7 @@ public class TrainAttendanceExportService {
           nullToDash(student.getPhone()),
           nullToDash(student.getIdCard()),
           cells,
-          present,
+          effectivePresent,
           late,
           early,
           absent,
@@ -289,7 +296,7 @@ public class TrainAttendanceExportService {
       Sheet sheet = wb.getSheetAt(0);
       int dateCount = model.dateColumns().size();
 
-      // shift 前捕获样式原型：表头「出勤」格（日期列头样式）、数据原型行各列样式
+      // shift 前捕获样式原型：表头「有效出勤」格（日期列头样式）、数据原型行各列样式
       CellStyle dateHeaderStyle = sheet.getRow(ROW_HEADER).getCell(DATE_COL_START).getCellStyle();
       Row proto = sheet.getRow(ROW_PROTO);
       Map<Integer, CellStyle> protoStyles = new LinkedHashMap<>();
@@ -301,7 +308,7 @@ public class TrainAttendanceExportService {
       }
 
       if (dateCount > 0) {
-        // 固定汇总列（出勤~签名，4~10）右移 dateCount 列，腾出日期列
+        // 固定汇总列（有效出勤~签名，4~10）右移 dateCount 列，腾出日期列
         sheet.shiftColumns(DATE_COL_START, FIXED_COL_COUNT - 1, dateCount);
         // shiftColumns 不搬合并区域：标题/信息行合并重新铺到全宽
         for (int i = sheet.getNumMergedRegions() - 1; i >= 0; i--) {
@@ -319,6 +326,7 @@ public class TrainAttendanceExportService {
 
       writeInfo(sheet, model);
       writeDateHeaders(sheet, model, dateHeaderStyle);
+      rewriteEffectivePresentHeader(sheet, dateCount);
       ensureDataRows(sheet, model.rows().size(), protoStyles, dateCount);
       fillRows(sheet, model, protoStyles, dateCount);
       // 模板打印区只到第5行（原型行），数据多于1行时必须扩到末行，否则打印被截断
@@ -368,6 +376,25 @@ public class TrainAttendanceExportService {
     }
   }
 
+  /** 模板原「出勤」表头改为「有效出勤」（与数据列口径一致；兼容 openpyxl inlineStr）。 */
+  private static void rewriteEffectivePresentHeader(Sheet sheet, int dateCount) {
+    Row header = sheet.getRow(ROW_HEADER);
+    if (header == null) {
+      return;
+    }
+    int col = DATE_COL_START + dateCount;
+    Cell existing = header.getCell(col);
+    CellStyle style = existing == null ? null : existing.getCellStyle();
+    if (existing != null) {
+      header.removeCell(existing);
+    }
+    Cell cell = header.createCell(col);
+    cell.setCellValue("有效出勤");
+    if (style != null) {
+      cell.setCellStyle(style);
+    }
+  }
+
   /** 数据行不足时以原型行为样板扩行（样式逐列复制，含右移后的汇总/签名列） */
   private void ensureDataRows(
       Sheet sheet, int studentCount, Map<Integer, CellStyle> protoStyles, int dateCount) {
@@ -395,7 +422,7 @@ public class TrainAttendanceExportService {
   }
 
   /**
-   * 样式映射：日期列统一取原型「出勤」列（原 4 列）样式；
+   * 样式映射：日期列统一取原型「有效出勤」列（原 4 列）样式；
    * 汇总/签名列（右移后）回映射到原模板列号取样式（完成率/签名 otherwise 会落空）。
    */
   private static CellStyle styleFor(int col, Map<Integer, CellStyle> protoStyles, int dateCount) {
@@ -429,10 +456,10 @@ public class TrainAttendanceExportService {
         applyStyle(row, DATE_COL_START + d, protoStyles, dateCount);
         setCellString(row.getCell(DATE_COL_START + d), rowModel.cells().get(d));
       }
-      // 汇总：出勤/迟到/早退/缺勤/已上课时/完成率 + 签名留空
+      // 汇总：有效出勤/迟到/早退/缺勤/已上课时/完成率 + 签名留空
       int c = summaryStart;
       applyStyle(row, c, protoStyles, dateCount);
-      setCellString(row.getCell(c++), String.valueOf(rowModel.present()));
+      setCellString(row.getCell(c++), String.valueOf(rowModel.effectivePresent()));
       applyStyle(row, c, protoStyles, dateCount);
       setCellString(row.getCell(c++), String.valueOf(rowModel.late()));
       applyStyle(row, c, protoStyles, dateCount);
