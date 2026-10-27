@@ -10,7 +10,9 @@ public class CompetitionMessagingProperties {
   private int batchSize = 50;
   private int maxAttempts = 10;
   private String exchange = "competition.events";
+  private String playerRealtimeExchange = "competition.player.realtime";
   private String routingKey = "competition.notice.published.v1";
+  private String playerRealtimeRoutingKey = "competition.player.message.available.v1";
   private String queue = "competition.notice.delivery";
   private String deadLetterQueue = "competition.notice.delivery.dlq";
   private String deadLetterExchange = "competition.dlx";
@@ -25,8 +27,16 @@ public class CompetitionMessagingProperties {
   public void setMaxAttempts(int maxAttempts) { this.maxAttempts = maxAttempts; }
   public String getExchange() { return exchange; }
   public void setExchange(String exchange) { this.exchange = exchange; }
+  public String getPlayerRealtimeExchange() { return playerRealtimeExchange; }
+  public void setPlayerRealtimeExchange(String playerRealtimeExchange) {
+    this.playerRealtimeExchange = playerRealtimeExchange;
+  }
   public String getRoutingKey() { return routingKey; }
   public void setRoutingKey(String routingKey) { this.routingKey = routingKey; }
+  public String getPlayerRealtimeRoutingKey() { return playerRealtimeRoutingKey; }
+  public void setPlayerRealtimeRoutingKey(String playerRealtimeRoutingKey) {
+    this.playerRealtimeRoutingKey = playerRealtimeRoutingKey;
+  }
   public String getQueue() { return queue; }
   public void setQueue(String queue) { this.queue = queue; }
   public String getDeadLetterQueue() { return deadLetterQueue; }

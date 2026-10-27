@@ -36,8 +36,12 @@ public class CompetitionOutboxDispatcher {
     for (CompetitionOutboxEventEntity event : events) {
       try {
         CorrelationData correlationData = new CorrelationData(String.valueOf(event.getId()));
+        String exchange = CompetitionOutboxApplicationService.PLAYER_MESSAGE_AVAILABLE_EVENT_TYPE
+            .equals(event.getEventType())
+                ? properties.getPlayerRealtimeExchange()
+                : properties.getExchange();
         rabbitTemplate.convertAndSend(
-            properties.getExchange(), event.getRoutingKey(), event.getPayloadJson(),
+            exchange, event.getRoutingKey(), event.getPayloadJson(),
             message -> {
               message.getMessageProperties().setMessageId(String.valueOf(event.getId()));
               message.getMessageProperties().setType(event.getEventType());

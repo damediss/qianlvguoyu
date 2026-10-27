@@ -1,4 +1,4 @@
-﻿# 千铝国昱云平台项目
+# 千铝国昱云平台项目
 
 本仓库采用"资料与代码同根目录、分区管理"的方式组织。根目录只保留项目说明、代码工作区配置和一级目录，业务资料、原型、代码、脚本、产物分别进入固定目录。
 
@@ -98,7 +98,7 @@ macOS 下可双击根目录 `start-dev.command` 启动一期开发环境。
 2. `6379` 已有服务时，跳过本项目 Redis 容器
 3. 端口未占用时，通过 `infra/docker/docker-compose.platform-api-dev.yml` 启动 MySQL、Redis 和 RabbitMQ
 4. 再启动 `services/platform-api` 和 `apps/admin-web`
-5. 竞赛公告链路需要设置 `COMPETITION_MESSAGING_ENABLED=true`
+5. 竞赛公告和选手首页实时提醒共用 `COMPETITION_MESSAGING_ENABLED=true`；实时广播默认使用 `competition.player.realtime` 交换机，可通过 `COMPETITION_PLAYER_REALTIME_EXCHANGE` 覆盖。反向代理需为 `/api/ws/competition-player` 转发 WebSocket Upgrade。
 6. 如果 `8080` 被占用，后端自动改用 `18080`；如果 `5173` 被占用，前端自动改用 `15173`
 
 启动后访问：

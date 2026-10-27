@@ -190,7 +190,7 @@ Controller 和认证服务不得直接调用 SDK。短信发送 Worker 只能通
 
 事件 Payload 仅包含 tenantId、eventId、noticeId、publishedAt，不带公告正文、手机号或身份证。Dispatcher 使用状态抢占、指数退避和 RabbitMQ Publisher Confirm；达到最大次数后告警。消费者在收件箱事务成功返回后由容器确认；失败消息拒绝并进入死信队列。
 
-接收人是同租户、同赛事、资格 eligible_activated、选手 active、均未删除的 player。收件箱落库后冻结接收范围；新激活选手不自动补收历史公告，补发必须为明确后台动作。名单撤回或停用后，详情读取仍实时校验资格。
+接收人是同租户、同赛事、资格 eligible_activated、选手 active、均未删除的 player。收件箱落库后冻结接收范围；选手激活当前赛事，或通过 `player-auth/me` 首次进入及恢复赛事时，按同一资格口径检查已发布但尚未进入本人收件箱的公告，并依赖 `(tenant_id, notice_id, player_id, deleted)` 唯一键幂等补齐。名单撤回或停用后，详情读取仍实时校验资格。
 
 ## 9. H5 接入
 

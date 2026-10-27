@@ -162,6 +162,7 @@ public class SecurityConfig {
             auth.requestMatchers(HttpMethod.GET, "/ws/competition-practical").permitAll();
             auth.requestMatchers(HttpMethod.GET, "/ws/competition/formal-exam/player").permitAll();
             auth.requestMatchers(HttpMethod.GET, "/ws/competition/formal-exam/console").permitAll();
+            auth.requestMatchers(HttpMethod.GET, "/ws/competition-player").permitAll();
             auth.requestMatchers(HttpMethod.POST, "/appregistration/**").permitAll();
             auth.requestMatchers(HttpMethod.POST, "/appsms/**", "/appauth/**", "/appuser/**", "/appuserv4/**", "/apphome/**", "/appsmart/**", "/appcoach/**").permitAll();
             // 历年真题 App 链路（A1/A2）与 F1 文件流：登录态由 AppTokenAuthFilter 校验，

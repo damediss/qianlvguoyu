@@ -20,6 +20,7 @@ import {
   Typography,
   message,
 } from 'antd';
+import type { ColumnsType } from 'antd/es/table';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useMemo, useState } from 'react';
 import {
@@ -145,7 +146,7 @@ export function CompetitionEventOrganizationsPage({
     onSettled: () => setUpdatingPermissionOrgId(undefined),
   });
 
-  const columns = useMemo(() => [
+  const columns = useMemo<ColumnsType<CompetitionEventOrg>>(() => [
     {
       title: '企业名称',
       dataIndex: 'orgName',

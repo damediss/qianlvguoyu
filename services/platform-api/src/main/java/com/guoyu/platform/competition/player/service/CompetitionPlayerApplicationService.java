@@ -17,6 +17,7 @@ import com.guoyu.platform.competition.enums.CompetitionPlayerSmsPurpose;
 import com.guoyu.platform.competition.mapper.CompetitionEventMapper;
 import com.guoyu.platform.competition.mapper.CompetitionPlayerIdentityMapper;
 import com.guoyu.platform.competition.mapper.CompetitionRegistrationMapper;
+import com.guoyu.platform.competition.messaging.service.CompetitionNoticeInboxCompensationService;
 import com.guoyu.platform.competition.player.domain.CompetitionPlayerIdentityDomainService;
 import com.guoyu.platform.competition.player.domain.CompetitionPlayerDataHash;
 import com.guoyu.platform.competition.player.dto.CompetitionPlayerActivationSendReq;
@@ -38,6 +39,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -55,7 +57,9 @@ public class CompetitionPlayerApplicationService {
   private final CompetitionPlayerSmsChallengeService smsChallengeService;
   private final StpLogic competitionPlayerStpLogic;
   private final PasswordEncoder passwordEncoder;
+  private final CompetitionNoticeInboxCompensationService noticeInboxCompensationService;
 
+  @Autowired
   public CompetitionPlayerApplicationService(
       CompetitionEventMapper eventMapper,
       CompetitionRegistrationMapper registrationMapper,
@@ -64,7 +68,8 @@ public class CompetitionPlayerApplicationService {
       CompetitionPlayerDataHash dataHash,
       CompetitionPlayerSmsChallengeService smsChallengeService,
       @Qualifier("competitionPlayerStpLogic") StpLogic competitionPlayerStpLogic,
-      PasswordEncoder passwordEncoder) {
+      PasswordEncoder passwordEncoder,
+      CompetitionNoticeInboxCompensationService noticeInboxCompensationService) {
     this.eventMapper = eventMapper;
     this.registrationMapper = registrationMapper;
     this.playerMapper = playerMapper;
@@ -73,6 +78,20 @@ public class CompetitionPlayerApplicationService {
     this.smsChallengeService = smsChallengeService;
     this.competitionPlayerStpLogic = competitionPlayerStpLogic;
     this.passwordEncoder = passwordEncoder;
+    this.noticeInboxCompensationService = noticeInboxCompensationService;
+  }
+
+  CompetitionPlayerApplicationService(
+      CompetitionEventMapper eventMapper,
+      CompetitionRegistrationMapper registrationMapper,
+      CompetitionPlayerIdentityMapper playerMapper,
+      CompetitionPlayerIdentityDomainService playerIdentityService,
+      CompetitionPlayerDataHash dataHash,
+      CompetitionPlayerSmsChallengeService smsChallengeService,
+      StpLogic competitionPlayerStpLogic,
+      PasswordEncoder passwordEncoder) {
+    this(eventMapper, registrationMapper, playerMapper, playerIdentityService, dataHash,
+        smsChallengeService, competitionPlayerStpLogic, passwordEncoder, null);
   }
 
   @Transactional(readOnly = true)
@@ -124,6 +143,7 @@ public class CompetitionPlayerApplicationService {
       throw new BusinessException(ErrorCode.INTERNAL_ERROR, "选手激活失败");
     }
     registrationMapper.activateEligibleRegistrations(currentTenantId(), player.getId(), null, now);
+    compensatePublishedNotices(currentTenantId(), registration.getEventId(), player.getId());
     return issueSession(player);
   }
 
@@ -174,7 +194,7 @@ public class CompetitionPlayerApplicationService {
     return CompetitionPlayerLoginResultVO.active(issueSession(player));
   }
 
-  @Transactional(readOnly = true)
+  @Transactional
   public CompetitionPlayerMeVO me() {
     CompetitionPlayerPrincipal principal = currentPlayer();
     CompetitionPlayerIdentityEntity player = findPlayerWithoutLock(principal.getPlayerId());
@@ -191,6 +211,9 @@ public class CompetitionPlayerApplicationService {
       return new CompetitionPlayerMeVO(player.getId(), player.getStatus(), maskedMobile, List.of());
     }
     List<Long> eventIds = registrations.stream().map(CompetitionRegistrationEntity::getEventId).distinct().toList();
+    for (Long eventId : eventIds) {
+      compensatePublishedNotices(principal.getTenantId(), eventId, player.getId());
+    }
     List<CompetitionEventEntity> events = eventMapper.selectBatchIds(eventIds);
     Map<Long, CompetitionEventEntity> eventsById = new HashMap<>();
     if (events != null) {
@@ -266,6 +289,12 @@ public class CompetitionPlayerApplicationService {
   private void assertPlayerActive(CompetitionPlayerIdentityEntity player) {
     if (!CompetitionPlayerStatus.ACTIVE.getCode().equals(player.getStatus())) {
       throw new BusinessException(ErrorCode.FORBIDDEN, "选手身份已停用");
+    }
+  }
+
+  private void compensatePublishedNotices(Long tenantId, Long eventId, Long playerId) {
+    if (noticeInboxCompensationService != null) {
+      noticeInboxCompensationService.compensatePublishedNotices(tenantId, eventId, playerId);
     }
   }
 

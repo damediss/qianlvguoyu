@@ -18,7 +18,7 @@ public class WebSocketAllowedOrigins {
   private final List<String> origins;
 
   public WebSocketAllowedOrigins(
-      @Value("${platform.websocket.allowed-origins:https://java.app.gjjd168.com,http://localhost:5173,http://localhost:8080,http://127.0.0.1:5173,http://127.0.0.1:8080}")
+      @Value("${platform.websocket.allowed-origins:https://java.app.gjjd168.com,http://localhost:5173,http://localhost:5174,http://localhost:8080,http://127.0.0.1:5173,http://127.0.0.1:5174,http://127.0.0.1:8080}")
       String raw) {
     this.origins = Arrays.stream(raw.split(","))
         .map(String::trim)

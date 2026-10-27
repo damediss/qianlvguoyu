@@ -227,7 +227,9 @@ platform:
       batch-size: ${COMPETITION_MESSAGING_BATCH_SIZE:50}
       max-attempts: ${COMPETITION_MESSAGING_MAX_ATTEMPTS:10}
       exchange: ${COMPETITION_MESSAGING_EXCHANGE:competition.events}
+      player-realtime-exchange: ${COMPETITION_PLAYER_REALTIME_EXCHANGE:competition.player.realtime}
       routing-key: ${COMPETITION_MESSAGING_ROUTING_KEY:competition.notice.published.v1}
+      player-realtime-routing-key: ${COMPETITION_PLAYER_REALTIME_ROUTING_KEY:competition.player.message.available.v1}
       queue: ${COMPETITION_MESSAGING_QUEUE:competition.notice.delivery}
       dead-letter-queue: ${COMPETITION_MESSAGING_DEAD_LETTER_QUEUE:competition.notice.delivery.dlq}
       dead-letter-exchange: ${COMPETITION_MESSAGING_DEAD_LETTER_EXCHANGE:competition.dlx}
