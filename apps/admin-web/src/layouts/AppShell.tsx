@@ -327,6 +327,12 @@ interface AppShellProps {
   contentOverride?: ReactNode;
   selectedMenuKeyOverride?: string;
   onMenuNavigate?: (node: MenuVO | null) => void;
+  /**
+   * 覆盖态出口（2026-10-27 新增）：用户在标签条上主动切走覆盖态时回调，
+   * 隐藏路由 shell 应据此把自己的 `xxxActive` 置 false 并撤掉 contentOverride。
+   * 缺省时 AppShell 只能依靠 activeKey 判定，shell 的覆盖内容仍会占着渲染分支。
+   */
+  onOverrideExit?: () => void;
   hideBreadcrumb?: boolean;
 }
 
@@ -335,6 +341,7 @@ export function AppShell({
   contentOverride,
   selectedMenuKeyOverride,
   onMenuNavigate,
+  onOverrideExit,
   hideBreadcrumb = false,
 }: AppShellProps) {
   const token = useAuthStore((s) => s.token);
@@ -367,7 +374,16 @@ export function AppShell({
   const activateTab = useTabStore((s) => s.activateTab);
   const dismissSoftPrompt = useTabStore((s) => s.dismissSoftPrompt);
   const { confirmNavigation } = useNavigationBlocker();
-  const contentOverrideActive = Boolean(contentOverride);
+  /**
+   * §3.7 覆盖态判定：覆盖内容存在 **且** 当前标签仍是它的载体标签，才算覆盖态。
+   * 不能只看 `contentOverride` 是否存在——覆盖内容由隐藏路由 shell 常驻提供，
+   * 而 shell 的卸载只监听 popstate，标签点击的 pushState 不会让它卸载。
+   * 若只看 prop 真值，在覆盖态点击其它标签时 activeKey 已变、effectiveActiveKey 却仍被钉死，
+   * 叠加下方渲染分支独占覆盖内容，标签条就表现为"点了没反应"，只能靠侧栏退出覆盖态
+   * （2026-10-27 用户反馈：考试计划 → AI 同步学统计 → 其它标签点不动）。
+   */
+  const contentOverrideActive = Boolean(contentOverride)
+    && (!selectedMenuKeyOverride || activeKey === selectedMenuKeyOverride);
   // §3.7 优先级链：覆盖态取 shell 指定的菜单码，普通态取 tabStore.activeKey
   const effectiveActiveKey = contentOverrideActive && selectedMenuKeyOverride
     ? selectedMenuKeyOverride
@@ -834,6 +850,22 @@ export function AppShell({
                     activeKey={effectiveActiveKey}
                     onChange={(key) => {
                       if (key === effectiveActiveKey) return;
+                      // 从覆盖态切走会卸载覆盖内容（不受保活面板保护，见 2026-10-27 修复说明），
+                      // 先过该面板注册的离开守卫，避免教材工作台等页面的未保存编辑被静默丢弃。
+                      if (contentOverrideActive) {
+                        void confirmNavigation(effectiveActiveKey).then((allowed) => {
+                          if (!allowed) return;
+                          // 通知 shell 撤掉 contentOverride（否则 prop 仍在，覆盖态会被 activeKey 判回来）
+                          onOverrideExit?.();
+                          // 退出覆盖态同时解除载体标签的 overridePath：让「考试计划」回归普通菜单标签。
+                          // 否则之后再点它会命中 applyTabUrl 的 overridePath 分支，被重新带回隐藏路由，
+                          // 表现为"点考试计划又跳进 AI 同步学统计"。
+                          useTabStore.getState().setOverridePath(effectiveActiveKey, undefined);
+                          beginTabSwitch();
+                          activateTab(key);
+                        });
+                        return;
+                      }
                       beginTabSwitch();
                       activateTab(key);
                     }}
@@ -868,7 +900,7 @@ export function AppShell({
             <div className="app-page-body">
               <Suspense fallback={<Spin size="large" style={{ display: 'block', margin: '120px auto' }} />}>
               {tabsEnabled ? (
-                contentOverride ? (
+                contentOverrideActive ? (
                   // 覆盖态标签（隐藏路由）同样支持"刷新标签页"：按刷新计数重挂载覆盖内容
                   <div className="app-tab-pane" data-tab-key={effectiveActiveKey}>
                     {refreshingPane === effectiveActiveKey && (

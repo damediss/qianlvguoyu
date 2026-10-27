@@ -612,6 +612,7 @@ function CollectionManageShell({ taskId, examSessionId }: { taskId: string; exam
         <CollectionManagePage taskId={taskId} examSessionId={examSessionId} />
       ) : undefined}
       onMenuNavigate={() => setManageActive(false)}
+      onOverrideExit={() => setManageActive(false)}
     />
   );
 }
@@ -667,6 +668,7 @@ function CompetitionEventShell({ pathname }: { pathname: string }) {
         }
         setEventActive(false);
       }}
+      onOverrideExit={() => setEventActive(false)}
       hideBreadcrumb={eventActive}
     />
   );
@@ -703,6 +705,7 @@ function ReviewSyncStatsShell({ pathname }: { pathname: string }) {
         </React.Fragment>
       ) : undefined}
       onMenuNavigate={() => setStatsActive(false)}
+      onOverrideExit={() => setStatsActive(false)}
       hideBreadcrumb={statsActive}
     />
   );
@@ -737,6 +740,7 @@ function GraduationClassDetailShell({ pathname }: { pathname: string }) {
         ) : undefined
       }
       onMenuNavigate={() => setDetailActive(false)}
+      onOverrideExit={() => setDetailActive(false)}
       hideBreadcrumb={detailActive}
     />
   );
@@ -770,6 +774,7 @@ function TextbookOutlineShell({ pathname }: { pathname: string }) {
         </React.Fragment>
       ) : undefined}
       onMenuNavigate={() => setOutlineActive(false)}
+      onOverrideExit={() => setOutlineActive(false)}
       hideBreadcrumb={outlineActive}
     />
   );
@@ -803,6 +808,7 @@ function TextbookCollaborationShell({ pathname }: { pathname: string }) {
         </React.Fragment>
       ) : undefined}
       onMenuNavigate={() => setCollabActive(false)}
+      onOverrideExit={() => setCollabActive(false)}
       hideBreadcrumb={collabActive}
     />
   );
@@ -834,6 +840,7 @@ function TextbookWriteShell({ pathname }: { pathname: string }) {
         </React.Fragment>
       ) : undefined}
       onMenuNavigate={() => setWriteActive(false)}
+      onOverrideExit={() => setWriteActive(false)}
       hideBreadcrumb={writeActive}
     />
   );
@@ -865,6 +872,7 @@ function TextbookReviewShell({ pathname }: { pathname: string }) {
         </React.Fragment>
       ) : undefined}
       onMenuNavigate={() => setReviewActive(false)}
+      onOverrideExit={() => setReviewActive(false)}
       hideBreadcrumb={reviewActive}
     />
   );

@@ -7,6 +7,7 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { render, screen, cleanup, waitFor, act } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { useState } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AppShell, resetTabsSessionRestore } from '../src/layouts/AppShell';
 import { useAuthStore } from '../src/stores/authStore';
@@ -44,6 +45,8 @@ const TREE: MenuVO[] = [
   menu('knowledge', '管理概览', '/knowledge'),
   menu('knowledge_fix', '知识归属修正', '/question-bank/knowledge-fix'),
   menu('system_user', '用户管理', '/system/users'),
+  // 覆盖态载体码（隐藏路由 shell 复用同名菜单码，见 main.tsx ReviewSyncStatsShell）
+  menu('kao_shi_ji_hua', '考试计划', '/kao-shi-ji-hua'),
   // 目录 + 子页（UT-18 下钻守卫）
   menu('cert_dir', '认定管理', '/certification', 'directory', [
     menu('certification_dashboard', '认定数据面板', '/certification/dashboard'),
@@ -55,6 +58,7 @@ function pageMap() {
     knowledge: <div>管理概览内容</div>,
     knowledge_fix: <div>知识归属修正内容</div>,
     system_user: <div>用户管理内容</div>,
+    kao_shi_ji_hua: <div>考试计划内容</div>,
     certification_dashboard: <div>认定数据面板内容</div>,
   } as Record<string, React.ReactNode>;
 }
@@ -82,11 +86,11 @@ function resetStores() {
   resetTabsSessionRestore();
 }
 
-function renderShell() {
+function renderShell(props: { contentOverride?: React.ReactNode; selectedMenuKeyOverride?: string } = {}) {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <QueryClientProvider client={queryClient}>
-      <AppShell pageMap={pageMap()} />
+      <AppShell pageMap={pageMap()} {...props} />
     </QueryClientProvider>,
   );
 }
@@ -265,6 +269,86 @@ describe('AppShell 标签页集成', () => {
     const fixedTabNode = document.querySelector('.ant-tabs-tab[data-node-key="knowledge"]');
     expect(fixedTabNode).not.toBeNull();
     expect(fixedTabNode!.querySelector('.ant-tabs-tab-remove')).toBeNull();
+  });
+});
+
+describe('覆盖态（隐藏路由 shell）标签切换（2026-10-27 用户反馈回归）', () => {
+  const OVERRIDE_URL = '/training/exam-lists/9/review-sync-stats';
+
+  /** 模拟 main.tsx 的隐藏路由外壳：active 为 true 时提供覆盖内容，onOverrideExit 时撤掉 */
+  function OverrideHarness() {
+    const [active, setActive] = useState(true);
+    return (
+      <AppShell
+        pageMap={pageMap()}
+        contentOverride={active ? <div>统计覆盖内容</div> : undefined}
+        selectedMenuKeyOverride={active ? 'kao_shi_ji_hua' : undefined}
+        onOverrideExit={() => setActive(false)}
+      />
+    );
+  }
+
+  /** 渲染覆盖态外壳并进入覆盖态：考试计划标签被 AI 同步学统计劫持 */
+  async function enterOverride() {
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={queryClient}>
+        <OverrideHarness />
+      </QueryClientProvider>,
+    );
+    await waitFor(() => {
+      expect(useAuthStore.getState().menuTree.length).toBeGreaterThan(0);
+    });
+    await act(async () => {
+      useTabStore.getState().openTab('knowledge_fix');
+      useTabStore.getState().openOverrideTab('kao_shi_ji_hua', undefined, OVERRIDE_URL);
+    });
+    await waitFor(() => {
+      expect(useTabStore.getState().activeKey).toBe('kao_shi_ji_hua');
+    });
+    expect(screen.getByText('统计覆盖内容')).toBeTruthy();
+  }
+
+  async function clickTab(key: string) {
+    const tabNode = document.querySelector(`.ant-tabs-tab[data-node-key="${key}"]`) as HTMLElement;
+    expect(tabNode).not.toBeNull();
+    const user = userEvent.setup();
+    await user.click(tabNode.querySelector('.app-tab-label-text span') as HTMLElement);
+  }
+
+  it('覆盖态下点击其它标签 → 退出覆盖态、渲染目标面板（此前点击无反应）', async () => {
+    await enterOverride();
+
+    await clickTab('knowledge_fix');
+
+    await waitFor(() => {
+      expect(useTabStore.getState().activeKey).toBe('knowledge_fix');
+    });
+    // 覆盖内容卸载，目标保活面板可见
+    expect(screen.queryByText('统计覆盖内容')).toBeNull();
+    const pane = document.querySelector('[data-tab-key="knowledge_fix"]') as HTMLElement;
+    expect(pane.style.display).not.toBe('none');
+    expect(screen.getByText('知识归属修正内容')).toBeTruthy();
+    // 高亮跟随（此前会被 selectedMenuKeyOverride 钉死在考试计划）
+    expect(document.querySelector('.ant-tabs-tab-active')?.getAttribute('data-node-key')).toBe('knowledge_fix');
+  });
+
+  it('点回考试计划标签 → 回普通菜单页（overridePath 已解除），不再跳回统计页', async () => {
+    await enterOverride();
+    await clickTab('knowledge_fix');
+    await waitFor(() => {
+      expect(useTabStore.getState().activeKey).toBe('knowledge_fix');
+    });
+
+    await clickTab('kao_shi_ji_hua');
+
+    await waitFor(() => {
+      expect(useTabStore.getState().activeKey).toBe('kao_shi_ji_hua');
+    });
+    // 载体标签的 overridePath 已被清除 → URL 走菜单 path，而不是隐藏路由
+    expect(window.location.pathname).toBe('/kao-shi-ji-hua');
+    expect(screen.getByText('考试计划内容')).toBeTruthy();
+    expect(screen.queryByText('统计覆盖内容')).toBeNull();
   });
 });
 
