@@ -117,14 +117,18 @@ public class TrainDivisionApplicationService {
   @Transactional(readOnly = true)
   public PageResponse<TrainDivisionPlanVO> pagePlans(int page, int pageSize, String keyword, Boolean readyOnly) {
     Long tenantId = SecurityContext.currentUser().getTenantId();
-    Long companyFilter = scopeService.resolveCompanyFilter(null);
+    Set<Long> companyScope = scopeService.resolveCompanyIdScope(null);
 
     LambdaQueryWrapper<TrainThreeYearPlanEntity> wrapper = new LambdaQueryWrapper<TrainThreeYearPlanEntity>()
         .eq(TrainThreeYearPlanEntity::getTenantId, tenantId)
         .eq(TrainThreeYearPlanEntity::getStatus, 4)
         .orderByDesc(TrainThreeYearPlanEntity::getUpdateTime);
-    if (companyFilter != null) {
-      wrapper.eq(TrainThreeYearPlanEntity::getTargetOrgId, companyFilter);
+    if (companyScope != null) {
+      if (companyScope.isEmpty()) {
+        wrapper.eq(TrainThreeYearPlanEntity::getTargetOrgId, -1L);
+      } else {
+        wrapper.in(TrainThreeYearPlanEntity::getTargetOrgId, companyScope);
+      }
     }
     if (StringUtils.hasText(keyword)) {
       wrapper.and(w -> w.like(TrainThreeYearPlanEntity::getTitle, keyword.trim())
@@ -622,12 +626,16 @@ public class TrainDivisionApplicationService {
   @Transactional(readOnly = true)
   public PageResponse<Map<String, Object>> pagePackTasks(int page, int pageSize, String status, Long planId) {
     Long tenantId = SecurityContext.currentUser().getTenantId();
-    Long companyFilter = scopeService.resolveCompanyFilter(null);
+    Set<Long> companyScope = scopeService.resolveCompanyIdScope(null);
     LambdaQueryWrapper<TrainDivisionPackTaskEntity> q = new LambdaQueryWrapper<TrainDivisionPackTaskEntity>()
         .eq(TrainDivisionPackTaskEntity::getTenantId, tenantId)
         .orderByDesc(TrainDivisionPackTaskEntity::getUpdateTime);
-    if (companyFilter != null) {
-      q.eq(TrainDivisionPackTaskEntity::getCompanyId, companyFilter);
+    if (companyScope != null) {
+      if (companyScope.isEmpty()) {
+        q.eq(TrainDivisionPackTaskEntity::getCompanyId, -1L);
+      } else {
+        q.in(TrainDivisionPackTaskEntity::getCompanyId, companyScope);
+      }
     }
     if (StringUtils.hasText(status)) {
       q.eq(TrainDivisionPackTaskEntity::getStatus, status.trim());
@@ -1708,8 +1716,9 @@ public class TrainDivisionApplicationService {
     if (task == null || !Objects.equals(task.getTenantId(), tenantId)) {
       throw new BusinessException(ErrorCode.NOT_FOUND, "分班方案不存在");
     }
-    Long companyFilter = scopeService.resolveCompanyFilter(null);
-    if (companyFilter != null && !Objects.equals(companyFilter, task.getCompanyId())) {
+    Set<Long> companyScope = scopeService.resolveCompanyIdScope(null);
+    if (companyScope != null
+        && (task.getCompanyId() == null || !companyScope.contains(task.getCompanyId()))) {
       throw new BusinessException(ErrorCode.FORBIDDEN, "无权访问该分班方案");
     }
     if (orgManage) {
@@ -2507,8 +2516,9 @@ public class TrainDivisionApplicationService {
     if (plan == null || !Objects.equals(plan.getTenantId(), tenantId)) {
       throw new BusinessException(ErrorCode.NOT_FOUND, "三年规划不存在");
     }
-    Long companyFilter = scopeService.resolveCompanyFilter(null);
-    if (companyFilter != null && !Objects.equals(companyFilter, plan.getTargetOrgId())) {
+    Set<Long> companyScope = scopeService.resolveCompanyIdScope(null);
+    if (companyScope != null
+        && (plan.getTargetOrgId() == null || !companyScope.contains(plan.getTargetOrgId()))) {
       throw new BusinessException(ErrorCode.FORBIDDEN, "无权操作该企业规划");
     }
     if (plan.getStatus() == null || plan.getStatus() != 4) {

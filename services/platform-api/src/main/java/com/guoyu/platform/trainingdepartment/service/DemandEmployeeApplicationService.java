@@ -40,11 +40,14 @@ public class DemandEmployeeApplicationService {
         .eq(DemandEmployeeEntity::getTenantId, tenantId)
         .eq(DemandEmployeeEntity::getDeleted, 0)
         .orderByDesc(DemandEmployeeEntity::getId);
-    Long companyFilter = operatorScopeService.resolveCompanyFilter(req.getOrgId());
-    if (companyFilter != null) {
-      wrapper.eq(DemandEmployeeEntity::getOrgId, companyFilter);
-    } else if (req.getOrgId() != null) {
-      wrapper.eq(DemandEmployeeEntity::getOrgId, req.getOrgId());
+    java.util.Set<Long> companyScope =
+        operatorScopeService.resolveCompanyIdScope(req.getOrgId());
+    if (companyScope != null) {
+      if (companyScope.isEmpty()) {
+        wrapper.eq(DemandEmployeeEntity::getOrgId, -1L);
+      } else {
+        wrapper.in(DemandEmployeeEntity::getOrgId, companyScope);
+      }
     }
     if (StringUtils.hasText(req.getKeyword())) {
       wrapper.and(w -> w.like(DemandEmployeeEntity::getWork, req.getKeyword())
@@ -82,6 +85,7 @@ public class DemandEmployeeApplicationService {
     entity.setUpdateTime(LocalDateTime.now());
     entity.setDeleted(0);
     mapper.insert(entity);
+    operatorScopeService.ensureDemandLink(entity.getOrgId(), entity.getId());
     return toVO(entity);
   }
 
@@ -98,6 +102,7 @@ public class DemandEmployeeApplicationService {
     if (req.getAddtime() != null) { entity.setAddtime(req.getAddtime()); }
     entity.setUpdateTime(LocalDateTime.now());
     mapper.updateById(entity);
+    operatorScopeService.ensureDemandLink(entity.getOrgId(), entity.getId());
     return toVO(entity);
   }
 

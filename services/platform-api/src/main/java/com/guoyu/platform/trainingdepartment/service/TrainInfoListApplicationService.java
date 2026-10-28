@@ -68,9 +68,14 @@ public class TrainInfoListApplicationService {
     if (StringUtils.hasText(req.getKeyword())) {
       wrapper.like(TrainInfoListEntity::getTitle, req.getKeyword());
     }
-    Long companyFilter = operatorScopeService.resolveCompanyFilter(req.getCompanyId());
-    if (companyFilter != null) {
-      wrapper.eq(TrainInfoListEntity::getCompanyId, companyFilter);
+    java.util.Set<Long> companyScope =
+        operatorScopeService.resolveCompanyIdScope(req.getCompanyId());
+    if (companyScope != null) {
+      if (companyScope.isEmpty()) {
+        wrapper.eq(TrainInfoListEntity::getCompanyId, -1L);
+      } else {
+        wrapper.in(TrainInfoListEntity::getCompanyId, companyScope);
+      }
     }
     if (req.getGroupType() != null) {
       wrapper.eq(TrainInfoListEntity::getGroupType, req.getGroupType());
@@ -217,6 +222,7 @@ public class TrainInfoListApplicationService {
     entity.setCreateTime(LocalDateTime.now());
     entity.setDeleted(0);
     mapper.insert(entity);
+    operatorScopeService.ensureDemandLink(entity.getCompanyId(), entity.getId());
     return toVO(entity);
   }
 
@@ -367,6 +373,7 @@ public class TrainInfoListApplicationService {
     mapper.updateById(entity);
     if (companyTouched && entity.getCompanyId() != null) {
       syncClassesCompanyId(entity.getId(), entity.getCompanyId());
+      operatorScopeService.ensureDemandLink(entity.getCompanyId(), entity.getId());
     }
     return toVO(entity);
   }

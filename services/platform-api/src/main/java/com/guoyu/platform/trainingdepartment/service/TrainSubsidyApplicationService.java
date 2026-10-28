@@ -102,11 +102,18 @@ public class TrainSubsidyApplicationService {
         .orderByDesc(TrainSubsidyEntity::getCreateTime);
     if (req.getProjectId() != null) wrapper.eq(TrainSubsidyEntity::getProjectId, req.getProjectId());
     if (req.getClassId() != null) wrapper.eq(TrainSubsidyEntity::getClassId, req.getClassId());
-    Long companyFilter = operatorScopeService.resolveCompanyFilter(null);
-    if (companyFilter != null && req.getClassId() == null) {
-      wrapper.apply(
-          "class_id IN (SELECT id FROM train_info_class WHERE company_id = {0} AND deleted = 0)",
-          companyFilter);
+    java.util.Set<Long> companyScope = operatorScopeService.resolveCompanyIdScope(null);
+    if (companyScope != null && req.getClassId() == null) {
+      if (companyScope.isEmpty()) {
+        wrapper.apply("1=0");
+      } else {
+        String idList =
+            companyScope.stream().map(String::valueOf).collect(java.util.stream.Collectors.joining(","));
+        wrapper.apply(
+            "class_id IN (SELECT id FROM train_info_class WHERE company_id IN ("
+                + idList
+                + ") AND deleted = 0)");
+      }
     }
     if (StringUtils.hasText(req.getPhase())) wrapper.eq(TrainSubsidyEntity::getPhase, req.getPhase().trim());
     if (StringUtils.hasText(req.getRegionCode())) wrapper.eq(TrainSubsidyEntity::getRegionCode, req.getRegionCode().trim());
@@ -120,8 +127,12 @@ public class TrainSubsidyApplicationService {
           .eq(TrainInfoClassEntity::getDeleted, 0)
           .like(TrainInfoClassEntity::getTitle, kw)
           .last("LIMIT 80");
-      if (companyFilter != null) {
-        classKw.eq(TrainInfoClassEntity::getCompanyId, companyFilter);
+      if (companyScope != null) {
+        if (companyScope.isEmpty()) {
+          classKw.eq(TrainInfoClassEntity::getCompanyId, -1L);
+        } else {
+          classKw.in(TrainInfoClassEntity::getCompanyId, companyScope);
+        }
       }
       List<Long> matchedClassIds = classMapper.selectList(classKw)
           .stream()

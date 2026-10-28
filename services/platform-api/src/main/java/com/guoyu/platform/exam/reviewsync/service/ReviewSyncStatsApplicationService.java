@@ -31,9 +31,11 @@ import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
@@ -42,6 +44,8 @@ import org.springframework.stereotype.Service;
  *
  * <p>全部只读；tenant_id 由多租户插件自动追加。考试计划标题读主库 train_exam_list；
  * 知识树标题读主库 exam_knowledge_structure（失败降级为显示 id，统计主链路不挂）。
+ * 指定 examId 时，学员明细/导出/概览人数仅含仍在 {@code train_exam_people_list} 的考生
+ * （班级删学员会摘名单，学情页不再展示已退班人员；答题流水仍保留）。
  */
 @Slf4j
 @Service
@@ -100,19 +104,26 @@ public class ReviewSyncStatsApplicationService {
     LocalDate today = LocalDate.now();
     Map<String, Object> todayTotals = nullToEmpty(statsMapper.answerTotals(today, today, examId));
 
-    LambdaQueryWrapper<AiReviewPlanEntity> planWrapper = new LambdaQueryWrapper<AiReviewPlanEntity>();
-    if (examId != null) {
-      planWrapper.eq(AiReviewPlanEntity::getExamId, examId);
+    List<Long> enrolledUserIds = enrolledPlatformUserIds(examId);
+    long planCount = 0L;
+    long studentCount = 0L;
+    if (examId == null || enrolledUserIds == null || !enrolledUserIds.isEmpty()) {
+      LambdaQueryWrapper<AiReviewPlanEntity> planWrapper = new LambdaQueryWrapper<AiReviewPlanEntity>();
+      if (examId != null) {
+        planWrapper.eq(AiReviewPlanEntity::getExamId, examId);
+      }
+      applyEnrolledUserFilter(planWrapper, enrolledUserIds);
+      planCount = planMapper.selectCount(planWrapper);
+      // 去重学员数：selectObjs + groupBy 后取 size（selectCount 配 groupBy 语义不可靠）
+      LambdaQueryWrapper<AiReviewPlanEntity> distinctWrapper = new LambdaQueryWrapper<AiReviewPlanEntity>()
+          .select(AiReviewPlanEntity::getPlatformUserId)
+          .groupBy(AiReviewPlanEntity::getPlatformUserId);
+      if (examId != null) {
+        distinctWrapper.eq(AiReviewPlanEntity::getExamId, examId);
+      }
+      applyEnrolledUserFilter(distinctWrapper, enrolledUserIds);
+      studentCount = planMapper.selectObjs(distinctWrapper).size();
     }
-    long planCount = planMapper.selectCount(planWrapper);
-    // 去重学员数：selectObjs + groupBy 后取 size（selectCount 配 groupBy 语义不可靠）
-    LambdaQueryWrapper<AiReviewPlanEntity> distinctWrapper = new LambdaQueryWrapper<AiReviewPlanEntity>()
-        .select(AiReviewPlanEntity::getPlatformUserId)
-        .groupBy(AiReviewPlanEntity::getPlatformUserId);
-    if (examId != null) {
-      distinctWrapper.eq(AiReviewPlanEntity::getExamId, examId);
-    }
-    long studentCount = planMapper.selectObjs(distinctWrapper).size();
 
     Map<String, Object> wrong = wrongDistribution(examId, null);
 
@@ -311,12 +322,20 @@ public class ReviewSyncStatsApplicationService {
     if (keyword != null && !keyword.isBlank() && keywordUserIds.isEmpty()) {
       return new PageResponse<>(List.of(), page, pageSize, 0);
     }
+    List<Long> enrolledUserIds = enrolledPlatformUserIds(examId);
+    if (examId != null && enrolledUserIds != null && enrolledUserIds.isEmpty()) {
+      return new PageResponse<>(List.of(), page, pageSize, 0);
+    }
+    List<Long> visibleUserIds = intersectUserIds(keywordUserIds, enrolledUserIds);
+    if (visibleUserIds != null && visibleUserIds.isEmpty()) {
+      return new PageResponse<>(List.of(), page, pageSize, 0);
+    }
     LambdaQueryWrapper<AiReviewPlanEntity> wrapper = new LambdaQueryWrapper<>();
     if (examId != null) {
       wrapper.eq(AiReviewPlanEntity::getExamId, examId);
     }
-    if (keywordUserIds != null) {
-      wrapper.in(AiReviewPlanEntity::getPlatformUserId, keywordUserIds);
+    if (visibleUserIds != null) {
+      wrapper.in(AiReviewPlanEntity::getPlatformUserId, visibleUserIds);
     }
     wrapper.orderByDesc(AiReviewPlanEntity::getLastActiveDate);
     Page<AiReviewPlanEntity> result = planMapper.selectPage(new Page<>(page, pageSize), wrapper);
@@ -330,12 +349,20 @@ public class ReviewSyncStatsApplicationService {
     if (keyword != null && !keyword.isBlank() && keywordUserIds.isEmpty()) {
       return List.of();
     }
+    List<Long> enrolledUserIds = enrolledPlatformUserIds(examId);
+    if (examId != null && enrolledUserIds != null && enrolledUserIds.isEmpty()) {
+      return List.of();
+    }
+    List<Long> visibleUserIds = intersectUserIds(keywordUserIds, enrolledUserIds);
+    if (visibleUserIds != null && visibleUserIds.isEmpty()) {
+      return List.of();
+    }
     LambdaQueryWrapper<AiReviewPlanEntity> wrapper = new LambdaQueryWrapper<>();
     if (examId != null) {
       wrapper.eq(AiReviewPlanEntity::getExamId, examId);
     }
-    if (keywordUserIds != null) {
-      wrapper.in(AiReviewPlanEntity::getPlatformUserId, keywordUserIds);
+    if (visibleUserIds != null) {
+      wrapper.in(AiReviewPlanEntity::getPlatformUserId, visibleUserIds);
     }
     wrapper.orderByDesc(AiReviewPlanEntity::getLastActiveDate)
         .last("LIMIT " + (EXPORT_MAX_ROWS + 1));
@@ -444,6 +471,10 @@ public class ReviewSyncStatsApplicationService {
     AiReviewPlanEntity plan = planMapper.selectById(planId);
     if (plan == null) {
       throw new BusinessException(ErrorCode.NOT_FOUND, "复习计划不存在");
+    }
+    if (plan.getExamId() != null && plan.getPlatformUserId() != null
+        && !reviewQuery.isUserInExam(plan.getExamId(), plan.getPlatformUserId())) {
+      throw new BusinessException(ErrorCode.NOT_FOUND, "该学员已不在考生名单中");
     }
     PlatformUserEntity user = platformUserMapper.selectById(plan.getPlatformUserId());
     TrainExamListEntity exam = trainExamListMapper.selectById(plan.getExamId());
@@ -689,6 +720,52 @@ public class ReviewSyncStatsApplicationService {
       }
     }
     return byPhone;
+  }
+
+  /**
+   * 指定考试计划时：返回仍在考生名单中的 platform_user_id；
+   * examId 为空时返回 null（表示不过滤，兼容全局统计）。
+   */
+  private List<Long> enrolledPlatformUserIds(Long examId) {
+    if (examId == null) {
+      return null;
+    }
+    List<TrainExamPeopleListEntity> people = examPeopleListMapper.selectList(
+        new LambdaQueryWrapper<TrainExamPeopleListEntity>()
+            .select(TrainExamPeopleListEntity::getPlatformUserId)
+            .eq(TrainExamPeopleListEntity::getExamId, examId)
+            .eq(TrainExamPeopleListEntity::getDeleted, 0)
+            .isNotNull(TrainExamPeopleListEntity::getPlatformUserId)
+            .gt(TrainExamPeopleListEntity::getPlatformUserId, 0));
+    if (people == null || people.isEmpty()) {
+      return List.of();
+    }
+    Set<Long> ids = new HashSet<>();
+    for (TrainExamPeopleListEntity p : people) {
+      if (p != null && p.getPlatformUserId() != null && p.getPlatformUserId() > 0) {
+        ids.add(p.getPlatformUserId());
+      }
+    }
+    return List.copyOf(ids);
+  }
+
+  private static void applyEnrolledUserFilter(
+      LambdaQueryWrapper<AiReviewPlanEntity> wrapper, List<Long> enrolledUserIds) {
+    if (enrolledUserIds != null) {
+      wrapper.in(AiReviewPlanEntity::getPlatformUserId, enrolledUserIds);
+    }
+  }
+
+  /** 关键词命中与在册名单求交；任一侧为 null 表示该侧不限制。 */
+  private static List<Long> intersectUserIds(List<Long> keywordUserIds, List<Long> enrolledUserIds) {
+    if (keywordUserIds == null) {
+      return enrolledUserIds;
+    }
+    if (enrolledUserIds == null) {
+      return keywordUserIds;
+    }
+    Set<Long> enrolled = new HashSet<>(enrolledUserIds);
+    return keywordUserIds.stream().filter(enrolled::contains).toList();
   }
 
   private static long asLong(Object value) {

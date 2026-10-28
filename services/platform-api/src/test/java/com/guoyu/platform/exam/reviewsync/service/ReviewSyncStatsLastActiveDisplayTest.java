@@ -62,9 +62,13 @@ class ReviewSyncStatsLastActiveDisplayTest {
   @BeforeAll
   static void initTableInfo() {
     // 分页/包装器需要实体的 TableInfo（与既有 reviewsync 服务测试同款前置）
-    MapperBuilderAssistant assistant = new MapperBuilderAssistant(new MybatisConfiguration(), "");
-    assistant.setCurrentNamespace(AiReviewPlanEntity.class.getName());
-    TableInfoHelper.initTableInfo(assistant, AiReviewPlanEntity.class);
+    MybatisConfiguration configuration = new MybatisConfiguration();
+    MapperBuilderAssistant planAssistant = new MapperBuilderAssistant(configuration, "");
+    planAssistant.setCurrentNamespace(AiReviewPlanEntity.class.getName());
+    TableInfoHelper.initTableInfo(planAssistant, AiReviewPlanEntity.class);
+    MapperBuilderAssistant peopleAssistant = new MapperBuilderAssistant(configuration, "");
+    peopleAssistant.setCurrentNamespace(TrainExamPeopleListEntity.class.getName());
+    TableInfoHelper.initTableInfo(peopleAssistant, TrainExamPeopleListEntity.class);
   }
 
   @BeforeEach
@@ -194,5 +198,23 @@ class ReviewSyncStatsLastActiveDisplayTest {
 
     assertThat(rows).hasSize(1);
     assertThat(rows.get(0).get("lastActiveDate")).isNull();
+  }
+
+  @Test
+  void studentsForExamExcludesUsersNotOnExamRoster() {
+    // 班级删学员后考生名单已摘掉；学情列表按 exam 过滤时不应再出现
+    when(examPeopleListMapper.selectList(any())).thenReturn(List.of());
+
+    var page = service.students(1, 20, 200L, null);
+
+    assertThat(page.items()).isEmpty();
+    assertThat(page.total()).isZero();
+  }
+
+  @Test
+  void studentExportForExamExcludesUsersNotOnExamRoster() {
+    when(examPeopleListMapper.selectList(any())).thenReturn(List.of());
+
+    assertThat(service.studentExportRows(200L, null)).isEmpty();
   }
 }

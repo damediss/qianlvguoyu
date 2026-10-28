@@ -126,12 +126,15 @@ public class ExamScoreImportApplicationService {
     if (unassignedOnly && operatorScopeService.isEnterpriseScoped()) {
       return List.of();
     }
-    // 注意：三元两侧勿混用 long / Long，否则会拆箱 NPE（resolveCompanyFilter 可为 null）
-    Long companyFilter;
-    if (unassignedOnly) {
-      companyFilter = 0L;
-    } else {
-      companyFilter = operatorScopeService.resolveCompanyFilter(companyId);
+    // 未归属企业：仅超管；机构/企业不可借此串数
+    if (unassignedOnly
+        && (operatorScopeService.isOrgScoped() || operatorScopeService.isEnterpriseScoped())) {
+      return List.of();
+    }
+    java.util.Set<Long> companyScope =
+        unassignedOnly ? null : operatorScopeService.resolveCompanyIdScope(companyId);
+    if (companyScope != null && companyScope.isEmpty()) {
+      return List.of();
     }
     // 分页拉全量：原先无企业筛选 LIMIT 500、有筛选 2000，大租户会漏班导致统计/导入选不齐
     List<TrainInfoClassEntity> classes = new ArrayList<>();
@@ -144,7 +147,6 @@ public class ExamScoreImportApplicationService {
           .orderByDesc(TrainInfoClassEntity::getId)
           .last("LIMIT " + (page * pageSize) + "," + pageSize);
       if (unassignedOnly) {
-        // 班级与培训需求均未挂企业
         wrapper.and(w -> w.isNull(TrainInfoClassEntity::getCompanyId)
             .or()
             .eq(TrainInfoClassEntity::getCompanyId, 0L));
@@ -155,14 +157,14 @@ public class ExamScoreImportApplicationService {
             .notInSql(
                 TrainInfoClassEntity::getTrainInfoId,
                 "SELECT id FROM train_info_list WHERE deleted=0 AND company_id IS NOT NULL AND company_id<>0"));
-      } else if (companyFilter != null) {
-        // 班级 company_id 可能为空：同时按培训需求 train_info_list.company_id 归属
-        Long cid = companyFilter;
-        wrapper.and(w -> w.eq(TrainInfoClassEntity::getCompanyId, cid)
+      } else if (companyScope != null) {
+        String idList =
+            companyScope.stream().map(String::valueOf).collect(java.util.stream.Collectors.joining(","));
+        wrapper.and(w -> w.in(TrainInfoClassEntity::getCompanyId, companyScope)
             .or()
             .inSql(
                 TrainInfoClassEntity::getTrainInfoId,
-                "SELECT id FROM train_info_list WHERE deleted=0 AND company_id=" + cid));
+                "SELECT id FROM train_info_list WHERE deleted=0 AND company_id IN (" + idList + ")"));
       }
       if (trainInfoId != null && trainInfoId != 0) {
         wrapper.eq(TrainInfoClassEntity::getTrainInfoId, trainInfoId);

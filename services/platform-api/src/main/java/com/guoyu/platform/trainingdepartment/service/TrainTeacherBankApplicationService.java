@@ -90,14 +90,19 @@ public class TrainTeacherBankApplicationService {
   @Transactional(readOnly = true)
   public PageResponse<TrainTeacherBankVO> page(TrainTeacherBankQueryReq req) {
     Long tenantId = tenantId();
-    Long companyFilter = operatorScopeService.resolveCompanyFilter(req.getCompanyId());
+    java.util.Set<Long> companyScope =
+        operatorScopeService.resolveCompanyIdScope(req.getCompanyId());
     LambdaQueryWrapper<TrainTeacherBankEntity> wrapper =
         new LambdaQueryWrapper<TrainTeacherBankEntity>()
         .eq(TrainTeacherBankEntity::getTenantId, tenantId)
         .eq(TrainTeacherBankEntity::getDeleted, 0)
         .orderByDesc(TrainTeacherBankEntity::getCreateTime);
-    if (companyFilter != null) {
-      wrapper.eq(TrainTeacherBankEntity::getCompanyId, companyFilter);
+    if (companyScope != null) {
+      if (companyScope.isEmpty()) {
+        wrapper.eq(TrainTeacherBankEntity::getCompanyId, -1L);
+      } else {
+        wrapper.in(TrainTeacherBankEntity::getCompanyId, companyScope);
+      }
     }
     if (StringUtils.hasText(req.getKeyword())) {
       String kw = req.getKeyword().trim();
@@ -1029,7 +1034,7 @@ public class TrainTeacherBankApplicationService {
             new LambdaQueryWrapper<OrgEntity>()
                 .eq(OrgEntity::getTenantId, tenantId)
                 .eq(OrgEntity::getDeleted, 0)
-                .in(OrgEntity::getOrgType, List.of("company", "master"))
+                .eq(OrgEntity::getOrgType, "company")
                 .eq(OrgEntity::getName, companyName.trim())
                 .last("LIMIT 1"));
     return org == null ? null : org.getId();

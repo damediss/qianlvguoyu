@@ -94,9 +94,14 @@ public class TrainExamListApplicationService {
     if (req.getTrainId() != null) {
       wrapper.eq(TrainExamListEntity::getTrainId, req.getTrainId());
     }
-    Long companyFilter = operatorScopeService.resolveCompanyFilter(req.getOrgId());
-    if (companyFilter != null) {
-      wrapper.eq(TrainExamListEntity::getOrgId, companyFilter);
+    java.util.Set<Long> companyScope =
+        operatorScopeService.resolveCompanyIdScope(req.getOrgId());
+    if (companyScope != null) {
+      if (companyScope.isEmpty()) {
+        wrapper.eq(TrainExamListEntity::getOrgId, -1L);
+      } else {
+        wrapper.in(TrainExamListEntity::getOrgId, companyScope);
+      }
     }
     if (req.getType() != null) {
       wrapper.eq(TrainExamListEntity::getType, req.getType());

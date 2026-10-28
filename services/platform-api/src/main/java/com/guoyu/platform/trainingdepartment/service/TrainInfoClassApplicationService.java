@@ -95,9 +95,14 @@ public class TrainInfoClassApplicationService {
     if (req.getTrainInfoId() != null) {
       wrapper.eq(TrainInfoClassEntity::getTrainInfoId, req.getTrainInfoId());
     }
-    Long companyFilter = operatorScopeService.resolveCompanyFilter(req.getCompanyId());
-    if (companyFilter != null) {
-      wrapper.eq(TrainInfoClassEntity::getCompanyId, companyFilter);
+    java.util.Set<Long> companyScope =
+        operatorScopeService.resolveCompanyIdScope(req.getCompanyId());
+    if (companyScope != null) {
+      if (companyScope.isEmpty()) {
+        wrapper.eq(TrainInfoClassEntity::getCompanyId, -1L);
+      } else {
+        wrapper.in(TrainInfoClassEntity::getCompanyId, companyScope);
+      }
     }
     if (req.getWorkTypeId() != null && req.getWorkTypeId() != 0) {
       wrapper.eq(TrainInfoClassEntity::getWorkTypeId, req.getWorkTypeId());

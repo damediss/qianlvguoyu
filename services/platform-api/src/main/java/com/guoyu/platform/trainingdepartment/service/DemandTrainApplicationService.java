@@ -44,6 +44,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.stream.Collectors;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -100,9 +101,13 @@ public class DemandTrainApplicationService {
     if (StringUtils.hasText(req.getKeyword())) {
       wrapper.like(DemandTrainEntity::getContent, req.getKeyword());
     }
-    Long companyFilter = operatorScopeService.resolveCompanyFilter(req.getOrgId());
-    if (companyFilter != null) {
-      wrapper.eq(DemandTrainEntity::getOrgId, companyFilter);
+    Set<Long> companyScope = operatorScopeService.resolveCompanyIdScope(req.getOrgId());
+    if (companyScope != null) {
+      if (companyScope.isEmpty()) {
+        wrapper.eq(DemandTrainEntity::getOrgId, -1L);
+      } else {
+        wrapper.in(DemandTrainEntity::getOrgId, companyScope);
+      }
     } else if (req.getOrgId() != null) {
       wrapper.eq(DemandTrainEntity::getOrgId, req.getOrgId());
     }
@@ -156,6 +161,8 @@ public class DemandTrainApplicationService {
     entity.setDeleted(0);
     entity.setCreatedBy(SecurityContext.currentUser().getUserId());
     mapper.insert(entity);
+    // M1：机构选中企业 → 永久业务关联
+    operatorScopeService.ensureDemandLink(entity.getOrgId(), entity.getId());
     return toVO(entity);
   }
 
@@ -171,6 +178,7 @@ public class DemandTrainApplicationService {
     if (req.getStatus() != null) { entity.setStatus(req.getStatus()); }
     if (req.getAddtime() != null) { entity.setAddtime(req.getAddtime()); }
     mapper.updateById(entity);
+    operatorScopeService.ensureDemandLink(entity.getOrgId(), entity.getId());
     return toVO(entity);
   }
 
@@ -201,9 +209,13 @@ public class DemandTrainApplicationService {
         .eq(DemandTrainEntity::getStatus, 0)
         .eq(DemandTrainEntity::getDeleted, deleted)
         .orderByDesc(DemandTrainEntity::getAddtime);
-    Long companyFilter = operatorScopeService.resolveCompanyFilter(null);
-    if (companyFilter != null) {
-      wrapper.eq(DemandTrainEntity::getOrgId, companyFilter);
+    Set<Long> companyScope = operatorScopeService.resolveCompanyIdScope(null);
+    if (companyScope != null) {
+      if (companyScope.isEmpty()) {
+        wrapper.eq(DemandTrainEntity::getOrgId, -1L);
+      } else {
+        wrapper.in(DemandTrainEntity::getOrgId, companyScope);
+      }
     }
     if (StringUtils.hasText(keyword)) {
       wrapper.like(DemandTrainEntity::getContent, keyword);
@@ -279,17 +291,17 @@ public class DemandTrainApplicationService {
     Long tenantId = SecurityContext.currentUser().getTenantId();
     boolean all = (tags == null || tags.isEmpty());
     Map<String, Object> data = new LinkedHashMap<>();
-    Long companyFilter = operatorScopeService.resolveCompanyFilter(null);
+    // 选企名录：机构需能选独立企业以建立关联；企业账号仅本企。master 排除（P17）
+    Long enterpriseSelfId = operatorScopeService.resolveCompanyFilter(null);
 
-    // 企业/工作室列表（排除 id=1 的系统组织）；企业账号仅本企业
     if (all || tags.contains("company")) {
       LambdaQueryWrapper<OrgEntity> orgWrapper = new LambdaQueryWrapper<OrgEntity>()
           .eq(OrgEntity::getTenantId, tenantId)
           .ne(OrgEntity::getId, 1L)
-          .in(OrgEntity::getOrgType, "company", "master")
+          .eq(OrgEntity::getOrgType, "company")
           .eq(OrgEntity::getDeleted, 0);
-      if (companyFilter != null) {
-        orgWrapper.eq(OrgEntity::getId, companyFilter);
+      if (enterpriseSelfId != null) {
+        orgWrapper.eq(OrgEntity::getId, enterpriseSelfId);
       }
       List<OrgEntity> orgs = orgMapper.selectList(orgWrapper);
       List<Map<String, Object>> companyList = orgs.stream().map(o -> {
@@ -337,13 +349,18 @@ public class DemandTrainApplicationService {
       data.put("worktype_list", workTypeList);
     }
 
-    // 培训信息列表（仅 tags 明确指定时返回）；企业账号仅本企业
+    // 培训信息列表（仅 tags 明确指定时返回）；按企业 Scope 收窄
     if (tags != null && tags.contains("traininfo")) {
       LambdaQueryWrapper<TrainInfoListEntity> trainWrapper = new LambdaQueryWrapper<TrainInfoListEntity>()
           .eq(TrainInfoListEntity::getTenantId, tenantId)
           .eq(TrainInfoListEntity::getDeleted, 0);
-      if (companyFilter != null) {
-        trainWrapper.eq(TrainInfoListEntity::getCompanyId, companyFilter);
+      Set<Long> trainCompanyScope = operatorScopeService.resolveCompanyIdScope(null);
+      if (trainCompanyScope != null) {
+        if (trainCompanyScope.isEmpty()) {
+          trainWrapper.eq(TrainInfoListEntity::getCompanyId, -1L);
+        } else {
+          trainWrapper.in(TrainInfoListEntity::getCompanyId, trainCompanyScope);
+        }
       }
       List<TrainInfoListEntity> trainInfoList = trainInfoListMapper.selectList(trainWrapper);
       List<Map<String, Object>> traininfoList = trainInfoList.stream().map(t -> {
@@ -522,6 +539,13 @@ public class DemandTrainApplicationService {
       }
     }
 
+    // M1：立项选中企业 → 永久业务关联
+    operatorScopeService.ensureDemandLink(
+        req.getCompanyId(),
+        req.getTraindemandId() != null && req.getTraindemandId() > 0
+            ? req.getTraindemandId()
+            : entity.getId());
+
     return Map.of("id", entity.getId(), "title", entity.getTitle());
   }
 
@@ -585,9 +609,11 @@ public class DemandTrainApplicationService {
     if (entity == null) {
       throw new BusinessException(ErrorCode.NOT_FOUND, "Record not found");
     }
-    Long companyFilter = operatorScopeService.resolveCompanyFilter(entity.getOrgId());
-    if (companyFilter != null && entity.getOrgId() != null && !companyFilter.equals(entity.getOrgId())) {
-      throw new BusinessException(ErrorCode.FORBIDDEN, "无权访问该培训需求");
+    if (entity.getOrgId() != null) {
+      Set<Long> scope = operatorScopeService.resolveCompanyIdScope(null);
+      if (scope != null && !scope.contains(entity.getOrgId())) {
+        throw new BusinessException(ErrorCode.FORBIDDEN, "无权访问该培训需求");
+      }
     }
     return entity;
   }

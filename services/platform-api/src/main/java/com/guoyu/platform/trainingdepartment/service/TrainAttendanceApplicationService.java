@@ -85,11 +85,18 @@ public class TrainAttendanceApplicationService {
         .orderByDesc(TrainAttendanceEntity::getCreateTime);
     if (req.getProjectId() != null) wrapper.eq(TrainAttendanceEntity::getProjectId, req.getProjectId());
     if (req.getClassId() != null) wrapper.eq(TrainAttendanceEntity::getClassId, req.getClassId());
-    Long companyFilter = operatorScopeService.resolveCompanyFilter(null);
-    if (companyFilter != null && req.getClassId() == null) {
-      wrapper.apply(
-          "class_id IN (SELECT id FROM train_info_class WHERE company_id = {0} AND deleted = 0)",
-          companyFilter);
+    java.util.Set<Long> companyScope = operatorScopeService.resolveCompanyIdScope(null);
+    if (companyScope != null && req.getClassId() == null) {
+      if (companyScope.isEmpty()) {
+        wrapper.apply("1=0");
+      } else {
+        String idList =
+            companyScope.stream().map(String::valueOf).collect(java.util.stream.Collectors.joining(","));
+        wrapper.apply(
+            "class_id IN (SELECT id FROM train_info_class WHERE company_id IN ("
+                + idList
+                + ") AND deleted = 0)");
+      }
     }
     if (req.getUserId() != null) wrapper.eq(TrainAttendanceEntity::getUserId, req.getUserId());
     if (req.getStatus() != null) wrapper.eq(TrainAttendanceEntity::getStatus, req.getStatus());

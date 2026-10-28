@@ -114,7 +114,7 @@ public class TrainPeopleListApplicationService {
   @Transactional(readOnly = true)
   public PageResponse<TrainPeopleListVO> page(TrainPeopleListQueryReq req) {
     Long tenantId = SecurityContext.currentUser().getTenantId();
-    Long companyFilter = operatorScopeService.resolveCompanyFilter(null);
+    java.util.Set<Long> companyScope = operatorScopeService.resolveCompanyIdScope(null);
     if (req.getTrainClassId() != null) {
       assertClassViewable(req.getTrainClassId());
     }
@@ -137,7 +137,7 @@ public class TrainPeopleListApplicationService {
           .or()
           .like(TrainPeopleListEntity::getPhone, req.getKeyword()));
     }
-    applyEnterprisePeopleScope(wrapper, companyFilter);
+    applyCompanyPeopleScope(wrapper, companyScope);
     IPage<TrainPeopleListEntity> page;
     if (StringUtils.hasText(req.getApplyWorkTypeName()) && req.getApplyLevel() != null) {
       page = mapper.selectCertificationImportPage(
@@ -146,7 +146,7 @@ public class TrainPeopleListApplicationService {
           req.getApplyWorkTypeName(),
           req.getApplyLevel(),
           StringUtils.hasText(req.getKeyword()) ? req.getKeyword() : null,
-          companyFilter);
+          companyScope);
     } else {
       page = mapper.selectPage(new Page<>(req.getPage(), req.getPageSize()), wrapper);
     }
@@ -959,20 +959,28 @@ public class TrainPeopleListApplicationService {
     operatorScopeService.assertClassAccessible(clazz);
   }
 
-  /** 企业账号：花名册仅可见本企业班级（或无班级时本企业培训信息下）人员 */
-  private void applyEnterprisePeopleScope(
-      LambdaQueryWrapper<TrainPeopleListEntity> wrapper, Long companyFilter) {
-    if (companyFilter == null) {
+  /** 企业/机构：花名册按可见企业班级（或无班级时培训信息）收窄 */
+  private void applyCompanyPeopleScope(
+      LambdaQueryWrapper<TrainPeopleListEntity> wrapper, java.util.Set<Long> companyScope) {
+    if (companyScope == null) {
       return;
     }
+    if (companyScope.isEmpty()) {
+      wrapper.apply("1=0");
+      return;
+    }
+    String idList =
+        companyScope.stream().map(String::valueOf).collect(java.util.stream.Collectors.joining(","));
     wrapper.and(w -> w
         .apply(
-            "train_class_id IN (SELECT id FROM train_info_class WHERE company_id = {0} AND deleted = 0)",
-            companyFilter)
+            "train_class_id IN (SELECT id FROM train_info_class WHERE company_id IN ("
+                + idList
+                + ") AND deleted = 0)")
         .or(w2 -> w2.isNull(TrainPeopleListEntity::getTrainClassId)
             .apply(
-                "(train_id IN (SELECT id FROM train_info_list WHERE company_id = {0} AND deleted = 0))",
-                companyFilter)));
+                "(train_id IN (SELECT id FROM train_info_list WHERE company_id IN ("
+                    + idList
+                    + ") AND deleted = 0))")));
   }
 
   private void assertTrainInfoCompanyAccessible(Long trainInfoId) {

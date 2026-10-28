@@ -92,9 +92,14 @@ public class TrainSignUpCollectionApplicationService {
         .eq(TrainSignUpSelfEntity::getTenantId, tenantId)
         .orderByAsc(TrainSignUpSelfEntity::getSortNumber)
         .orderByDesc(TrainSignUpSelfEntity::getCreateTime);
-    Long companyFilter = operatorScopeService.resolveCompanyFilter(req.getOrgId());
-    if (companyFilter != null) {
-      wrapper.eq(TrainSignUpSelfEntity::getOrgId, companyFilter);
+    java.util.Set<Long> companyScope =
+        operatorScopeService.resolveCompanyIdScope(req.getOrgId());
+    if (companyScope != null) {
+      if (companyScope.isEmpty()) {
+        wrapper.eq(TrainSignUpSelfEntity::getOrgId, -1L);
+      } else {
+        wrapper.in(TrainSignUpSelfEntity::getOrgId, companyScope);
+      }
     }
     if (req.getClassId() != null) {
       wrapper.eq(TrainSignUpSelfEntity::getTrainClassId, req.getClassId())

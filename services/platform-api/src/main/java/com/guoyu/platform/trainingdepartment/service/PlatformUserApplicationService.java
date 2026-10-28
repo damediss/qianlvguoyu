@@ -77,9 +77,14 @@ public class PlatformUserApplicationService {
     if (!platformAdmin) {
       wrapper.eq(PlatformUserEntity::getOrgId, resolveOrgId());
     }
-    Long companyFilter = operatorScopeService.resolveCompanyFilter(req.getCompanyId());
-    if (companyFilter != null) {
-      wrapper.eq(PlatformUserEntity::getCompanyId, companyFilter);
+    java.util.Set<Long> companyScope =
+        operatorScopeService.resolveCompanyIdScope(req.getCompanyId());
+    if (companyScope != null) {
+      if (companyScope.isEmpty()) {
+        wrapper.eq(PlatformUserEntity::getCompanyId, -1L);
+      } else {
+        wrapper.in(PlatformUserEntity::getCompanyId, companyScope);
+      }
     }
     if (StringUtils.hasText(req.getKeyword())) {
       List<Long> companyIds = orgMapper.selectList(new LambdaQueryWrapper<OrgEntity>()

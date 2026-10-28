@@ -111,10 +111,15 @@ public class TrainSystemCompanyApplicationService {
   }
 
   private void applyManageScope(LambdaQueryWrapper<OrgEntity> qw) {
-    // 企业账号仅见本企；机构暂看全量（调研/需求选企业仍依赖名录），开设账号接口单独校验下属
-    if (scopeService.isEnterpriseScoped()) {
-      Long orgId = scopeService.currentScope().orgId();
-      qw.eq(OrgEntity::getId, orgId == null ? -1L : orgId);
+    // 超管全量；企业仅本企；机构 = 树下属 ∪ 业务关联（需求选企另走 public-data 全量名录）
+    Set<Long> managed = scopeService.resolveManagedEnterpriseIds();
+    if (managed == null) {
+      return;
+    }
+    if (managed.isEmpty()) {
+      qw.eq(OrgEntity::getId, -1L);
+    } else {
+      qw.in(OrgEntity::getId, managed);
     }
   }
 
