@@ -1,0 +1,22 @@
+.competition-pre-practice-push-page { display: flex; flex-direction: column; gap: 16px; }
+.competition-pre-practice-push-page__heading { display: flex; justify-content: space-between; align-items: flex-start; }
+.competition-pre-practice-push-page__heading h3.ant-typography { margin: 0 0 6px; }
+.competition-pre-practice-push-page__heading p.ant-typography { margin: 0; }
+.competition-pre-practice-push-page__card .ant-card-head-title { min-width: 0; }
+.competition-pre-practice-push-page__filters { display: grid; grid-template-columns: repeat(4, minmax(150px, 1fr)); gap: 12px; }
+.competition-pre-practice-push-page__filters > div,
+.competition-pre-practice-push-page__task-row > div:first-child { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.competition-pre-practice-push-page__filters .ant-select,
+.competition-pre-practice-push-page__task-row .ant-select { width: 100%; }
+.competition-pre-practice-push-page__label { color: #596579; font-size: 12px; }
+.competition-pre-practice-push-page__task-row { display: flex; align-items: flex-end; gap: 16px; margin-top: 16px; }
+.competition-pre-practice-push-page__task-row > div:first-child { flex: 1; max-width: 620px; }
+.competition-pre-practice-push-page__tip.ant-typography { margin: 10px 0 0; }
+.competition-pre-practice-push-page__pagination { display: flex; justify-content: flex-end; padding-top: 16px; }
+@media (max-width: 900px) {
+  .competition-pre-practice-push-page__filters { grid-template-columns: repeat(2, minmax(150px, 1fr)); }
+}
+@media (max-width: 560px) {
+  .competition-pre-practice-push-page__filters { grid-template-columns: 1fr; }
+  .competition-pre-practice-push-page__task-row { align-items: stretch; flex-direction: column; }
+}

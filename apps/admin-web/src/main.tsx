@@ -101,16 +101,16 @@ const DefenseReviewApp = React.lazy(() => import('./pages/assessor/DefenseReview
 const PracticalCollectionApp = React.lazy(() => import('./pages/practicalCollection/PracticalCollectionApp').then((m) => ({ default: m.PracticalCollectionApp })));
 const CompetitionEventManagementPage = React.lazy(() => import('./pages/competition/CompetitionEventManagementPage').then((m) => ({ default: m.CompetitionEventManagementPage })));
 const CompetitionPlayerManagementPage = React.lazy(() => import('./pages/competition/CompetitionPlayerManagementPage').then((m) => ({ default: m.CompetitionPlayerManagementPage })));
+const CompetitionPlayerPrePracticePage = React.lazy(() => import('./pages/competition/CompetitionPlayerPrePracticePage').then((m) => ({ default: m.CompetitionPlayerPrePracticePage })));
+const CompetitionPlayerPrePracticePushPage = React.lazy(() => import('./pages/competition/CompetitionPlayerPrePracticePushPage').then((m) => ({ default: m.CompetitionPlayerPrePracticePushPage })));
 const CompetitionPlayerDrawDistributionPage = React.lazy(() => import('./pages/competition/CompetitionPlayerDrawPage').then((m) => ({ default: m.CompetitionPlayerDrawDistributionPage })));
 const CompetitionPlayerDrawManagementPage = React.lazy(() => import('./pages/competition/CompetitionPlayerDrawPage').then((m) => ({ default: m.CompetitionPlayerDrawManagementPage })));
 const CompetitionRefereeManagementPage = React.lazy(() => import('./pages/competition/CompetitionRefereeManagementPage').then((m) => ({ default: m.CompetitionRefereeManagementPage })));
 const CompetitionRefereeGroupPage = React.lazy(() => import('./pages/competition/CompetitionRefereeGroupPage').then((m) => ({ default: m.CompetitionRefereeGroupPage })));
 const CompetitionEventModulePage = React.lazy(() => import('./pages/competition/CompetitionEventModulePage').then((m) => ({ default: m.CompetitionEventModulePage })));
 const CompetitionQuestionBankPage = React.lazy(() => import('./pages/competition/CompetitionQuestionBankPage').then((m) => ({ default: m.CompetitionQuestionBankPage })));
-const CompetitionSimplePracticalQuestionPage = React.lazy(() => import('./pages/competition/CompetitionQuestionBankPage').then((m) => ({ default: m.CompetitionSimplePracticalQuestionPage })));
 const CompetitionQuestionBlueprintPage = React.lazy(() => import('./pages/competition/CompetitionQuestionBlueprintPage').then((m) => ({ default: m.CompetitionQuestionBlueprintPage })));
 const CompetitionMakeExamPlanPage = React.lazy(() => import('./pages/competition/CompetitionMakeExamPlanPage').then((m) => ({ default: m.CompetitionMakeExamPlanPage })));
-const CompetitionPracticalScoringSchemePage = React.lazy(() => import('./pages/competition/CompetitionPracticalScoringSchemePage').then((m) => ({ default: m.CompetitionPracticalScoringSchemePage })));
 const CompetitionPracticalJudgeApp = React.lazy(() => import('./pages/competition/CompetitionPracticalJudgeApp').then((m) => ({ default: m.CompetitionPracticalJudgeApp })));
 const FormalExamPlayerApp = React.lazy(() => import('./pages/formalExam/FormalExamPlayerApp').then((m) => ({ default: m.FormalExamPlayerApp })));
 const ArchiveEquipmentPage = React.lazy(() => import('./pages/zhixunplatform/ArchiveTablePage').then((m) => ({ default: m.createArchiveTablePage('equipment') })));
@@ -559,6 +559,8 @@ const pageMap: Record<string, React.ReactNode> = {
   competition_event: <CompetitionEventManagementPage />,
   competition_player: <CompetitionPlayerManagementPage />,
   competition_player_info: <CompetitionPlayerManagementPage />,
+  competition_player_pre_practice_question_config: <CompetitionPlayerPrePracticePage />,
+  competition_player_pre_practice_push_management: <CompetitionPlayerPrePracticePushPage />,
   competition_player_draw_distribution: <CompetitionPlayerDrawDistributionPage />,
   competition_player_draw_management: <CompetitionPlayerDrawManagementPage />,
   competition_referee: <CompetitionRefereeManagementPage />,
@@ -573,13 +575,11 @@ const pageMap: Record<string, React.ReactNode> = {
   competition_theory_question: <CompetitionQuestionBankPage contentType="theory" />,
   competition_practical_question: <CompetitionQuestionBankPage contentType="practical" />,
   competition_simple_theory_question: <CompetitionQuestionBankPage contentType="theory" simpleMode />,
-  competition_simple_practical_question: <CompetitionSimplePracticalQuestionPage />,
   competition_theory_blueprint: <CompetitionQuestionBlueprintPage contentType="theory" />,
   competition_practical_blueprint: <CompetitionQuestionBlueprintPage contentType="practical" />,
   competition_theory_make_exam_plan: <CompetitionMakeExamPlanPage contentType="theory" />,
   competition_practical_make_exam_plan: <CompetitionMakeExamPlanPage contentType="practical" />,
   competition_simple_theory_make_exam_plan: <CompetitionMakeExamPlanPage contentType="theory" simpleMode />,
-  competition_simple_practical_make_exam_plan: <CompetitionPracticalScoringSchemePage />,
 };
 
 function useBrowserPathname() {

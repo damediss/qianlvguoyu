@@ -21,6 +21,7 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
     "com.guoyu.platform.contract.mapper",
     "com.guoyu.platform.chazheng.mapper",
     "com.guoyu.platform.competition.mapper",
+    "com.guoyu.platform.competition.prepractice.mapper",
     "com.guoyu.platform.competition.sorting.mapper",
     "com.guoyu.platform.competition.classify.mapper",
     "com.guoyu.platform.competition.draw.mapper",

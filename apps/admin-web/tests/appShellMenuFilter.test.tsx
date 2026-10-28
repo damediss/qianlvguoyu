@@ -3,7 +3,7 @@
  * 子入口全部下线的目录（如“组卷计划”）也不留空壳。
  */
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
+import { cleanup, render, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AppShell, resetTabsSessionRestore } from '../src/layouts/AppShell';
@@ -55,11 +55,16 @@ const TREE: MenuVO[] = [
       menu('competition_practical_question', '实操试题', '/competition/question-bank/practical'),
       menu('competition_simple_question', '简易试题', '/competition/question-bank/simple', 'directory', [
         menu('competition_simple_theory_question', '简易理论试题', '/competition/question-bank/simple/theory'),
+        menu('competition_simple_practical_question', '实操评分项', '/competition/question-bank/simple/practical'),
       ]),
     ]),
     menu('competition_make_exam_plan', '组卷计划', '/competition/make-exam-plans', 'directory', [
       menu('competition_theory_make_exam_plan', '理论组卷', '/competition/make-exam-plans'),
       menu('competition_practical_make_exam_plan', '实操组卷', '/competition/make-exam-plans/practical'),
+      menu('competition_simple_make_exam_plan', '简易组卷', '/competition/make-exam-plans/simple', 'directory', [
+        menu('competition_simple_theory_make_exam_plan', '简易理论组卷', '/competition/make-exam-plans/simple/theory'),
+        menu('competition_simple_practical_make_exam_plan', '实操评分方案', '/competition/make-exam-plans/simple/practical'),
+      ]),
     ]),
   ]),
 ];
@@ -68,6 +73,8 @@ function pageMap() {
   return {
     competition_event: <div>赛事创建内容</div>,
     competition_simple_theory_question: <div>简易理论试题内容</div>,
+    competition_simple_practical_question: <div>实操评分项内容</div>,
+    competition_simple_practical_make_exam_plan: <div>实操评分方案内容</div>,
   } as Record<string, React.ReactNode>;
 }
 
@@ -115,37 +122,40 @@ afterEach(() => {
 });
 
 describe('下线菜单入口', () => {
-  it('试题/细目表入口不渲染，未下线的同级入口保持可见', async () => {
+  it('简易试题只保留理论入口，实操评分项不渲染', async () => {
     const user = userEvent.setup();
     renderShell();
     // 展开“竞赛管理”“竞赛试题管理”目录，让子项进入 DOM
-    await user.click(await screen.findByText('竞赛管理'));
-    await user.click(await screen.findByText('竞赛试题管理'));
+    await user.click(await sider().findByText('竞赛管理'));
+    await user.click(await sider().findByText('竞赛试题管理'));
 
     expect(sider().queryByText('理论细目表')).toBeNull();
     expect(sider().queryByText('实操细目表')).toBeNull();
     expect(sider().queryByText('理论试题')).toBeNull();
     expect(sider().queryByText('实操试题')).toBeNull();
-    // 未在本次下线范围内的简易入口仍在
     expect(sider().getByText('简易试题')).toBeTruthy();
+    await user.click(await sider().findByText('简易试题'));
+    expect(sider().getByText('简易理论试题')).toBeTruthy();
+    expect(sider().queryByText('实操评分项')).toBeNull();
   });
 
-  it('子入口全部下线的目录（组卷计划）不保留空壳', async () => {
+  it('简易组卷保留理论组卷，实操评分方案不渲染', async () => {
     const user = userEvent.setup();
     renderShell();
-    await user.click(await screen.findByText('竞赛管理'));
-    await waitFor(() => {
-      expect(sider().queryByText('组卷计划')).toBeNull();
-    });
-    expect(sider().queryByText('理论组卷')).toBeNull();
+    await user.click(await sider().findByText('竞赛管理'));
+    await user.click(await sider().findByText('组卷计划'));
+    expect(sider().getByText('简易组卷')).toBeTruthy();
+    await user.click(await sider().findByText('简易组卷'));
+    expect(sider().getByText('简易理论组卷')).toBeTruthy();
+    expect(sider().queryByText('实操评分方案')).toBeNull();
     expect(sider().queryByText('实操组卷')).toBeNull();
   });
 
   it('赛事创建等未下线入口正常展示，实操比赛控制台入口隐藏', async () => {
     const user = userEvent.setup();
     renderShell();
-    await user.click(await screen.findByText('竞赛管理'));
-    expect(await screen.findByText('赛事创建')).toBeTruthy();
+    await user.click(await sider().findByText('竞赛管理'));
+    expect(await sider().findByText('赛事创建')).toBeTruthy();
     expect(sider().queryByText('实操比赛控制台')).toBeNull();
   });
 });

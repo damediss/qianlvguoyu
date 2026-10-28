@@ -30,6 +30,7 @@ import com.guoyu.platform.exam.reviewsync.dto.ReviewQuestion;
 import com.guoyu.platform.exam.reviewsync.dto.ReviewQuestionDetail;
 import com.guoyu.platform.exam.reviewsync.service.AiGradeApplicationService.SubjectiveGradeResult;
 import com.guoyu.platform.exam.reviewsync.support.SubjectiveAnswerExtractor;
+import com.guoyu.platform.exam.reviewsync.support.AnswerOptionParser;
 import com.guoyu.platform.system.entity.DictEntity;
 import com.guoyu.platform.system.mapper.DictMapper;
 import java.math.BigDecimal;
@@ -2243,39 +2244,7 @@ public class ReviewPlanApplicationService {
   }
 
   private List<AnswerJudgeDomainService.AnswerOption> parseOptions(String answerJson) {
-    List<AnswerJudgeDomainService.AnswerOption> options = new ArrayList<>();
-    if (answerJson == null || answerJson.isBlank()) {
-      return options;
-    }
-    try {
-      List<Map<String, Object>> raw = objectMapper.readValue(answerJson, new TypeReference<>() {
-      });
-      for (Map<String, Object> item : raw) {
-        options.add(new AnswerJudgeDomainService.AnswerOption(
-            item.get("content") != null ? String.valueOf(item.get("content")) : "",
-            Boolean.TRUE.equals(item.get("isCorrect")) || "true".equals(String.valueOf(item.get("isCorrect"))),
-            parseOptionScore(item.get("score"))));
-      }
-    } catch (Exception e) {
-      log.warn("[AI复习] 答案 JSON 解析失败：{}", e.getMessage());
-    }
-    return options;
-  }
-
-  /** 选项 score 兼容解析：PHP 数据有数值/字符串两种形态，非数值按 null（该题回退少选不得分） */
-  private static java.math.BigDecimal parseOptionScore(Object score) {
-    if (score == null) {
-      return null;
-    }
-    try {
-      String text = String.valueOf(score).trim();
-      if (text.isEmpty()) {
-        return null;
-      }
-      return new java.math.BigDecimal(text);
-    } catch (Exception e) {
-      return null;
-    }
+    return AnswerOptionParser.parse(answerJson, objectMapper);
   }
 
   /** 剥离答案标记：只留 content 列表（§3.4 防抓包背答案） */

@@ -38,7 +38,7 @@ type AppMenuItem = {
   children?: AppMenuItem[];
 };
 
-// 按业务要求下线的独立菜单入口：只从侧栏/标签入口移除，页面与后端接口保留（URL 仍可直达）。
+// 按业务要求下线的独立菜单入口：从侧栏和标签入口移除；退役模块不再注册页面映射。
 const hiddenMenuCodes = new Set([
   'competition_theory_exam',
   'competition_theory_blueprint',
@@ -47,6 +47,8 @@ const hiddenMenuCodes = new Set([
   'competition_practical_question',
   'competition_theory_make_exam_plan',
   'competition_practical_make_exam_plan',
+  'competition_simple_practical_question',
+  'competition_simple_practical_make_exam_plan',
   'competition_practical_exam',
 ]);
 
@@ -70,7 +72,6 @@ function menuDisplayName(menu: MenuVO) {
   // Keep the renamed competition entry visible while an existing session still
   // has the previous backend menu payload cached.
   if (menu.code === 'competition_event') return '赛事创建';
-  if (menu.code === 'competition_simple_practical_question') return '实操评分项';
   return menu.name;
 }
 

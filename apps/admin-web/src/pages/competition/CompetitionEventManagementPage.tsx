@@ -27,8 +27,10 @@ import {
   Spin,
   Table,
   Tag,
+  Tooltip,
   Typography,
   message,
+  type TableColumnsType,
 } from 'antd';
 import dayjs, { type Dayjs } from 'dayjs';
 import QRCode from 'qrcode';
@@ -301,25 +303,38 @@ function CompetitionEventListPage({
   });
 
   const events = listQuery.data?.items || [];
-  const columns = useMemo(() => [
+  const columns = useMemo<TableColumnsType<CompetitionEvent>>(() => [
     {
       title: '名称',
       dataIndex: 'name',
       render: (value: string, record: CompetitionEvent) => (
-        <Button type="link" className="competition-event-name" onClick={() => setDetailEventId(idValue(record.id))}>
-          {value}
-        </Button>
+        <Tooltip title={value}>
+          <Button type="link" className="competition-event-name" onClick={() => setDetailEventId(idValue(record.id))}>
+            <span className="competition-event-name__text">{value}</span>
+          </Button>
+        </Tooltip>
       ),
     },
-    { title: '编码', dataIndex: 'code', width: 180 },
-    { title: '范围', dataIndex: 'scope', width: 130, render: scopeLabel },
-    { title: '状态', dataIndex: 'status', width: 110, render: statusTag },
-    { title: '开始时间', dataIndex: 'startAt', width: 170, render: formatDate },
-    { title: '结束时间', dataIndex: 'endAt', width: 170, render: formatDate },
+    {
+      title: '编码',
+      dataIndex: 'code',
+      width: 180,
+      render: (value: string) => (
+        <Tooltip title={value}>
+          <span className="competition-event-code">{value || '-'}</span>
+        </Tooltip>
+      ),
+    },
+    { title: '范围', dataIndex: 'scope', width: 130, className: 'competition-event-nowrap', render: scopeLabel },
+    { title: '状态', dataIndex: 'status', width: 110, className: 'competition-event-nowrap', render: statusTag },
+    { title: '开始时间', dataIndex: 'startAt', width: 170, className: 'competition-event-nowrap', render: formatDate },
+    { title: '结束时间', dataIndex: 'endAt', width: 170, className: 'competition-event-nowrap', render: formatDate },
     {
       title: '操作',
       key: 'actions',
-      width: 150,
+      width: 110,
+      fixed: 'right',
+      className: 'competition-event-nowrap',
       render: (_: unknown, record: CompetitionEvent) => (
         <Space size={0}>
           <Button type="link" size="small" icon={<EyeOutlined />} onClick={() => setDetailEventId(idValue(record.id))}>
@@ -407,11 +422,13 @@ function CompetitionEventListPage({
 
       <Card bordered={false} className="competition-table-card competition-plan-table-card">
         <Table<CompetitionEvent>
+          className="competition-event-list-table"
           rowKey={(record) => idValue(record.id)}
           loading={listQuery.isLoading}
           dataSource={events}
           columns={columns}
-          scroll={{ x: 1050 }}
+          tableLayout="fixed"
+          scroll={{ x: 1150 }}
           pagination={{
             current: query.page,
             pageSize: query.pageSize,

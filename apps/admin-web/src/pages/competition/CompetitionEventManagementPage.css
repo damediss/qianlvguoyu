@@ -39,6 +39,10 @@
 .competition-filter-card__body { width: 100%; }
 .competition-plan-table-card .ant-card-body { padding-top: 4px; }
 .competition-event-name { padding-inline: 0; font-weight: 600; }
+.competition-event-list-table .competition-event-name { display: block; width: 100%; height: auto; white-space: normal; text-align: left; }
+.competition-event-list-table .competition-event-name__text { display: -webkit-box; overflow: hidden; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow-wrap: anywhere; }
+.competition-event-list-table .competition-event-code { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.competition-event-list-table .competition-event-nowrap { white-space: nowrap; }
 .competition-roster-batch-link { display: block; width: 100%; overflow: hidden; padding-inline: 0; text-align: left; text-overflow: ellipsis; white-space: nowrap; }
 .competition-roster-org-name { display: block; overflow: hidden; text-overflow: clip; white-space: nowrap; }
 .competition-roster-import-form { flex-wrap: nowrap; align-items: center; gap: 8px; overflow-x: auto; }

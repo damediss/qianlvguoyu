@@ -66,6 +66,16 @@ public final class AnswerJudgeDomainService {
     return new JudgeResult(correct, correctText(options));
   }
 
+  /** 文本题精确判定：去除首尾空格并忽略大小写，不做语义或 AI 判分。 */
+  public static JudgeResult judgeText(String referenceAnswer, String userAnswer) {
+    String expected = referenceAnswer == null ? null : referenceAnswer.trim();
+    String actual = userAnswer == null ? null : userAnswer.trim();
+    boolean correct = expected != null && !expected.isEmpty()
+        && actual != null && !actual.isEmpty()
+        && expected.equalsIgnoreCase(actual);
+    return new JudgeResult(correct, expected);
+  }
+
   /**
    * 模考严格多选判分（O7，sys_dict ai_review_mock_strict_judge=1 时启用）：
    * <ul>

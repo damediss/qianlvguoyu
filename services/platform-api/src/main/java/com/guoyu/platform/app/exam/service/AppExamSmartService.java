@@ -14,6 +14,7 @@ import com.guoyu.platform.exam.entity.ExamExamDetailEntity;
 import com.guoyu.platform.exam.entity.ExamKnowledgeStructureEntity;
 import com.guoyu.platform.exam.mapper.ExamExamDetailMapper;
 import com.guoyu.platform.exam.mapper.ExamKnowledgeStructureMapper;
+import com.guoyu.platform.exam.reviewsync.service.AnswerJudgeDomainService;
 import com.guoyu.platform.exam.reviewsync.entity.AiReviewPlanEntity;
 import com.guoyu.platform.exam.reviewsync.entity.AiReviewWrongItemEntity;
 import com.guoyu.platform.exam.reviewsync.mapper.AiReviewPlanMapper;
@@ -1862,7 +1863,7 @@ public class AppExamSmartService {
           .collect(Collectors.toCollection(LinkedHashSet::new));
       return !expect.isEmpty() && expect.equals(got);
     }
-    return String.valueOf(correct).trim().equalsIgnoreCase(user);
+    return AnswerJudgeDomainService.judgeText(String.valueOf(correct), user).correct();
   }
 
   private record ParsedQuestion(
