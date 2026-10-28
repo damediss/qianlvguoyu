@@ -37,6 +37,9 @@ public class TrainTeacherBankUpdateReq {
   /** 单位 */
   private String company;
 
+  /** 归属企业组织 ID */
+  private Long companyId;
+
   @Size(max = 500)
   /** 培训地点 */
   private String address;
@@ -167,6 +170,14 @@ public class TrainTeacherBankUpdateReq {
 
   public void setCompany(String company) {
     this.company = company;
+  }
+
+  public Long getCompanyId() {
+    return companyId;
+  }
+
+  public void setCompanyId(Long companyId) {
+    this.companyId = companyId;
   }
 
   public String getAddress() {

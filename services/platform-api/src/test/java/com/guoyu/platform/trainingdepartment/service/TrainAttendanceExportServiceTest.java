@@ -58,8 +58,8 @@ class TrainAttendanceExportServiceTest {
   }
 
   @Test
-  void assemble_sameDayAbsentPlusPresent_winsPresentAndCountsMergedOnly() {
-    // 同日：上午缺勤 + 下午出勤 → 出勤；缺勤不重复计数（按合并后口径）
+  void assemble_sameDayAbsentPlusPresent_cellMergedCountsBySession() {
+    // 格内按日合并：缺勤+出勤→出勤；汇总按次数：有效出勤1、缺勤1（对齐抽屉）
     TrainPeopleListEntity s = student(1L, "黄毅坚");
     List<TrainAttendanceEntity> atts = List.of(
         attendance(1L, "2026-10-08", 0),
@@ -69,7 +69,7 @@ class TrainAttendanceExportServiceTest {
 
     assertEquals(List.of("出勤"), row.cells());
     assertEquals(1, row.effectivePresent());
-    assertEquals(0, row.absent());
+    assertEquals(1, row.absent());
   }
 
   @Test
@@ -90,7 +90,7 @@ class TrainAttendanceExportServiceTest {
   }
 
   @Test
-  void assemble_latePlusEarly_winsLate() {
+  void assemble_latePlusEarly_cellWinsLate_countsBothSessions() {
     TrainPeopleListEntity s = student(1L, "黄毅坚");
     List<TrainAttendanceEntity> atts = List.of(
         attendance(1L, "2026-10-08", 2),
@@ -99,17 +99,18 @@ class TrainAttendanceExportServiceTest {
     RowModel row = assembleSheet(List.of(s), atts).rows().get(0);
 
     assertEquals("迟到", row.cells().get(0));
-    assertEquals(1, row.effectivePresent());
+    assertEquals(2, row.effectivePresent());
     assertEquals(1, row.late());
-    assertEquals(0, row.early());
+    assertEquals(1, row.early());
     assertEquals(0, row.absent());
   }
 
   @Test
-  void assemble_effectivePresent_sumsOnTimeLateEarlyDays() {
-    // 有效出勤 = 出勤日 + 迟到日 + 早退日（与详情抽屉 present+late+early 同口径）
+  void assemble_effectivePresent_sumsSessionCountsLikeDrawer() {
+    // 有效出勤次数 = 出勤+迟到+早退条数（与详情抽屉同口径；同日两节各计 1 次）
     TrainPeopleListEntity s = student(1L, "黄毅坚");
     List<TrainAttendanceEntity> atts = List.of(
+        attendance(1L, "2026-10-08", 1),
         attendance(1L, "2026-10-08", 1),
         attendance(1L, "2026-10-09", 2),
         attendance(1L, "2026-10-10", 3),
@@ -117,7 +118,8 @@ class TrainAttendanceExportServiceTest {
 
     RowModel row = assembleSheet(List.of(s), atts).rows().get(0);
 
-    assertEquals(3, row.effectivePresent());
+    assertEquals("出勤", row.cells().get(0)); // 10-08 合并后仍显示出勤
+    assertEquals(4, row.effectivePresent());
     assertEquals(1, row.late());
     assertEquals(1, row.early());
     assertEquals(1, row.absent());

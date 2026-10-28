@@ -53,6 +53,8 @@ import type {
   TrainCertificate, TrainCertificateQuery, TrainCertificateCreateReq, TrainCertificateUpdateReq,
   TrainResearchOrg, TrainResearchOrgQuery, TrainResearchOrgCreateReq, TrainResearchOrgUpdateReq,
   SystemCompany, SystemCompanySaveReq,
+  EnterpriseAccount, EnterpriseAccountCreateReq, EnterpriseAccountUpdateReq, EnterpriseAccountRole,
+  EnterpriseFeatureConfig, EnterpriseFeatureConfigSaveReq, EnterpriseFeatureOptions,
   TrainResearchCollection, TrainResearchPerson, TrainResearchPersonQuery,
   TrainResearchPersonCreateReq, TrainResearchPersonUpdateReq,
   CertVerifyBatchResultVO,
@@ -3602,6 +3604,81 @@ export function updateSystemCompany(id: number, payload: SystemCompanySaveReq) {
 
 export function deleteSystemCompany(id: number) {
   return unwrap<void>(apiClient.delete(`${BASE}/system-companies/${id}`));
+}
+
+export function listEnterpriseAccountRoles(enterpriseId: number) {
+  return unwrap<EnterpriseAccountRole[]>(
+    apiClient.get(`${BASE}/system-companies/${enterpriseId}/account-roles`),
+  );
+}
+
+export function getEnterpriseFeatureOptions() {
+  return unwrap<EnterpriseFeatureOptions>(apiClient.get(`${BASE}/system-companies/feature-options`));
+}
+
+export function getEnterpriseFeatureConfig(enterpriseId: number) {
+  return unwrap<EnterpriseFeatureConfig>(
+    apiClient.get(`${BASE}/system-companies/${enterpriseId}/feature-config`),
+  );
+}
+
+export function saveEnterpriseFeatureConfig(
+  enterpriseId: number,
+  payload: EnterpriseFeatureConfigSaveReq,
+) {
+  return unwrap<EnterpriseFeatureConfig>(
+    apiClient.put(`${BASE}/system-companies/${enterpriseId}/feature-config`, payload),
+  );
+}
+
+export function listEnterpriseAccounts(
+  enterpriseId: number,
+  params?: { page?: number; pageSize?: number; keyword?: string },
+) {
+  return unwrap<PageResponse<EnterpriseAccount>>(
+    apiClient.get(`${BASE}/system-companies/${enterpriseId}/accounts`, { params }),
+  );
+}
+
+export function createEnterpriseAccount(enterpriseId: number, payload: EnterpriseAccountCreateReq) {
+  return unwrap<EnterpriseAccount>(
+    apiClient.post(`${BASE}/system-companies/${enterpriseId}/accounts`, payload),
+  );
+}
+
+export function updateEnterpriseAccount(
+  enterpriseId: number,
+  userId: number,
+  payload: EnterpriseAccountUpdateReq,
+) {
+  return unwrap<EnterpriseAccount>(
+    apiClient.put(`${BASE}/system-companies/${enterpriseId}/accounts/${userId}`, payload),
+  );
+}
+
+export function setEnterpriseAccountStatus(
+  enterpriseId: number,
+  userId: number,
+  status: 'enabled' | 'disabled',
+) {
+  return unwrap<EnterpriseAccount>(
+    apiClient.post(`${BASE}/system-companies/${enterpriseId}/accounts/${userId}/status`, {}, {
+      params: { status },
+    }),
+  );
+}
+
+export function resetEnterpriseAccountPassword(
+  enterpriseId: number,
+  userId: number,
+  payload: { newPassword: string },
+) {
+  return unwrap<void>(
+    apiClient.post(
+      `${BASE}/system-companies/${enterpriseId}/accounts/${userId}/reset-password`,
+      payload,
+    ),
+  );
 }
 
 // ==================== Research Collection (企业调研人员采集) ====================

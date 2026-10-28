@@ -15,6 +15,7 @@ public record TrainTeacherBankVO(
     String eduLicense,
     String graduatePaper,
     String company,
+    Long companyId,
     String address,
     String idCardNumber,
     String startDate,

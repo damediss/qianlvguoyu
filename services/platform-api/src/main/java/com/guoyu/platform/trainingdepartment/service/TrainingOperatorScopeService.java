@@ -115,6 +115,60 @@ public class TrainingOperatorScopeService {
     return !isPlatformAdmin() && currentScope().isEnterpriseViewer() && currentScope().orgId() != null;
   }
 
+  /**
+   * 企业管理/开设账号：是否可操作该企业组织。
+   * 超管任意；企业仅本企；机构仅组织树下属（parent=本机构）。业务关联表接入后可在此扩展。
+   */
+  public void assertCanManageEnterprise(Long enterpriseId) {
+    if (enterpriseId == null) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST, "企业不能为空");
+    }
+    if (isPlatformAdmin()) {
+      return;
+    }
+    Scope scope = currentScope();
+    if (scope.orgId() == null) {
+      throw new BusinessException(ErrorCode.FORBIDDEN, "无权管理该企业");
+    }
+    if (scope.isEnterpriseViewer()) {
+      if (!scope.orgId().equals(enterpriseId)) {
+        throw new BusinessException(ErrorCode.FORBIDDEN, "仅可管理本企业账号");
+      }
+      return;
+    }
+    OrgEntity enterprise = orgMapper.selectById(enterpriseId);
+    if (enterprise == null || !"company".equals(enterprise.getOrgType())) {
+      throw new BusinessException(ErrorCode.NOT_FOUND, "企业不存在");
+    }
+    if (!scope.orgId().equals(enterprise.getParentId())) {
+      throw new BusinessException(ErrorCode.FORBIDDEN, "仅可管理本机构下属企业");
+    }
+  }
+
+  /** 企业管理列表可见的企业 ID；null 表示不限制（超管） */
+  public Long resolveManagedEnterpriseFilter() {
+    if (isPlatformAdmin()) {
+      return null;
+    }
+    Scope scope = currentScope();
+    if (scope.isEnterpriseViewer() && scope.orgId() != null) {
+      return scope.orgId();
+    }
+    return null;
+  }
+
+  /** 机构企业时：机构账号自动挂到本机构下；超管/其它保持独立（parent=0） */
+  public Long resolveNewEnterpriseParentId() {
+    if (isPlatformAdmin()) {
+      return 0L;
+    }
+    Scope scope = currentScope();
+    if (scope.isOrgOperator() && scope.orgId() != null) {
+      return scope.orgId();
+    }
+    return 0L;
+  }
+
   /** 平台管理员 / 超级管理员：可跨机构查看培训相关数据 */
   public boolean isPlatformAdmin() {
     return isPlatformAdmin(SecurityContext.currentUser());

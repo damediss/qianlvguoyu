@@ -11,6 +11,8 @@ import com.guoyu.platform.common.exception.ErrorCode;
 import com.guoyu.platform.file.service.FileApplicationService;
 import com.guoyu.platform.file.vo.FileVO;
 import com.guoyu.platform.security.SecurityContext;
+import com.guoyu.platform.system.entity.OrgEntity;
+import com.guoyu.platform.system.mapper.OrgMapper;
 import com.guoyu.platform.trainingdepartment.dto.TrainTeacherBankCreateReq;
 import com.guoyu.platform.trainingdepartment.dto.TrainTeacherBankQueryReq;
 import com.guoyu.platform.trainingdepartment.dto.TrainTeacherBankUpdateReq;
@@ -65,6 +67,8 @@ public class TrainTeacherBankApplicationService {
   private final TrainTeacherBankFileMapper fileMapper;
   private final FileApplicationService fileApplicationService;
   private final ObjectMapper objectMapper;
+  private final TrainingOperatorScopeService operatorScopeService;
+  private final OrgMapper orgMapper;
   private final HttpClient httpClient =
       HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(10)).build();
 
@@ -72,21 +76,29 @@ public class TrainTeacherBankApplicationService {
       TrainTeacherBankMapper mapper,
       TrainTeacherBankFileMapper fileMapper,
       FileApplicationService fileApplicationService,
-      ObjectMapper objectMapper) {
+      ObjectMapper objectMapper,
+      TrainingOperatorScopeService operatorScopeService,
+      OrgMapper orgMapper) {
     this.mapper = mapper;
     this.fileMapper = fileMapper;
     this.fileApplicationService = fileApplicationService;
     this.objectMapper = objectMapper;
+    this.operatorScopeService = operatorScopeService;
+    this.orgMapper = orgMapper;
   }
 
   @Transactional(readOnly = true)
   public PageResponse<TrainTeacherBankVO> page(TrainTeacherBankQueryReq req) {
     Long tenantId = tenantId();
+    Long companyFilter = operatorScopeService.resolveCompanyFilter(req.getCompanyId());
     LambdaQueryWrapper<TrainTeacherBankEntity> wrapper =
         new LambdaQueryWrapper<TrainTeacherBankEntity>()
         .eq(TrainTeacherBankEntity::getTenantId, tenantId)
         .eq(TrainTeacherBankEntity::getDeleted, 0)
         .orderByDesc(TrainTeacherBankEntity::getCreateTime);
+    if (companyFilter != null) {
+      wrapper.eq(TrainTeacherBankEntity::getCompanyId, companyFilter);
+    }
     if (StringUtils.hasText(req.getKeyword())) {
       String kw = req.getKeyword().trim();
       wrapper.and(
@@ -131,6 +143,7 @@ public class TrainTeacherBankApplicationService {
     entity.setUserId(SecurityContext.currentUser().getUserId());
     entity.setSource("manual");
     applyCreate(entity, req);
+    applyCompanyOwnership(entity, req.getCompanyId(), true);
     entity.setDeleted(0);
     if (entity.getStatus() == null) {
       entity.setStatus(1);
@@ -145,6 +158,9 @@ public class TrainTeacherBankApplicationService {
   public TrainTeacherBankVO update(Long id, TrainTeacherBankUpdateReq req) {
     TrainTeacherBankEntity entity = getExisting(id);
     applyUpdate(entity, req);
+    if (req.getCompanyId() != null || operatorScopeService.isEnterpriseScoped()) {
+      applyCompanyOwnership(entity, req.getCompanyId(), false);
+    }
     entity.setUpdateTime(LocalDateTime.now());
     mapper.updateById(entity);
     return toVo(entity, true);
@@ -191,6 +207,8 @@ public class TrainTeacherBankApplicationService {
       throw new BusinessException(ErrorCode.BAD_REQUEST, "请上传 Excel 文件");
     }
     Long tenantId = tenantId();
+    Long importCompanyId = operatorScopeService.resolveCompanyFilter(null);
+    String importCompanyName = resolveOrgName(importCompanyId);
     List<TrainTeacherBankImportResultVO.Item> failed = new ArrayList<>();
     List<TrainTeacherBankImportResultVO.Item> warnings = new ArrayList<>();
     int created = 0;
@@ -245,9 +263,9 @@ public class TrainTeacherBankApplicationService {
           boolean isProvisional = !StringUtils.hasText(idCardNumber);
           TrainTeacherBankEntity existing = null;
           if (!isProvisional) {
-            existing = findByIdCard(tenantId, idCardNumber);
+            existing = findByIdCard(tenantId, idCardNumber, importCompanyId);
           } else if (StringUtils.hasText(phone)) {
-            existing = findProvisionalByNamePhone(tenantId, name, phone);
+            existing = findProvisionalByNamePhone(tenantId, name, phone, importCompanyId);
           }
           if (existing == null) {
             TrainTeacherBankEntity entity = new TrainTeacherBankEntity();
@@ -268,6 +286,12 @@ public class TrainTeacherBankApplicationService {
             entity.setTeacherQualNo(parsed.teacherQualNo());
             entity.setTitleCertNo(parsed.titleCertNo());
             entity.setSkillCertNo(parsed.skillCertNo());
+            if (importCompanyId != null) {
+              entity.setCompanyId(importCompanyId);
+              if (StringUtils.hasText(importCompanyName)) {
+                entity.setCompany(importCompanyName);
+              }
+            }
             entity.setCreateTime(LocalDateTime.now());
             entity.setUpdateTime(LocalDateTime.now());
             mapper.insert(entity);
@@ -278,6 +302,7 @@ public class TrainTeacherBankApplicationService {
                   new TrainTeacherBankImportResultVO.Item(excelRow, name, "临时建档（无身份证）"));
             }
           } else {
+            operatorScopeService.assertCompanyAccessible(existing.getCompanyId());
             existing.setName(name);
             if (phone != null) {
               existing.setPhone(phone);
@@ -305,6 +330,12 @@ public class TrainTeacherBankApplicationService {
             }
             if (!StringUtils.hasText(existing.getSource())) {
               existing.setSource("excel");
+            }
+            if (importCompanyId != null && existing.getCompanyId() == null) {
+              existing.setCompanyId(importCompanyId);
+              if (!StringUtils.hasText(existing.getCompany()) && StringUtils.hasText(importCompanyName)) {
+                existing.setCompany(importCompanyName);
+              }
             }
             existing.setUpdateTime(LocalDateTime.now());
             mapper.updateById(existing);
@@ -422,7 +453,7 @@ public class TrainTeacherBankApplicationService {
             existing = findByLegacyId(tenantId, legacyId);
           }
           if (existing == null && idCardNumber != null) {
-            existing = findByIdCard(tenantId, idCardNumber);
+            existing = findByIdCard(tenantId, idCardNumber, null);
           }
           boolean isNew = existing == null;
           TrainTeacherBankEntity entity = isNew ? new TrainTeacherBankEntity() : existing;
@@ -446,6 +477,12 @@ public class TrainTeacherBankApplicationService {
           entity.setEndDate(blankToNull(text(node, "end_date")));
           entity.setCompany(blankToNull(text(node, "company")));
           entity.setAddress(blankToNull(text(node, "address")));
+          if (entity.getCompanyId() == null && StringUtils.hasText(entity.getCompany())) {
+            Long matchedCompanyId = findCompanyIdByName(tenantId, entity.getCompany());
+            if (matchedCompanyId != null) {
+              entity.setCompanyId(matchedCompanyId);
+            }
+          }
           entity.setUpdateTime(LocalDateTime.now());
           if (isNew) {
             mapper.insert(entity);
@@ -820,6 +857,7 @@ public class TrainTeacherBankApplicationService {
         e.getEduLicense(),
         e.getGraduatePaper(),
         e.getCompany(),
+        e.getCompanyId(),
         e.getAddress(),
         idCardNumber,
         e.getStartDate(),
@@ -878,13 +916,17 @@ public class TrainTeacherBankApplicationService {
         .toList();
   }
 
-  private TrainTeacherBankEntity findByIdCard(Long tenantId, String idCardNumber) {
-    return mapper.selectOne(
+  private TrainTeacherBankEntity findByIdCard(
+      Long tenantId, String idCardNumber, Long companyFilter) {
+    LambdaQueryWrapper<TrainTeacherBankEntity> wrapper =
         new LambdaQueryWrapper<TrainTeacherBankEntity>()
             .eq(TrainTeacherBankEntity::getTenantId, tenantId)
             .eq(TrainTeacherBankEntity::getIdCardNumber, idCardNumber)
-            .eq(TrainTeacherBankEntity::getDeleted, 0)
-            .last("LIMIT 1"));
+            .eq(TrainTeacherBankEntity::getDeleted, 0);
+    if (companyFilter != null) {
+      wrapper.eq(TrainTeacherBankEntity::getCompanyId, companyFilter);
+    }
+    return mapper.selectOne(wrapper.last("LIMIT 1"));
   }
 
   private TrainTeacherBankEntity findByLegacyId(Long tenantId, Long legacyId) {
@@ -897,15 +939,22 @@ public class TrainTeacherBankApplicationService {
   }
 
   private TrainTeacherBankEntity findProvisionalByNamePhone(
-      Long tenantId, String name, String phone) {
-    return mapper.selectOne(
+      Long tenantId, String name, String phone, Long companyFilter) {
+    LambdaQueryWrapper<TrainTeacherBankEntity> wrapper =
         new LambdaQueryWrapper<TrainTeacherBankEntity>()
             .eq(TrainTeacherBankEntity::getTenantId, tenantId)
             .eq(TrainTeacherBankEntity::getName, name)
             .eq(TrainTeacherBankEntity::getPhone, phone)
-            .and(w -> w.isNull(TrainTeacherBankEntity::getIdCardNumber).or().eq(TrainTeacherBankEntity::getIdCardNumber, ""))
-            .eq(TrainTeacherBankEntity::getDeleted, 0)
-            .last("LIMIT 1"));
+            .and(
+                w ->
+                    w.isNull(TrainTeacherBankEntity::getIdCardNumber)
+                        .or()
+                        .eq(TrainTeacherBankEntity::getIdCardNumber, ""))
+            .eq(TrainTeacherBankEntity::getDeleted, 0);
+    if (companyFilter != null) {
+      wrapper.eq(TrainTeacherBankEntity::getCompanyId, companyFilter);
+    }
+    return mapper.selectOne(wrapper.last("LIMIT 1"));
   }
 
   private TrainTeacherBankEntity getExisting(Long id) {
@@ -919,7 +968,71 @@ public class TrainTeacherBankApplicationService {
     if (entity == null) {
       throw new BusinessException(ErrorCode.NOT_FOUND, "师资不存在");
     }
+    operatorScopeService.assertCompanyAccessible(entity.getCompanyId());
     return entity;
+  }
+
+  /**
+   * 企业账号强制归属本企业；机构/超管可指定 companyId，并尽量回填工作单位名称。
+   */
+  private void applyCompanyOwnership(
+      TrainTeacherBankEntity entity, Long requestedCompanyId, boolean creating) {
+    Long companyId = operatorScopeService.resolveCompanyFilter(requestedCompanyId);
+    if (operatorScopeService.isEnterpriseScoped()) {
+      companyId = operatorScopeService.currentScope().orgId();
+    }
+    if (companyId != null) {
+      operatorScopeService.assertCompanyAccessible(companyId);
+      entity.setCompanyId(companyId);
+      if (!StringUtils.hasText(entity.getCompany())) {
+        String orgName = resolveOrgName(companyId);
+        if (StringUtils.hasText(orgName)) {
+          entity.setCompany(orgName);
+        }
+      }
+      return;
+    }
+    if (creating && requestedCompanyId != null && requestedCompanyId != 0) {
+      entity.setCompanyId(requestedCompanyId);
+      if (!StringUtils.hasText(entity.getCompany())) {
+        String orgName = resolveOrgName(requestedCompanyId);
+        if (StringUtils.hasText(orgName)) {
+          entity.setCompany(orgName);
+        }
+      }
+    } else if (!creating && requestedCompanyId != null) {
+      entity.setCompanyId(requestedCompanyId == 0 ? null : requestedCompanyId);
+      if (requestedCompanyId != 0
+          && !StringUtils.hasText(entity.getCompany())) {
+        String orgName = resolveOrgName(requestedCompanyId);
+        if (StringUtils.hasText(orgName)) {
+          entity.setCompany(orgName);
+        }
+      }
+    }
+  }
+
+  private String resolveOrgName(Long orgId) {
+    if (orgId == null) {
+      return null;
+    }
+    OrgEntity org = orgMapper.selectById(orgId);
+    return org == null ? null : org.getName();
+  }
+
+  private Long findCompanyIdByName(Long tenantId, String companyName) {
+    if (!StringUtils.hasText(companyName)) {
+      return null;
+    }
+    OrgEntity org =
+        orgMapper.selectOne(
+            new LambdaQueryWrapper<OrgEntity>()
+                .eq(OrgEntity::getTenantId, tenantId)
+                .eq(OrgEntity::getDeleted, 0)
+                .in(OrgEntity::getOrgType, List.of("company", "master"))
+                .eq(OrgEntity::getName, companyName.trim())
+                .last("LIMIT 1"));
+    return org == null ? null : org.getId();
   }
 
   private Long tenantId() {

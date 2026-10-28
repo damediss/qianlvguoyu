@@ -11,9 +11,10 @@ import java.util.Map;
 import org.springframework.util.StringUtils;
 
 /**
- * 跟班学员课时口径：45 分钟 = 1 课时；课表起止时间优先，否则用 classHours（不再 ÷45）。
- * 已上课时按「有考勤才计」：仅统计截止日及以前、且考勤为出勤/迟到/早退的课次；无考勤不计；缺勤不计。
- * 导入考勤若挂旧课次号（课表已重导），按备注「导入课次：HH:mm-HH:mm」折算实际课时。
+ * 跟班学员课时口径：45 分钟 = 1 课时。
+ * <p>计划学时：课表起止时间优先，否则用 classHours（不再 ÷45）。</p>
+ * <p>已上课时：截止日及以前、出勤/迟到/早退的考勤记录，优先按备注「导入课次：HH:mm-HH:mm」折算累加；
+ * 备注无法解析时回退课表该节课时；无考勤/缺勤不计。同一课次多条按缺勤优先合并后再计。</p>
  */
 public final class FollowClassHourCalculator {
 
@@ -187,68 +188,59 @@ public final class FollowClassHourCalculator {
     int presentSessions = 0;
     int absentSessions = 0;
     boolean partial = false;
-    // 仅截止日及以前：有考勤（出勤/迟到/早退）才计入；无考勤 / 缺勤 / 未来课次均不计。
-    for (ResolvedSession session : allSessions) {
-      if (!isOnOrBefore(session.date(), asOfDate)) {
-        continue;
-      }
-      SessionAttendanceMark mark = attendanceMarkForSession(session, days);
-      if (!session.convertible()) {
-        if (mark != SessionAttendanceMark.NONE) {
-          partial = true;
-        }
-        continue;
-      }
-      if (mark == SessionAttendanceMark.ABSENT) {
-        absentSessions++;
-      } else if (mark == SessionAttendanceMark.PRESENT) {
-        hours = hours.add(session.hours());
-        presentSessions++;
-      }
-    }
-    // 导入考勤挂在已失效课次号上：按备注时段折算，避免课表重导后已上课时变 0
-    for (AttendanceInput row : personAtt) {
-      if (!isPresent(row.status())) {
-        continue;
-      }
-      String date = normalizeDate(row.attendanceDate());
+    // 已上课时：合并后的有效出勤记录优先按备注时段折算累加；无备注再回退课表。
+    for (Map.Entry<String, DayBundle> dayEntry : days.entrySet()) {
+      String date = dayEntry.getKey();
       if (!isOnOrBefore(date, asOfDate)) {
         continue;
       }
-      if (row.scheduleId() != null && sessionById.containsKey(row.scheduleId())) {
-        continue;
-      }
-      if (row.scheduleId() == null) {
-        // 按日考勤已在上面按课表课次计入；无课次号且当天课表无课次时尝试备注
-        DayBundle bundle = StringUtils.hasText(date) ? days.get(date) : null;
-        boolean dayHasScheduleSessions = allSessions.stream()
-            .anyMatch(s -> date != null && date.equals(s.date()) && s.convertible());
-        if (dayHasScheduleSessions || (bundle != null && !bundle.sessions.isEmpty())) {
-          continue;
+      DayBundle bundle = dayEntry.getValue();
+      if (!bundle.sessions.isEmpty()) {
+        for (Map.Entry<Long, AttendanceInput> sessionEntry : bundle.sessions.entrySet()) {
+          AttendanceInput att = sessionEntry.getValue();
+          if (att == null) {
+            continue;
+          }
+          if (!isPresent(att.status())) {
+            if (att.status() != null && att.status() == 0) {
+              absentSessions++;
+            }
+            continue;
+          }
+          Credit credit = creditPresentAttendance(att, sessionById.get(sessionEntry.getKey()), allSessions, date);
+          hours = hours.add(credit.hours());
+          presentSessions += credit.presentDelta();
+          partial = partial || credit.partial();
         }
-      }
-      BigDecimal imported = hoursFromImportRemark(row.remark());
-      if (imported != null) {
-        hours = hours.add(imported);
-        presentSessions++;
-      } else if (row.scheduleId() != null) {
-        partial = true;
-      }
-    }
-    for (DayBundle bundle : days.values()) {
-      if (bundle.dayLevel != null) {
         continue;
       }
-      for (Long scheduleId : bundle.sessions.keySet()) {
-        ResolvedSession session = sessionById.get(scheduleId);
-        if (session == null || !session.convertible()) {
-          AttendanceInput att = bundle.sessions.get(scheduleId);
-          if (att != null && isPresent(att.status()) && hoursFromImportRemark(att.remark()) == null) {
-            partial = true;
-          } else if (session != null && !session.convertible()) {
-            partial = true;
+      if (bundle.dayLevel == null) {
+        continue;
+      }
+      AttendanceInput dayAtt = bundle.dayLevel;
+      if (!isPresent(dayAtt.status())) {
+        if (dayAtt.status() != null && dayAtt.status() == 0) {
+          for (ResolvedSession session : allSessions) {
+            if (date.equals(session.date()) && session.convertible()) {
+              absentSessions++;
+            }
           }
         }
+        continue;
+      }
+      Credit credit = creditPresentAttendance(dayAtt, null, allSessions, date);
+      hours = hours.add(credit.hours());
+      presentSessions += credit.presentDelta();
+      partial = partial || credit.partial();
+    }
+    // 课表上有考勤关联但课时无法折算 → partial（与计划学时口径一致）
+    for (ResolvedSession session : allSessions) {
+      if (!isOnOrBefore(session.date(), asOfDate) || session.convertible()) {
+        continue;
+      }
+      SessionAttendanceMark mark = attendanceMarkForSession(session, days);
+      if (mark != SessionAttendanceMark.NONE) {
+        partial = true;
       }
     }
 
@@ -283,6 +275,59 @@ public final class FollowClassHourCalculator {
     NONE,
     PRESENT,
     ABSENT
+  }
+
+  private record Credit(BigDecimal hours, int presentDelta, boolean partial) {
+    static Credit of(BigDecimal hours, int presentDelta, boolean partial) {
+      return new Credit(hours == null ? BigDecimal.ZERO : hours, presentDelta, partial);
+    }
+
+    static Credit none() {
+      return of(BigDecimal.ZERO, 0, false);
+    }
+
+    static Credit partialOnly() {
+      return of(BigDecimal.ZERO, 0, true);
+    }
+  }
+
+  /**
+   * 有效出勤一条：备注时段优先；否则课次行用课表该节；按日无备注则累加当天全部可折算课次。
+   */
+  private static Credit creditPresentAttendance(
+      AttendanceInput att,
+      ResolvedSession linkedSession,
+      List<ResolvedSession> allSessions,
+      String date) {
+    BigDecimal imported = hoursFromImportRemark(att.remark());
+    if (imported != null) {
+      return Credit.of(imported, 1, false);
+    }
+    if (att.scheduleId() != null) {
+      if (linkedSession != null && linkedSession.convertible()) {
+        return Credit.of(linkedSession.hours(), 1, false);
+      }
+      return Credit.partialOnly();
+    }
+    // 按日：无备注时回退当天课表可折算课次之和
+    BigDecimal dayHours = BigDecimal.ZERO;
+    int n = 0;
+    boolean sawUnconvertible = false;
+    for (ResolvedSession session : allSessions) {
+      if (!date.equals(session.date())) {
+        continue;
+      }
+      if (!session.convertible()) {
+        sawUnconvertible = true;
+        continue;
+      }
+      dayHours = dayHours.add(session.hours());
+      n++;
+    }
+    if (n > 0) {
+      return Credit.of(dayHours, n, sawUnconvertible);
+    }
+    return sawUnconvertible ? Credit.partialOnly() : Credit.none();
   }
 
   /**

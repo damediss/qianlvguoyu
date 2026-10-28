@@ -23,7 +23,9 @@ public class TenantContextFilter extends OncePerRequestFilter {
       // 浏览器跳转不带 X-Tenant-Id，此处放行避免被拦截返回 400
       "/api/login",
       "/api/ws/competition/formal-exam/player",
-      "/api/ws/competition/formal-exam/console"
+      "/api/ws/competition/formal-exam/console",
+      // 竞赛选手首页实时通道使用一次性 ticket 绑定 tenantId/playerId，握手不依赖租户请求头。
+      "/api/ws/competition-player"
   );
   private static final Set<String> WHITE_PATH_PREFIXES = Set.of(
       "/api/appregistration/",

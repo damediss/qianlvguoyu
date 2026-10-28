@@ -23,6 +23,7 @@ import {
   Input,
   InputNumber,
   Modal,
+  Result,
   Select,
   Space,
   Statistic,
@@ -49,6 +50,7 @@ import {
   searchKnowledge,
   uploadFile,
 } from '../../api/knowledge';
+import { useAuthStore } from '../../stores/authStore';
 import type { KnowledgeAnswerDraft, KnowledgeDocument, KnowledgeSearchResult, KnowledgeSpace } from '../../types/knowledge';
 
 const scopeOptions = [
@@ -96,6 +98,8 @@ function statusTag(status?: string) {
 
 export function KnowledgePage() {
   const queryClient = useQueryClient();
+  const hasPerm = useAuthStore((s) => s.hasPermission);
+  const canViewKnowledge = hasPerm('knowledge:view');
   const [activeTab, setActiveTab] = useState('spaces');
   const [keyword, setKeyword] = useState('');
   const [selectedSpace, setSelectedSpace] = useState<KnowledgeSpace>();
@@ -112,6 +116,7 @@ export function KnowledgePage() {
   const spacesQuery = useQuery({
     queryKey: ['knowledge-spaces', keyword],
     queryFn: () => pageSpaces({ page: 1, pageSize: 50, keyword }),
+    enabled: canViewKnowledge,
   });
 
   const spaces = spacesQuery.data?.items || [];
@@ -120,7 +125,7 @@ export function KnowledgePage() {
   const documentsQuery = useQuery({
     queryKey: ['knowledge-documents', currentSpace?.id],
     queryFn: () => pageDocuments(currentSpace!.id, { page: 1, pageSize: 20 }),
-    enabled: Boolean(currentSpace?.id),
+    enabled: canViewKnowledge && Boolean(currentSpace?.id),
   });
 
   const createSpaceMutation = useMutation({
@@ -190,6 +195,16 @@ export function KnowledgePage() {
     [documentRows],
   );
   const roleCount = currentSpace?.visibleRoleCodes.length || 0;
+
+  if (!canViewKnowledge) {
+    return (
+      <Result
+        status="403"
+        title="暂无知识库权限"
+        subTitle="当前账号未授权知识库功能，请从左侧菜单进入已开放的业务页面，或联系管理员开通。"
+      />
+    );
+  }
 
   return (
     <div className="knowledge-page">

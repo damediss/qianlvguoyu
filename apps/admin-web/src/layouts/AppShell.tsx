@@ -18,7 +18,7 @@ import { findMenuCodeByPath } from '../routes/competitionRoute';
 import { isHiddenRoutePath } from '../routes/hiddenRoutes';
 import { useAuthStore } from '../stores/authStore';
 import { useNavStore } from '../stores/navStore';
-import { FIXED_TAB_TITLE, SOFT_PROMPT_LIMIT, useTabStore } from '../stores/tabStore';
+import { FIXED_TAB_TITLE, SOFT_PROMPT_LIMIT, resolveHomeTabKey, useTabStore } from '../stores/tabStore';
 import type { TabItem } from '../stores/tabStore';
 import type { MenuVO } from '../types/api';
 import { SidebarToggleIcon } from '../components/SidebarToggleIcon';
@@ -927,8 +927,11 @@ export function AppShell({
                   );
                 })
               ) : (
-                contentOverride || pageMap[selectedKey] || pageMap['knowledge']
+                contentOverride
+                  || pageMap[selectedKey]
+                  || pageMap[resolveHomeTabKey(menuTree)]
               )}
+
               </Suspense>
             </div>
           </TabActiveProvider>
