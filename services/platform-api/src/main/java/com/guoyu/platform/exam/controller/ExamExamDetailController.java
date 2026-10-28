@@ -10,6 +10,8 @@ import com.guoyu.platform.exam.dto.ExamExamDetailQueryReq;
 import com.guoyu.platform.exam.dto.ExamExamDetailUpdateReq;
 import com.guoyu.platform.exam.service.ExamExamDetailApplicationService;
 import com.guoyu.platform.exam.vo.ExamExamDetailVO;
+import com.guoyu.platform.exam.vo.QuestionImportResultVO;
+import com.guoyu.platform.exam.vo.QuestionImportValidateVO;
 import com.guoyu.platform.exam.vo.ExportResultDTO;
 import jakarta.validation.Valid;
 import java.io.ByteArrayInputStream;
@@ -96,16 +98,30 @@ public class ExamExamDetailController {
     return ApiResponse.ok(n);
   }
 
+  /**
+   * 导入前只读预检：不写库、不调用 AI。属既有导入链，沿用 exam:question:create，
+   * 不套用 AI 工作台的 PLATFORM_ADMIN 限制（方案 §14.4.3）。
+   */
+  @PostMapping("/exam-details/import/validate")
+  @PreAuthorize("hasAuthority('exam:question:create')")
+  public ApiResponse<QuestionImportValidateVO> validateImport(
+      @RequestParam("file") MultipartFile file,
+      @RequestParam Integer courseId) {
+    log.info("POST /exam/exam-details/import/validate courseId={}", courseId);
+    return ApiResponse.ok(service.validateExamDetailsImport(file, courseId));
+  }
+
   @PostMapping("/exam-details/import")
   @PreAuthorize("hasAuthority('exam:question:create')")
   @AuditLog(module = "exam", action = "question:import", targetType = "exam_exam_detail")
-  public ApiResponse<Integer> importExcel(
+  public ApiResponse<QuestionImportResultVO> importExcel(
       @RequestParam("file") MultipartFile file,
       @RequestParam Integer courseId,
-      @RequestParam(required = false, defaultValue = "0") Integer source) {
+      @RequestParam(required = false, defaultValue = "0") Integer source,
+      @RequestParam(required = false) String validationFileSha256) {
     log.info("POST /exam/exam-details/import courseId={}, source={}", courseId, source);
-    int count = service.importExamDetails(file, courseId, source);
-    return ApiResponse.ok(count);
+    return ApiResponse.ok(
+        service.importExamDetails(file, courseId, source, validationFileSha256));
   }
 
   @GetMapping("/exam-details/export")

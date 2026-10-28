@@ -9,6 +9,7 @@ import com.guoyu.platform.exam.dto.CompanyQuestionQueryReq;
 import com.guoyu.platform.exam.dto.CompanyQuestionUpdateReq;
 import com.guoyu.platform.exam.service.CompanyQuestionApplicationService;
 import com.guoyu.platform.exam.vo.ExamExamDetailVO;
+import com.guoyu.platform.exam.vo.QuestionImportResultVO;
 import com.guoyu.platform.exam.vo.ExportResultDTO;
 import jakarta.validation.Valid;
 import java.io.ByteArrayInputStream;
@@ -94,14 +95,13 @@ public class CompanyQuestionController {
   @PostMapping("/company-questions/import")
   @PreAuthorize("hasAuthority('exam:question:create')")
   @AuditLog(module = "exam", action = "companyQuestion:import", targetType = "exam_exam_detail")
-  public ApiResponse<Integer> importExcel(
+  public ApiResponse<QuestionImportResultVO> importExcel(
       @RequestParam("file") MultipartFile file,
       @RequestParam Long orgId,
       @RequestParam String orgName,
       @RequestParam(required = false, defaultValue = "0") Integer source) {
     log.info("POST /exam/company-questions/import orgId={}, source={}", orgId, source);
-    int count = service.importQuestions(file, orgId, orgName, source);
-    return ApiResponse.ok(count);
+    return ApiResponse.ok(service.importQuestions(file, orgId, orgName, source));
   }
 
   @GetMapping("/company-questions/export")

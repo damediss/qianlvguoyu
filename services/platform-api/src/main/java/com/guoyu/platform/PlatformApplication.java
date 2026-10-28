@@ -10,6 +10,7 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
     "com.guoyu.platform.ai.mapper",
     "com.guoyu.platform.exam.mapper",
     "com.guoyu.platform.exam.zhenti.mapper",
+    "com.guoyu.platform.exam.answercheck.mapper",
     "com.guoyu.platform.exam.knowledgefix.mapper",
     "com.guoyu.platform.trainingdepartment.mapper",
     "com.guoyu.platform.app.mapper",

@@ -1,6 +1,19 @@
 # 测试环境覆盖配置（与主 application.yml 按键合并，测试 classpath 优先）
 # 关闭 AI 同步学定时任务（每日物化/周日清理），避免测试上下文启动后跑周期任务
 platform:
+  # 客观题答案 AI 检查：测试上下文关闭恢复扫描；模型全部走桩
+  objectiveanswercheck:
+    enabled: true
+    recovery-enabled: false
+    batch-max-size: 2000
+    concurrency: 2
+    confidence-threshold: 0.80
+    margin-threshold: 0.20
+    jev:
+      base-url: http://127.0.0.1:1
+      model: ateve-jev-v1
+      api-key: test-key
+      read-timeout-seconds: 10
   # 历年真题：测试环境固定 secret 与可断言的 viewer 域名
   zhenti:
     sign-secret: test-zhenti-sign-secret

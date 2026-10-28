@@ -164,6 +164,21 @@ platform:
     # 软删满 90 天物理清理（每日 03:30）
     cleanup-enabled: ${ZHENTI_CLEANUP_ENABLED:true}
     cleanup-cron: "${ZHENTI_CLEANUP_CRON:0 30 3 * * ?}"
+  # 客观题答案 AI 检查（方案 v1.4 §9.1）。默认关闭；密钥为空时禁止创建/继续批次。
+  # 16 个选项上限、每块 5 个多选子问题为固定常量，不在此开放配置。
+  objectiveanswercheck:
+    enabled: ${OBJECTIVE_ANSWER_CHECK_ENABLED:false}
+    batch-max-size: ${OBJECTIVE_ANSWER_CHECK_BATCH_MAX_SIZE:2000}
+    concurrency: ${OBJECTIVE_ANSWER_CHECK_CONCURRENCY:5}
+    confidence-threshold: ${OBJECTIVE_ANSWER_CHECK_CONFIDENCE_THRESHOLD:0.80}
+    margin-threshold: ${OBJECTIVE_ANSWER_CHECK_MARGIN_THRESHOLD:0.20}
+    max-stem-chars: ${OBJECTIVE_ANSWER_CHECK_MAX_STEM_CHARS:12000}
+    max-option-chars: ${OBJECTIVE_ANSWER_CHECK_MAX_OPTION_CHARS:2000}
+    jev:
+      base-url: ${OBJECTIVE_ANSWER_CHECK_JEV_BASE_URL:https://tokendance.space/gateway}
+      model: ${OBJECTIVE_ANSWER_CHECK_JEV_MODEL:ateve-jev-v1}
+      api-key:${OBJECTIVE_ANSWER_CHECK_JEV_API_KEY:}
+      read-timeout-seconds: ${OBJECTIVE_ANSWER_CHECK_JEV_READ_TIMEOUT_SECONDS:30}
   # 理论试题生成（优化方案 v0.3 P3）：块级并发度（2026-09-08 由 5 扩至 50，跑满 glm-5.3-flash
   # 并发闸口上限；环境变量 PLATFORM_THEORY_GEN_BLOCK_CONCURRENCY 可覆盖）。
   # 多批次并行共享闸口 50 并发，先到先得。

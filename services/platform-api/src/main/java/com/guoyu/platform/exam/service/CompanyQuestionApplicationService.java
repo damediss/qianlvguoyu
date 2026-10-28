@@ -10,16 +10,25 @@ import com.guoyu.platform.exam.dto.CompanyQuestionQueryReq;
 import com.guoyu.platform.exam.dto.CompanyQuestionUpdateReq;
 import com.guoyu.platform.exam.entity.ExamExamDetailEntity;
 import com.guoyu.platform.exam.mapper.ExamExamDetailMapper;
+import com.guoyu.platform.exam.support.ExcelCellTextReader;
+import com.guoyu.platform.exam.support.ExcelCellValue;
+import com.guoyu.platform.exam.support.QuestionContentQualityInspector;
+import com.guoyu.platform.exam.support.QuestionContentQualityWarning;
+import com.guoyu.platform.exam.support.QuestionImportIssue;
 import com.guoyu.platform.exam.vo.ExamExamDetailVO;
 import com.guoyu.platform.exam.vo.ExportResultDTO;
+import com.guoyu.platform.exam.vo.QuestionImportResultVO;
 import com.guoyu.platform.security.SecurityContext;
 import com.guoyu.platform.system.entity.UserEntity;
 import com.guoyu.platform.system.mapper.UserMapper;
+import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -182,8 +191,15 @@ public class CompanyQuestionApplicationService {
 
   // ── 导入 ──
 
+  private static final int MAX_REPORT_ISSUES = 50;
+
+  /**
+   * 企业题导入：与主题库共用 ExcelCellTextReader / QuestionContentQualityInspector，
+   * 首次 insert 前整批校验，hard error 0 行入库（方案 §14.4.4）。
+   */
   @Transactional
-  public int importQuestions(MultipartFile file, Long orgId, String orgName, Integer source) {
+  public QuestionImportResultVO importQuestions(MultipartFile file, Long orgId, String orgName,
+      Integer source) {
     if (file == null || file.isEmpty()) {
       throw new BusinessException(ErrorCode.BAD_REQUEST, "请选择要上传的文件");
     }
@@ -191,17 +207,29 @@ public class CompanyQuestionApplicationService {
     Integer tenantId = SecurityContext.currentUser().getTenantId().intValue();
     Long userId = SecurityContext.currentUser().getUserId();
 
-    List<ExamExamDetailEntity> entities = new ArrayList<>();
+    byte[] bytes;
+    try {
+      bytes = file.getBytes();
+    } catch (IOException e) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST, "读取上传文件失败，请重试");
+    }
+    String fileSha256 = sha256Hex(bytes);
 
-    try (Workbook workbook = new XSSFWorkbook(file.getInputStream())) {
+    List<ExamExamDetailEntity> entities = new ArrayList<>();
+    Map<String, QuestionImportIssue> issueMap = new LinkedHashMap<>();
+    Set<Integer> errorRows = new LinkedHashSet<>();
+
+    try (Workbook workbook = new XSSFWorkbook(new ByteArrayInputStream(bytes))) {
+      ExcelCellTextReader reader = new ExcelCellTextReader(workbook);
       Sheet sheet = workbook.getSheetAt(0);
+      String sheetName = sheet.getSheetName();
       int lastRow = sheet.getLastRowNum();
 
       for (int i = 1; i <= lastRow; i++) {
         Row row = sheet.getRow(i);
         if (row == null) continue;
 
-        String type = getCellString(row.getCell(0));
+        String type = readCell(reader, row, 0, sheetName, i, "题型", issueMap, errorRows);
         if (!StringUtils.hasText(type)) continue;
 
         String typeCode = mapTypeLabel(type);
@@ -210,23 +238,27 @@ public class CompanyQuestionApplicationService {
           continue;
         }
 
-        String stem = getCellString(row.getCell(1));
-        String optA = getCellString(row.getCell(2));
-        String optB = getCellString(row.getCell(3));
-        String optC = getCellString(row.getCell(4));
-        String optD = getCellString(row.getCell(5));
-        String answer = getCellString(row.getCell(6));
-        String resolve = getCellString(row.getCell(7));
+        String stem = readCell(reader, row, 1, sheetName, i, "题干", issueMap, errorRows);
+        String[] options = new String[4];
+        for (int k = 0; k < 4; k++) {
+          options[k] = readCell(reader, row, 2 + k, sheetName, i,
+              "选项" + (char) ('A' + k), issueMap, errorRows);
+        }
+        String answer = readCell(reader, row, 6, sheetName, i, "答案", issueMap, errorRows);
+        String resolve = readCell(reader, row, 7, sheetName, i, "解析", issueMap, errorRows);
         try {
           ResolvePlainText.assertEditableLength(resolve);
         } catch (BusinessException ex) {
           throw new BusinessException(ErrorCode.BAD_REQUEST,
               "第 " + (i + 1) + " 行：" + ex.getMessage());
         }
-        Integer difficulty = parseDifficulty(getCellString(row.getCell(8)));
-        String keyword = getCellString(row.getCell(9));
+        Integer difficulty = parseDifficulty(
+            readCell(reader, row, 8, sheetName, i, "难度", issueMap, errorRows));
+        String keyword = readCell(reader, row, 9, sheetName, i, "关键词", issueMap, errorRows);
 
-        String content = buildContent(stem, optA, optB, optC, optD);
+        inspectRowContent(sheetName, i, stem, options, issueMap, errorRows);
+
+        String content = buildContent(stem, options[0], options[1], options[2], options[3]);
 
         ExamExamDetailEntity entity = new ExamExamDetailEntity();
         entity.setTenantId(tenantId);
@@ -257,14 +289,87 @@ public class CompanyQuestionApplicationService {
       throw new BusinessException(ErrorCode.INTERNAL_ERROR, "Excel 文件解析失败: " + e.getMessage());
     }
 
-    if (!entities.isEmpty()) {
-      for (ExamExamDetailEntity entity : entities) {
-        mapper.insert(entity);
-      }
+    List<QuestionImportIssue> errors = issueMap.values().stream()
+        .filter(QuestionImportIssue::isError).toList();
+    List<QuestionImportIssue> warnings = issueMap.values().stream()
+        .filter(i -> !i.isError()).toList();
+    if (!errors.isEmpty()) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST, hardErrorMessage(errors));
     }
 
-    log.info("Imported {} company questions for orgId={}", entities.size(), orgId);
-    return entities.size();
+    for (ExamExamDetailEntity entity : entities) {
+      mapper.insert(entity);
+    }
+
+    log.info("Imported {} company questions for orgId={}, warnings={}", entities.size(), orgId,
+        warnings.size());
+    List<QuestionImportIssue> limited = warnings.size() <= MAX_REPORT_ISSUES ? warnings
+        : List.copyOf(warnings.subList(0, MAX_REPORT_ISSUES));
+    return new QuestionImportResultVO(fileSha256, entities.size(), warnings.size(), limited,
+        warnings.size() > MAX_REPORT_ISSUES);
+  }
+
+  private String readCell(ExcelCellTextReader reader, Row row, int column, String sheet,
+      int rowIndex, String field, Map<String, QuestionImportIssue> issueMap,
+      Set<Integer> errorRows) {
+    ExcelCellValue value = reader.read(row.getCell(column), sheet, rowIndex + 1, column + 1, field);
+    for (QuestionImportIssue issue : value.issues()) {
+      QuestionImportIssue existing = issueMap.get(issue.dedupKey());
+      if (existing == null || (!existing.isError() && issue.isError())) {
+        issueMap.put(issue.dedupKey(), issue);
+      }
+      if (issue.isError()) {
+        errorRows.add(issue.row());
+      }
+    }
+    return value.text();
+  }
+
+  private void inspectRowContent(String sheet, int rowIndex, String stem, String[] options,
+      Map<String, QuestionImportIssue> issueMap, Set<Integer> errorRows) {
+    collectWarnings(sheet, rowIndex, 0, "题干",
+        QuestionContentQualityInspector.inspect(stem, "stem", null), issueMap, errorRows);
+    for (int k = 0; k < options.length; k++) {
+      collectWarnings(sheet, rowIndex, 2 + k + 1, "选项" + (char) ('A' + k),
+          QuestionContentQualityInspector.inspect(options[k], "option", null), issueMap, errorRows);
+    }
+  }
+
+  private void collectWarnings(String sheet, int rowIndex, int column, String field,
+      List<QuestionContentQualityWarning> warnings, Map<String, QuestionImportIssue> issueMap,
+      Set<Integer> errorRows) {
+    for (QuestionContentQualityWarning warning : warnings) {
+      boolean hard = warning.isInvalid();
+      QuestionImportIssue issue = new QuestionImportIssue(
+          hard ? QuestionImportIssue.SEVERITY_ERROR : QuestionImportIssue.SEVERITY_WARNING,
+          warning.ruleCode(), sheet, rowIndex + 1, column, field, warning.matchedText(),
+          warning.matchedText(), warning.message());
+      QuestionImportIssue existing = issueMap.get(issue.dedupKey());
+      if (existing == null || (!existing.isError() && issue.isError())) {
+        issueMap.put(issue.dedupKey(), issue);
+      }
+      if (hard) {
+        errorRows.add(rowIndex + 1);
+      }
+    }
+  }
+
+  private String hardErrorMessage(List<QuestionImportIssue> errors) {
+    String positions = errors.stream().limit(10)
+        .map(e -> e.sheet() + " 第" + e.row() + "行第" + e.column() + "列(" + e.field() + ") "
+            + e.message())
+        .collect(Collectors.joining("；"));
+    return "文件存在 " + errors.size() + " 处格式错误，未导入任何数据，请修正后重试：" + positions
+        + (errors.size() > 10 ? "……" : "");
+  }
+
+  private String sha256Hex(byte[] bytes) {
+    try {
+      var digest = java.security.MessageDigest.getInstance("SHA-256");
+      return java.util.HexFormat.of().formatHex(digest.digest(bytes));
+    } catch (java.security.NoSuchAlgorithmException e) {
+      throw new IllegalStateException("SHA-256 不可用", e);
+    }
   }
 
   // ── 导出 ──
@@ -425,10 +530,12 @@ public class CompanyQuestionApplicationService {
     return "";
   }
 
+  /** 剩余少量调用点（如导出/其它辅助）：普通数值一律 plain decimal，禁止 (int) 截断。 */
   private String getCellString(Cell cell) {
     if (cell == null) return "";
     if (cell.getCellType() == CellType.NUMERIC) {
-      return String.valueOf((int) cell.getNumericCellValue());
+      return java.math.BigDecimal.valueOf(cell.getNumericCellValue()).stripTrailingZeros()
+          .toPlainString();
     }
     if (cell.getCellType() == CellType.BOOLEAN) {
       return String.valueOf(cell.getBooleanCellValue());

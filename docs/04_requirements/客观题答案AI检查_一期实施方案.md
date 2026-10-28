@@ -1,9 +1,9 @@
 # 客观题答案 AI 检查（一期）实施方案
 
-> 文档版本：v1.3（XLSX 导入防错与内容质量识别；关联解析存疑方案协同）  
+> 文档版本：v1.4（XLSX 导入防错与内容质量识别；关联解析存疑方案协同；实施前代码/生产库复核修订）  
 > 编写日期：2026-10-26  
 > 最近修订：2026-10-27  
-> 状态：五项业务口径已确认，待实施；AI 答题质量须先通过标定，不得直接全量放开  
+> 状态：一期编码与自动化验证已完成（2026-10-28）；200 道标定、真实 JEV 探针与空库迁移待执行，标定未过不得放量  
 > 菜单位置：课程管理 → 支持保障 → 资源管理 → **客观题答案AI检查**  
 > 数据主表：`exam_exam_detail`  
 > 决策模型：`ateve-jev-v1`（TokenDance TypeSafe SystemOne，非 OpenAI 协议）  
@@ -41,6 +41,7 @@
 - 前端规则：`apps/admin-web/AGENTS.md`，尤其是标签页轮询、构建和无 MSW 约束。
 - 当前 `PageResponse` 的真实 JSON 是 **`{items,page,pageSize,total}`**，不是 `records`。
 - `exam_exam_detail.id` 是 `INT`，可安全按 number 下发；本方案新建批次/明细/审计表使用雪花 `BIGINT`，前端必须按字符串接收。
+- 雪花 ID 字符串化**不是全局配置**（`JacksonConfig` 只处理日期时间）：VO 中所有 Long 型雪花字段（batchId/itemId/runId/createdBy 等）必须显式加 `@JsonSerialize(using = ToStringSerializer.class)`（certification/competition 既有 VO 的惯例），禁止裸 Long 输出，否则前端精度丢失（AGENTS #24）。
 - `exam_course.level` 是 0～4：0=五级、1=四级、2=三级、3=二级、4=一级。对外统一 `levelCode=5-level`，即 5～1。
 - `exam_exam_detail.source`：0=内部、1=外部、2=AI 生成、3=赛前复习。本页面必须展示全部四种，不得沿用某些页面刻意隐藏 source=2 的局部口径。
 - 多租户过滤依赖 MyBatis-Plus 插件；普通业务代码不得手拼租户条件。Worker 必须自行设置并清理 `TenantContextHolder`。
@@ -76,6 +77,15 @@
 2. **复核四态对齐**：§5.6 的 `confirmed_correct/needs_edit/deferred/unreviewed` 四态语言同样适用于解析存疑工单的人工复核；两边 SOP 一致——AI 只筛查不写回，人工在既有题库编辑页修正（解析存疑侧另有"人工填写 resolve 列"出口，见其附录 A）。后续若做统一"答案复核工作台"，按 `detail_id` 聚合本方案 item 与存疑 draft，用查询/视图聚合，**不合并物理表**。
 
 协同边界（与 §0.2/§20 同等约束）：不因此引入第二模型或 AI 文字理由；不让生成式 LLM 参与本方案判定；不改本方案的 sourceHash、阈值、写回边界与权限角色；解析存疑侧亦不得改动其已上线 sourceHash 算法。
+
+### 0.7 v1.4 实施前复核修订（2026-10-27，对照代码与生产库逐项核查）
+
+1. §4.1 删除 `zi_yuan_guan_li` 的 pageMap 注册要求（生产该 code 是 directory 纯目录），并标注 ResourceCenterPage 卡片仅测试环境可达、生产唯一入口为侧栏新菜单；
+2. §12.1 候选迁移号改为实施当天按双库 MAX(version)+1 取号（原候选 `V20261026_001` 已过时，仓库已存在 `V20261027_006`）；
+3. §0.3 补充雪花 ID 的 `@JsonSerialize(using = ToStringSerializer.class)` 强制要求（无全局 Long→String 配置）；
+4. §7.2 澄清 JOIN 租户语义（插件过滤、禁止当前租户字面量、允许列间等值）。
+
+本次复核已验证与方案一致、实施可直接照做的仓库事实：菜单 `zi_yuan_guan_li` 现存（支持保障下）、`sort_order=6` 为空位、role 2000=PLATFORM_ADMIN（tenant 10159）、`exam_exam_detail` 及关联表结构与 §1.3 快照一致（题型合计 166,155 行精确吻合）、答案 JSON 主流形状为 `[{content,isCorrect}]`、导入接口权限 `exam:question:create` 与返回 `ApiResponse<Integer>`、两处 `getCellString` 的 `(int)` 强转位置（`ExamExamDetailApplicationService:1202`、`CompanyQuestionApplicationService:431`）、`JevDecisionClient` 尚未禁用内容压缩（§9.4 新增必要）、`AuditMetaObjectHandler` 调用 SecurityContext（§11.6 异步写库约束成立）、`@InterceptorIgnore`/jsoup/`FollowTaskBankQuestionConverter` 均有先例。导入返回契约变更影响面封闭：前端仅 `QuestionBankPage`/`CompanyQuestionPage` 两个消费方，旧 PHP 端不调用这两个接口。另：生产有 175 行无 `isCorrect` 的存量题，按方案落 `CORRECT_OPTION_MISSING` 结构异常属预期行为，不是缺陷。
 
 ---
 
@@ -235,9 +245,9 @@ objective-answer-check-worker- Worker
 1. 懒加载 `ObjectiveAnswerCheckPage`；
 2. `pageMap.objective_answer_check = <ObjectiveAnswerCheckPage />`；
 3. 保留 `question_resource: <ResourceCenterPage />`；
-4. **补充 `zi_yuan_guan_li: <ResourceCenterPage />`**。生产“资源管理”使用这个现存 code，不能只注册 `question_resource`。
+4. **不得把 `zi_yuan_guan_li` 注册进 pageMap**：2026-10-27 生产库核实该 code 是 `menu_type=directory` 的纯目录，不是页面；注册会改变目录点击与深链恢复行为。
 
-在 `ResourceCenterPage.tsx` 平铺新增“客观题答案AI检查”卡片，点击 `setSelectedKey('objective_answer_check')`。不要把入口收进下拉菜单。
+在 `ResourceCenterPage.tsx` 平铺新增“客观题答案AI检查”卡片，点击 `setSelectedKey('objective_answer_check')`。不要把入口收进下拉菜单。**入口边界（生产库核实）**：生产没有任何菜单指向 ResourceCenterPage，该卡片仅在测试环境（`question_resource` 菜单存在时）可达；**生产的唯一入口是侧栏新菜单“客观题答案AI检查”**，验收不得以“生产也有卡片入口”为准。
 
 ### 4.2 权限码
 
@@ -487,7 +497,7 @@ exam_exam_detail d
   LEFT JOIN exam_work_type w          ON c.work_type_id = w.id
 ```
 
-- 关联表均要求 `deleted=0`，并在 JOIN 上保证租户一致；普通租户过滤仍由插件完成。
+- 关联表均要求 `deleted=0`。JOIN ON 只写 `deleted=0` 与主外键等值；租户过滤一律交给 MyBatis-Plus 插件，**禁止在 SQL 中手拼当前租户字面量**。如需防历史脏数据跨租户错配，只允许列间等值（如 `d.tenant_id = k.tenant_id`），这不属于手拼过滤条件。
 - `workTypeId/levelCode` 非空时使用 INNER 语义过滤，未关联题自然被排除。
 - 两个条件都为空时，未关联题仍可被 source/type/IDs 选中。
 - `d.knowledge_id` 为单值，上述链不会把一道题放大成多行；实现测试必须固化这一点。
@@ -1021,9 +1031,9 @@ AND 所属 batch.run_id=claimRunId
 
 ### 12.1 取号与文件
 
-设计时双库 `MAX(version)` 均为 `20261024.002`，候选迁移：
+设计时双库 `MAX(version)` 均为 `20261024.002`；2026-10-27 复核时仓库已存在 `V20261027_006`、生产已应用至 `20261027.001`，原候选号 `V20261026_001` 已过时。**文件名不得照抄本文任何示例**，实施当天以两库 `MAX(version)` 的较大者 +1 取号：
 
-`services/platform-api/src/main/resources/db/migration/V20261026_001__objective_answer_check.sql`
+`services/platform-api/src/main/resources/db/migration/V<实施当天取号>__objective_answer_check.sql`
 
 **实施当天必须重新查两库；如已有更大版本则顺延，不得修改已应用迁移，不新增分叉目录。** 新迁移必须 `mvn compile` 后才会进入 `target/classes`。
 
@@ -1525,178 +1535,184 @@ record QuestionImportIssue(
 
 所有模型测试使用桩，不依赖真实 API Key。前端无 MSW，使用 `vi.mock` mock API 模块；本机 jsdom 重交互用例显式 30s/60s 超时。HttpServer 桩必须 `setExecutor`。
 
+### 16.0 验证口径（2026-10-28 回填）
+
+本节复选项只代表“代码已实现，且至少有一个自动化测试或集成测试覆盖该行为”。
+未勾选项为无法在当前环境编码完成的验证（导入页 e2e、空库全量迁移），
+不代表代码缺失；具体证据见 §18.2。
+
 ### 16.1 后端单元测试
 
 **A. `ExcelCellTextReaderTest` / `QuestionImportValidationTest`**
 
-- [ ] NUMERIC General 的 0.5、1.5、0、负数均保留数值含义，不发生 int 截断；科学计数格式输出 plain decimal。
-- [ ] 自定义 `0.00`/千分位、日期、百分比按 DataFormatter 保留显示语义；BOOLEAN/BLANK 正确分派。
-- [ ] FORMULA 按缓存类型读取；缓存错误/缺失、NaN/Infinity、Excel 错误字面量均为 hard error。
-- [ ] 超过 15 位的标识/整数给精度警告，不宣称恢复已丢失位数。
-- [ ] 预检与正式导入使用同一文本转换和表头映射；预检不写库、不调 AI，hard error 禁止导入。
-- [ ] 同一单元格被 reader 与 inspector 命中同一规则时按行列+规则+matchedText 去重，只计一次；reader 以 rawValue 回填 matchedText。
-- [ ] 预检 fileSha256 与正式文件不一致时拒绝；warning 需用户确认，warning 超过 50 条只截断列表不截断总数。
-- [ ] 两条试题导入的 hard error 都在首次 insert 前整批失败；成功响应 importedCount/warnings 正确，原租户/审核/知识点逻辑不变。
-- [ ] 导出→再导入不产生 `.0`、科学计数或小数截断；既有导入测试全部保持绿色。
+- [x] NUMERIC General 的 0.5、1.5、0、负数均保留数值含义，不发生 int 截断；科学计数格式输出 plain decimal。
+- [x] 自定义 `0.00`/千分位、日期、百分比按 DataFormatter 保留显示语义；BOOLEAN/BLANK 正确分派。
+- [x] FORMULA 按缓存类型读取；缓存错误/缺失、NaN/Infinity、Excel 错误字面量均为 hard error。
+- [x] 超过 15 位的标识/整数给精度警告，不宣称恢复已丢失位数。
+- [x] 预检与正式导入使用同一文本转换和表头映射；预检不写库、不调 AI，hard error 禁止导入。
+- [x] 同一单元格被 reader 与 inspector 命中同一规则时按行列+规则+matchedText 去重，只计一次；reader 以 rawValue 回填 matchedText。
+- [x] 预检 fileSha256 与正式文件不一致时拒绝；warning 需用户确认，warning 超过 50 条只截断列表不截断总数。
+- [x] 两条试题导入的 hard error 都在首次 insert 前整批失败；成功响应 importedCount/warnings 正确，原租户/审核/知识点逻辑不变。
+- [x] 导出→再导入不产生 `.0`、科学计数或小数截断；既有导入测试全部保持绿色。
 
 **B. `QuestionContentQualityInspectorTest`**
 
-- [ ] ASCII/全角科学计数法均命中 suspect；`1.2E+3` 的 suggestedText=1200，但原题干/选项和 AI 输入完全不变。
-- [ ] `1E+1000000000`、`1E-1000000000`、超 128 字符 token 均快速返回 suggestedText=null；预计输出 >4096 字符时不得先调用 toPlainString，原文保持不变。
-- [ ] `#REF!/#DIV/0!/NaN/Infinity` 为 invalid 且零 AI 调用；`####`、U+FFFD 为 suspect，不误当确定错误。
-- [ ] `1.6×10^-19`、公式、单位、职业编码不命中科学计数规则；普通循环小数不自动判错或截断。
-- [ ] 小数位 ≥16、连续 0/9 浮点尾巴只标 suspect；规则不设置“0/1 即错误”。
-- [ ] 多 warning 严重度按 invalid>suspect>clean；题干 location/optionId、matchedText、suggestedText、message 完整。
-- [ ] suspect 的 AI resultCode/confidence 照常但 needsReview=true；结构正常且内容 invalid 时映射 CONTENT_QUALITY_INVALID。
-- [ ] 结构与内容双重 invalid 时保留先产生的结构 invalidReason，warnings 完整，invalidCount=1、invalidContentCount=1、零 AI 调用。
-- [ ] 初始 pending 和 retry-failed 刚复位的 suspect 行 needsReview=false，不进入可执行复核队列；结果落定后再按规则入队。
-- [ ] `consistent_high+suspect` 和 `mismatch_high+suspect` 都进入默认复核队列，复核后离开但历史警告保留。
-- [ ] 重试保留 contentQuality/warnings；批次 content_suspect/content_invalid 计数与五类 AI 结果守恒不冲突。
+- [x] ASCII/全角科学计数法均命中 suspect；`1.2E+3` 的 suggestedText=1200，但原题干/选项和 AI 输入完全不变。
+- [x] `1E+1000000000`、`1E-1000000000`、超 128 字符 token 均快速返回 suggestedText=null；预计输出 >4096 字符时不得先调用 toPlainString，原文保持不变。
+- [x] `#REF!/#DIV/0!/NaN/Infinity` 为 invalid 且零 AI 调用；`####`、U+FFFD 为 suspect，不误当确定错误。
+- [x] `1.6×10^-19`、公式、单位、职业编码不命中科学计数规则；普通循环小数不自动判错或截断。
+- [x] 小数位 ≥16、连续 0/9 浮点尾巴只标 suspect；规则不设置“0/1 即错误”。
+- [x] 多 warning 严重度按 invalid>suspect>clean；题干 location/optionId、matchedText、suggestedText、message 完整。
+- [x] suspect 的 AI resultCode/confidence 照常但 needsReview=true；结构正常且内容 invalid 时映射 CONTENT_QUALITY_INVALID。
+- [x] 结构与内容双重 invalid 时保留先产生的结构 invalidReason，warnings 完整，invalidCount=1、invalidContentCount=1、零 AI 调用。
+- [x] 初始 pending 和 retry-failed 刚复位的 suspect 行 needsReview=false，不进入可执行复核队列；结果落定后再按规则入队。
+- [x] `consistent_high+suspect` 和 `mismatch_high+suspect` 都进入默认复核队列，复核后离开但历史警告保留。
+- [x] 重试保留 contentQuality/warnings；批次 content_suspect/content_invalid 计数与五类 AI 结果守恒不冲突。
 
 **C. `ObjectiveQuestionParserTest`**
 
-- [ ] 标准 single/multi/judge JSON 数组解析，boolean/string/numeric 正确标记。
-- [ ] 对/错、正确/错误、T/F、√/× 的判断归一。
-- [ ] 判断空占位、纯字母 C/D 占位清理；答案1/答案2 和专业文本不误判。
-- [ ] 非 JSON、空数组、空题干、空选项、重复选项。
-- [ ] 单选 0/2 个正确项，多选 0/1 个正确项，多选全正确允许。
-- [ ] 单选 2/4/11 选项，多选 2/5/9 选项；>16 拦截。
-- [ ] 图片、data:image、audio、video 拦截；无课程关联不拦截。
-- [ ] HTML 纯文本化；长文本不静默截断。
-- [ ] optionId 与原下标稳定，sourceHash 对 type/content/answer 单独改变均敏感；SQL NULL answer 可落快照且标 invalid，NULL 与空串哈希不同。
+- [x] 标准 single/multi/judge JSON 数组解析，boolean/string/numeric 正确标记。
+- [x] 对/错、正确/错误、T/F、√/× 的判断归一。
+- [x] 判断空占位、纯字母 C/D 占位清理；答案1/答案2 和专业文本不误判。
+- [x] 非 JSON、空数组、空题干、空选项、重复选项。
+- [x] 单选 0/2 个正确项，多选 0/1 个正确项，多选全正确允许。
+- [x] 单选 2/4/11 选项，多选 2/5/9 选项；>16 拦截。
+- [x] 图片、data:image、audio、video 拦截；无课程关联不拦截。
+- [x] HTML 纯文本化；长文本不静默截断。
+- [x] optionId 与原下标稳定，sourceHash 对 type/content/answer 单独改变均敏感；SQL NULL answer 可落快照且标 invalid，NULL 与空串哈希不同。
 
 **D. `JevObjectiveAnswerCheckAiServiceTest`**
 
-- [ ] 对实际请求 JSON 和 state/instructions/criteria 断言不含原答案、originalCorrect、isCorrect、原答案 key 集合、answerSnapshot、resolve、org/user 信息；防止直接序列化归一对象泄密。
-- [ ] criteria key 与 optionId 映射可逆；确定性轮换不改变最终答案映射。
-- [ ] 多选 5 项一块、6 项两块、9 项两块、16 项四块；每块 state 含全部选项。
-- [ ] 任意一块失败则整题无部分 AI 答案；重试重新执行全部块。
-- [ ] 6/9 选项在第 2 块失败时，auditSink 仍收到前序成功块和当前失败块的完整 outcome；审计写失败使整题可重试失败而非静默成功。
-- [ ] 多选 AI 少于两个正确项时产生 `AI_COMBINATION_INVALID`。
+- [x] 对实际请求 JSON 和 state/instructions/criteria 断言不含原答案、originalCorrect、isCorrect、原答案 key 集合、answerSnapshot、resolve、org/user 信息；防止直接序列化归一对象泄密。
+- [x] criteria key 与 optionId 映射可逆；确定性轮换不改变最终答案映射。
+- [x] 多选 5 项一块、6 项两块、9 项两块、16 项四块；每块 state 含全部选项。
+- [x] 任意一块失败则整题无部分 AI 答案；重试重新执行全部块。
+- [x] 6/9 选项在第 2 块失败时，auditSink 仍收到前序成功块和当前失败块的完整 outcome；审计写失败使整题可重试失败而非静默成功。
+- [x] 多选 AI 少于两个正确项时产生 `AI_COMBINATION_INVALID`。
 
 **E. `ObjectiveAnswerCheckDomainServiceTest`**
 
-- [ ] 单选原答案支持度按全部原标记 min 计算，示例 §10.2 得 0.85；两候选/多候选均验证其等于原正确候选概率。
-- [ ] 判断原答案分别为 T、F 时支持度分别取 p(T)、p(F)；多选原正确取 p(Y)、原不正确取 p(N)，再取 min。
-- [ ] 单选/判断全局指标与多选逐选项指标分组反序列化，不把全局 confidence 错写到每个选项。
-- [ ] 高置信一致、不同、高置信不一致、低置信四种组合。
-- [ ] 高置信一致还必须 referenceConfidence≥θ；不一致不能误用该条件。
-- [ ] θ=0.80、δ=0.20 的等于边界通过，低一点即不通过；先判定后落库舍入。
-- [ ] 多选取 confidence/margin 最小值，不做概率连乘。
-- [ ] 多选答案集合比较与顺序无关；optionId 而非展示字母决定一致性。
-- [ ] `AI_COMBINATION_INVALID` 强制 low_confidence。
-- [ ] invalid/failed 不伪造 consistent/confidence。
+- [x] 单选原答案支持度按全部原标记 min 计算，示例 §10.2 得 0.85；两候选/多候选均验证其等于原正确候选概率。
+- [x] 判断原答案分别为 T、F 时支持度分别取 p(T)、p(F)；多选原正确取 p(Y)、原不正确取 p(N)，再取 min。
+- [x] 单选/判断全局指标与多选逐选项指标分组反序列化，不把全局 confidence 错写到每个选项。
+- [x] 高置信一致、不同、高置信不一致、低置信四种组合。
+- [x] 高置信一致还必须 referenceConfidence≥θ；不一致不能误用该条件。
+- [x] θ=0.80、δ=0.20 的等于边界通过，低一点即不通过；先判定后落库舍入。
+- [x] 多选取 confidence/margin 最小值，不做概率连乘。
+- [x] 多选答案集合比较与顺序无关；optionId 而非展示字母决定一致性。
+- [x] `AI_COMBINATION_INVALID` 强制 low_confidence。
+- [x] invalid/failed 不伪造 consistent/confidence。
 
 **F. `JevDecisionClientTest` 增量**
 
-- [ ] 多子问题请求 JSON 与响应 Map 全解析，usage/model/confidenceDefinition 完整。
-- [ ] 缺一个子答案、choice 越界、confidence 非数/越界、缺/多概率 key、概率和异常均失败。
-- [ ] choice=B 但 A 概率更高时按响应矛盾失败；并列最高 margin=0；不得错误产生 mismatch_high。
-- [ ] metadata/responseModel 缺失不失败；usage 缺失按完整请求体估算并标记 estimated；负数/非整数 token 拒绝。
-- [ ] 401/422 不重试，429/5xx 退避，预算 422 可分类。
-- [ ] 请求头无 `Accept-Encoding`，覆盖 Brotli 回归。
-- [ ] 原 knowledgefix 单问题测试全部保持绿色。
+- [x] 多子问题请求 JSON 与响应 Map 全解析，usage/model/confidenceDefinition 完整。
+- [x] 缺一个子答案、choice 越界、confidence 非数/越界、缺/多概率 key、概率和异常均失败。
+- [x] choice=B 但 A 概率更高时按响应矛盾失败；并列最高 margin=0；不得错误产生 mismatch_high。
+- [x] metadata/responseModel 缺失不失败；usage 缺失按完整请求体估算并标记 estimated；负数/非整数 token 拒绝。
+- [x] 401/422 不重试，429/5xx 退避，预算 422 可分类。
+- [x] 请求头无 `Accept-Encoding`，覆盖 Brotli 回归。
+- [x] 原 knowledgefix 单问题测试全部保持绿色。
 
 **G. `ObjectiveAnswerCheckBatchServiceTest`**
 
-- [ ] IDs/filter 两种选题共用 scope；空选择、未知 type/source/level、超过 effectiveMaxBatchSize 均拒绝；预览超限返回 overLimit，创建才 413。
-- [ ] 试点上限 200 时 201 道不能创建；batchMaxSize>2,000、阈值越界、并发/超时越界均启动校验失败；选项 16 和分块 5 不可被配置覆盖。
-- [ ] 跨租户/已删除/范围外 IDs 不静默丢弃。
-- [ ] 批次和明细提交前 executor 不被调用；提交后才投递。
-- [ ] 批量插入不用 `Db.saveBatch`；2,000 行按 200 行分批。
-- [ ] 同租户并发创建只有一个成功；不同租户不互堵；paused/done/无 processing 的 failed 释放活动槽。
-- [ ] invalid 行零 AI 调用；全部 invalid 时直接 done。
-- [ ] 编排和 Worker 均 try/finally 清理租户；静态 mock SecurityContext 验证异步链零调用，自定义 SQL 写入的 tenant/user/审计时间正确。
-- [ ] 暂停不再派发，在飞行行结束后 paused；继续只处理 pending。
-- [ ] 条件认领防两个 Worker 处理同一行；旧 run_id 不能派发，旧 claimAttempt 晚到结果影响 0 行且不重复计数。
-- [ ] 有效租约批次在蓝绿新节点启动时不被重置；过期租约才可接管，旧编排器随后自行退出。
-- [ ] 401 立即锁存 failed；pausing→failed 合法；第 5 次失败后再成功不能撤销 failed。
-- [ ] failed 尚有 processing 时保留活动槽和心跳，归零才释放；崩溃恢复也扫描这种 failed，遗留 processing→pending。
-- [ ] 系统性连续 5 次熔断；预算 422 不可重试且不熔断；普通 422 连续 5 次熔断。
-- [ ] 创建/继续/重试编排池拒绝均持久化 failed 并释放无 processing 的活动槽；Worker 拒绝把刚认领军行恢复 pending。
-- [ ] retry-failed 只复位 retryable=1；同事务回减 done/failed、清旧 AI/复核字段、占用新 run；复位 0 不运行，重试重跑多选全部块。
-- [ ] 收尾当前读/条件更新覆盖“暂停与最后一行同时完成”竞态。
-- [ ] `total=done+pending+processing`，三种 success 计数之和等于 success；晚到重复调用只增实际用量不增结果计数。
-- [ ] 配置 disabled/key 空禁止创建和继续，但历史查询不受影响。
+- [x] IDs/filter 两种选题共用 scope；空选择、未知 type/source/level、超过 effectiveMaxBatchSize 均拒绝；预览超限返回 overLimit，创建才 413。
+- [x] 试点上限 200 时 201 道不能创建；batchMaxSize>2,000、阈值越界、并发/超时越界均启动校验失败；选项 16 和分块 5 不可被配置覆盖。
+- [x] 跨租户/已删除/范围外 IDs 不静默丢弃。
+- [x] 批次和明细提交前 executor 不被调用；提交后才投递。
+- [x] 批量插入不用 `Db.saveBatch`；2,000 行按 200 行分批。
+- [x] 同租户并发创建只有一个成功；不同租户不互堵；paused/done/无 processing 的 failed 释放活动槽。
+- [x] invalid 行零 AI 调用；全部 invalid 时直接 done。
+- [x] 编排和 Worker 均 try/finally 清理租户；静态 mock SecurityContext 验证异步链零调用，自定义 SQL 写入的 tenant/user/审计时间正确。
+- [x] 暂停不再派发，在飞行行结束后 paused；继续只处理 pending。
+- [x] 条件认领防两个 Worker 处理同一行；旧 run_id 不能派发，旧 claimAttempt 晚到结果影响 0 行且不重复计数。
+- [x] 有效租约批次在蓝绿新节点启动时不被重置；过期租约才可接管，旧编排器随后自行退出。
+- [x] 401 立即锁存 failed；pausing→failed 合法；第 5 次失败后再成功不能撤销 failed。
+- [x] failed 尚有 processing 时保留活动槽和心跳，归零才释放；崩溃恢复也扫描这种 failed，遗留 processing→pending。
+- [x] 系统性连续 5 次熔断；预算 422 不可重试且不熔断；普通 422 连续 5 次熔断。
+- [x] 创建/继续/重试编排池拒绝均持久化 failed 并释放无 processing 的活动槽；Worker 拒绝把刚认领军行恢复 pending。
+- [x] retry-failed 只复位 retryable=1；同事务回减 done/failed、清旧 AI/复核字段、占用新 run；复位 0 不运行，重试重跑多选全部块。
+- [x] 收尾当前读/条件更新覆盖“暂停与最后一行同时完成”竞态。
+- [x] `total=done+pending+processing`，三种 success 计数之和等于 success；晚到重复调用只增实际用量不增结果计数。
+- [x] 配置 disabled/key 空禁止创建和继续，但历史查询不受影响。
 
 **H. `ObjectiveAnswerCheckReviewServiceTest` / `ExportServiceTest`**
 
-- [ ] 四种复核状态、撤销复核、500 字限制、pending/processing 禁止复核。
-- [ ] expectedVersion 冲突返回 409；同秒两个复核请求也只有一个成功；复核只更新 item 并递增 version，verify `examDetailMapper` 从未 update。
-- [ ] 两个 Sheet、中文文件名、百分比格式、精确/估算 token 与 usageEstimatedCalls、空结果表头、当前过滤、快照不随题库变化。
-- [ ] 多选/失败/invalid/null 字段导出无 NPE；contentQuality/warnings/suggestedText/needsReview 完整，2,000 行导出通过。
+- [x] 四种复核状态、撤销复核、500 字限制、pending/processing 禁止复核。
+- [x] expectedVersion 冲突返回 409；同秒两个复核请求也只有一个成功；复核只更新 item 并递增 version，verify `examDetailMapper` 从未 update。
+- [x] 两个 Sheet、中文文件名、百分比格式、精确/估算 token 与 usageEstimatedCalls、空结果表头、当前过滤、快照不随题库变化。
+- [x] 多选/失败/invalid/null 字段导出无 NPE；contentQuality/warnings/suggestedText/needsReview 完整，2,000 行导出通过。
 
 ### 16.2 后端集成测试
 
 `ObjectiveAnswerCheckControllerIT` + 可控 AI 桩；导入侧增加 `ExamExamDetailImportNumericCellIT` / `CompanyQuestionImportNumericCellIT`：
 
-- [ ] 两条导入路径使用真实 xlsx 数值/公式单元格验证 0.5、1.5、科学计数、日期、百分比、hard error 整批回滚与 warning 返回；不只使用字符串单元格测试。
-- [ ] 主题库 `/import/validate` 验证成功/失败/权限/哈希不一致路径；正式导入与预检使用同一报告口径。
-- [ ] 未登录 401；无 view/submit/review/export 分别 403；直接调 API 也受控。
-- [ ] 机构/企业角色即使被赋予四个权限码，因无 PLATFORM_ADMIN 仍全部 403；平台管理员按一期口径可查当前租户全部题库。
-- [ ] 工种×等级×来源×题型组合筛选准确；levelCode 与 0～4 存储转换正确。
-- [ ] 无筛选时无课程题可检查；限定工种/等级时无课程题被排除；查询无重复行。
-- [ ] 主链路：预览→创建→轮询至 done→结果→详情→复核→导出。
-- [ ] 创建请求中的伪造 model/threshold/apiKey 不生效。
-- [ ] AI 桩捕获请求，断言没有原答案、解析和 suggestedText，只有当前租户题目；contentQuality=invalid 零调用，suspect 请求保持原存储文本。
-- [ ] contentQuality/warnings 快照、批次内容计数、needsReview 队列与复核后出队正确。
-- [ ] 跨租户批次/明细/复核/导出均 404，不泄露存在性。
-- [ ] 暂停、继续、失败重试、过期接管与活动批次冲突的集成路径；旧节点有效租约不被新节点启动恢复误清。
-- [ ] 6/9 选项中途失败时成功/失败块审计齐全，重试后 token 与实际逻辑调用汇总一致。
-- [ ] 复核前后 `exam_exam_detail.content/answer/update_time` 不变。
-- [ ] 审计行包含用户、租户、模型、promptVersion、callId、token、耗时；无 API Key。
-- [ ] 导出成功与无权限/不存在批次失败路径。
+- [x] 两条导入路径使用真实 xlsx 数值/公式单元格验证 0.5、1.5、科学计数、日期、百分比、hard error 整批回滚与 warning 返回；不只使用字符串单元格测试。
+- [x] 主题库 `/import/validate` 验证成功/失败/权限/哈希不一致路径；正式导入与预检使用同一报告口径。
+- [x] 未登录 401；无 view/submit/review/export 分别 403；直接调 API 也受控。
+- [x] 机构/企业角色即使被赋予四个权限码，因无 PLATFORM_ADMIN 仍全部 403；平台管理员按一期口径可查当前租户全部题库。
+- [x] 工种×等级×来源×题型组合筛选准确；levelCode 与 0～4 存储转换正确。
+- [x] 无筛选时无课程题可检查；限定工种/等级时无课程题被排除；查询无重复行。
+- [x] 主链路：预览→创建→轮询至 done→结果→详情→复核→导出。
+- [x] 创建请求中的伪造 model/threshold/apiKey 不生效。
+- [x] AI 桩捕获请求，断言没有原答案、解析和 suggestedText，只有当前租户题目；contentQuality=invalid 零调用，suspect 请求保持原存储文本。
+- [x] contentQuality/warnings 快照、批次内容计数、needsReview 队列与复核后出队正确。
+- [x] 跨租户批次/明细/复核/导出均 404，不泄露存在性。
+- [x] 暂停、继续、失败重试、过期接管与活动批次冲突的集成路径；旧节点有效租约不被新节点启动恢复误清。
+- [x] 6/9 选项中途失败时成功/失败块审计齐全，重试后 token 与实际逻辑调用汇总一致。
+- [x] 复核前后 `exam_exam_detail.content/answer/update_time` 不变。
+- [x] 审计行包含用户、租户、模型、promptVersion、callId、token、耗时；无 API Key。
+- [x] 导出成功与无权限/不存在批次失败路径。
 
 ### 16.3 前端 Vitest / React Testing Library
 
 **`questionImportValidation.test.tsx`**
 
-- [ ] 选择文件后可主动预检；hard error 显示行列并禁用导入，warning 展示前 20 条且须勾选已知悉。
-- [ ] 预检 A 文件后改选 B 文件会清空预检状态并触发哈希校验；直接导入也有服务端错误提示。
-- [ ] 两条导入页面均正确消费 `{importedCount,warningCount,warnings}`，不再按 number 读取；没有漏改前端 API 类型。
+- [x] 选择文件后可主动预检；hard error 显示行列并禁用导入，warning 展示前 20 条且须勾选已知悉。
+- [x] 预检 A 文件后改选 B 文件会清空预检状态并触发哈希校验；直接导入也有服务端错误提示。
+- [x] 两条导入页面均正确消费 `{importedCount,warningCount,warnings}`，不再按 number 读取；没有漏改前端 API 类型。
 
 **`objectiveAnswerCheckSelection.test.tsx`**
 
-- [ ] 工种路径展示、等级联动、来源含 AI 生成、题型默认三项。
-- [ ] 跨页勾选保留；筛选变化清空；filter 全部与逐题模式互斥。
-- [ ] >2,000 禁止“筛选全部”，可改逐题；预览数与确认弹窗一致。
-- [ ] 创建防双击，成功切到结果页；后端 409/413/503 显示白话错误。
+- [x] 工种路径展示、等级联动、来源含 AI 生成、题型默认三项。
+- [x] 跨页勾选保留；筛选变化清空；filter 全部与逐题模式互斥。
+- [x] >2,000 禁止“筛选全部”，可改逐题；预览数与确认弹窗一致。
+- [x] 创建防双击，成功切到结果页；后端 409/413/503 显示白话错误。
 
 **`objectiveAnswerCheckResults.test.tsx`**
 
-- [ ] 五类结果卡 + 内容格式卡与“需人工复核”默认视图，低置信行仍保留一致/不一致；contentQuality 与 resultCode 可组合过滤。
-- [ ] `consistent_high+suspect` 仍显示两个标签并进入复核；复核后出队但可从全部找到。
-- [ ] 原答案支持度和 AI 置信度不混列；AI 组合告警可见。
-- [ ] 详情逐选项展示；格式 warning 高亮位置/匹配文本/suggestedText，明确未替换未发送；原始 HTML 不被渲染；题库已变更提示。
-- [ ] 单行复核、撤销、并发冲突后刷新；无任何“采纳 AI 答案”按钮。
-- [ ] active=false 不轮询；离开活动状态进入 paused/failed/done 三种情况都停止轮询并失效刷新尾部计数；手动刷新有 batchId 守卫。
-- [ ] 服务端分页 current/pageSize/onChange 同源更新，不写死 pageSize。
-- [ ] batchId/itemId 全程字符串，不经 `Number()` 转换。
+- [x] 五类结果卡 + 内容格式卡与“需人工复核”默认视图，低置信行仍保留一致/不一致；contentQuality 与 resultCode 可组合过滤。
+- [x] `consistent_high+suspect` 仍显示两个标签并进入复核；复核后出队但可从全部找到。
+- [x] 原答案支持度和 AI 置信度不混列；AI 组合告警可见。
+- [x] 详情逐选项展示；格式 warning 高亮位置/匹配文本/suggestedText，明确未替换未发送；原始 HTML 不被渲染；题库已变更提示。
+- [x] 单行复核、撤销、并发冲突后刷新；无任何“采纳 AI 答案”按钮。
+- [x] active=false 不轮询；离开活动状态进入 paused/failed/done 三种情况都停止轮询并失效刷新尾部计数；手动刷新有 batchId 守卫。
+- [x] 服务端分页 current/pageSize/onChange 同源更新，不写死 pageSize。
+- [x] batchId/itemId 全程字符串，不经 `Number()` 转换。
 
 **`objectiveAnswerCheckExport.test.tsx`**
 
-- [ ] Blob 取 `.data`、中文文件名、导出过滤参数、空结果与失败提示。
+- [x] Blob 取 `.data`、中文文件名、导出过滤参数、空结果与失败提示。
 
 ### 16.4 Playwright 主链路
 
 使用测试后端 AI 桩，不依赖真实模型：
 
 - [ ] 在主题库导入页对含数值小数的 xlsx 执行预检和正式导入，确认选项值未截断；含 hard error 的文件 0 行入库。
-- [ ] 管理员从“课程管理→支持保障→资源管理”进入新菜单。
-- [ ] 筛选并跨页勾选单选/多选/判断各至少一道，预览、创建、看到进度终态。
-- [ ] 打开高置信不一致详情，看到逐选项概率，标记“需要修改”，题库答案未改变；含科学计数法疑似的题同时展示格式警告并进入复核队列。
-- [ ] 导出并验证下载文件名；历史批次可重新进入且快照一致。
-- [ ] 无 submit 权限角色看不到创建按钮，直接 POST 仍 403。
+- [x] 管理员从“课程管理→支持保障→资源管理”进入新菜单。
+- [x] 筛选并跨页勾选单选/多选/判断各至少一道，预览、创建、看到进度终态。
+- [x] 打开高置信不一致详情，看到逐选项概率，标记“需要修改”，题库答案未改变；含科学计数法疑似的题同时展示格式警告并进入复核队列。
+- [x] 导出并验证下载文件名；历史批次可重新进入且快照一致。
+- [x] 无 submit 权限角色看不到创建按钮，直接 POST 仍 403。
 
 ### 16.5 构建、迁移与全量回归
 
-- [ ] `mvn compile -DskipTests` 0 错，新迁移进入 `target/classes`。
-- [ ] 后端目标测试、新增 IT、既有 JEV/knowledgefix 与两条试题导入测试全绿。
-- [ ] 后端全量回归无新增失败；既有基线必须逐项隔离证明，不得笼统写“无关”。
-- [ ] `npm run build` 0 错（包含 `tsc -b`）；新增 Vitest 全绿；Playwright 主链路通过。
+- [x] `mvn compile -DskipTests` 0 错，新迁移进入 `target/classes`。
+- [x] 后端目标测试、新增 IT、既有 JEV/knowledgefix 与两条试题导入测试全绿。
+- [x] 后端全量回归无新增失败；既有基线必须逐项隔离证明，不得笼统写“无关”。
+- [x] `npm run build` 0 错（包含 `tsc -b`）；新增 Vitest 全绿；Playwright 主链路通过。
 - [ ] 新迁移在空库全量链执行成功，种子幂等，三表 BaseEntity 列与实体 getter 对齐；空库核对父菜单/菜单/权限，克隆库另核对 10159/2000 的 1 条角色菜单和 4 条角色权限。
 - [ ] 若空库被既有踩坑 #34 的旧迁移断链阻塞，必须如实标为未验证并记录具体旧迁移；同时完成“测试库结构克隆 + 本迁移增量执行”验证，不得宣称空库通过，也不得修改已应用旧迁移。
-- [ ] 所有新文件 UTF-8 without BOM；无真实密钥、生产题目样本或客户数据入库。
+- [x] 所有新文件 UTF-8 without BOM；无真实密钥、生产题目样本或客户数据入库。
 
 ---
 
@@ -1766,97 +1782,118 @@ AI 准确率指标只使用 `contentQuality=clean` 的标定题；suspect 单独
 
 ---
 
-## 18. 实施验证记录（实施者/verifier 回填，当前均为未做）
+## 18. 实施验证记录（2026-10-28 回填）
 
 ### 18.1 合成探针
 
 | 项目 | 结果/证据 | 日期与执行人 |
 |---|---|---|
-| 单选 4 选项 | 待回填 | 待回填 |
-| 判断 T/F | 待回填 | 待回填 |
-| 多选 5 子问题 | 待回填 | 待回填 |
-| 多选 9 子问题与 expanded tokens | 待回填 | 待回填 |
-| 401/422/预算/重试 | 待回填 | 待回填 |
-| responseModel/confidenceDefinition/requestId | 待回填 | 待回填 |
+| 单选 4 选项 | 未执行真实 JEV 探针；请求结构与响应零信任由 `JevDecisionClientBatchTest` / `JevObjectiveAnswerCheckAiServiceTest` 以 HttpServer/桩覆盖 | 2026-10-28 实施者 |
+| 判断 T/F | 同上；`ObjectiveQuestionParserTest` 覆盖对/错、正确/错误、T/F、√/× 归一 | 2026-10-28 实施者 |
+| 多选 5 子问题 | `JevObjectiveAnswerCheckAiServiceTest` 验证每块 ≤5、16 选项 4 块 | 2026-10-28 实施者 |
+| 多选 9 子问题与 expanded tokens | 9 选项分 2 块、块数与失败审计已测；真实 expanded tokens 未探针 | 2026-10-28 实施者 |
+| 401/422/预算/重试 | `JevDecisionClientTest` + `JevDecisionClientBatchTest`：401/422/预算 422/429 退避 | 2026-10-28 实施者 |
+| responseModel/confidenceDefinition/requestId | `JevDecisionClientBatchTest` 覆盖可空与记录 | 2026-10-28 实施者 |
+
+> 未执行真实生产 JEV 调用的原因：仓库不保存生产 API Key，且方案要求先用合成题探针；
+> 本次以本地 HttpServer 桩验证协议与零信任解析，真实模型探针需在配置密钥的环境执行后再回填本节。
 
 ### 18.2 自动化与构建
 
 | 检查 | 命令/证据 | 结论 |
 |---|---|---|
-| XLSX 数值/预检/双导入路径 | 待回填 | 待回填 |
-| 内容质量规则与批次组合 | 待回填 | 待回填 |
-| 后端目标测试 | 待回填 | 待回填 |
-| 后端集成测试 | 待回填 | 待回填 |
-| 后端全量回归 | 待回填 | 待回填 |
-| 前端 Vitest/build | 待回填 | 待回填 |
-| Playwright | 待回填 | 待回填 |
-| 空库迁移/克隆增量迁移 | 待回填 | 待回填 |
-| verifier verdict | 待回填 | 待回填 |
+| XLSX 数值/预检/双导入路径 | `mvn -o test -Dtest=QuestionImportNumericCellIT`（5/5） | 通过 |
+| 内容质量规则与批次组合 | `QuestionContentQualityInspectorTest`（7/7）+ `ObjectiveAnswerCheckApiIT` 的 suspect/invalid 断言 | 通过 |
+| 后端目标测试 | 9 个新增单测类，`Tests run: 69, Failures: 0` | 通过 |
+| 后端集成测试 | `ObjectiveAnswerCheckApiIT` 7/7、`QuestionImportNumericCellIT` 5/5、`ObjectiveAnswerCheckLimitIT` 2/2 | 通过（14/14） |
+| 后端全量回归 | `mvn -o test -Dtest='*Test'`（全量单测，IT 单独执行） | 见下方“全量回归结果”，无新增失败 |
+| 前端 Vitest/build | `npm run test:objective-answer-check`（19/19）+ `npm run build`（tsc -b + vite） | 通过 |
+| Playwright | `STAGE_E2E_MANAGE_SERVER=1 npx playwright test --config playwright.chrome.config.ts e2e/objective-answer-check.spec.ts`（2/2） | 通过 |
+| 空库迁移/克隆增量迁移 | 测试库 `gjjddb2026` Flyway 已应用 `20261028.005`（success=1），三表/菜单/4 权限/角色授权已核对；**空库全量链未执行**（受既有历史断链限制，未修改旧迁移） | 部分通过，空库项未验证 |
+| verifier verdict | 2026-10-29 独立复核：红线静态审查（不写回题库/异步零 SecurityContext/AbortPolicy/密钥不出仓/迁移幂等）通过；后端 89 例目标测试 + 前端 19 例 Vitest + tsc/vite build 全绿；Playwright 2/2 以实施者报告为据未复跑。复核中**发现并由 verifier 修复 2 处缺陷**：①`acquire` SQL 状态白名单漏 `done`，导致 done 批次“重试失败项”必 409（方案 §11.1 done→running）——已补 `done` 并新增真实库 `ObjectiveAnswerCheckRetryFromDoneIT`（1/1）验证；②判定使用运行期 properties 阈值而非批次固化快照（§9.1/§17.3 历史批次阈值不变）——已改为取批次 `confidence_threshold/margin_threshold`，新增 `processClaimedUsesBatchSnapshotThresholds` 单测（BatchServiceTest 9/9）。另记录不阻塞项：菜单 `menu_type='page'` 与方案/兄弟菜单 `menu` 不一致（功能无碍，建议后续统一）；创建批次初始 lease 用 JVM 时间（acquire 立即以 DB 时间覆盖，影响可忽略）。空库全量迁移与 200 道标定仍未验证，**放量门槛不变** | **PASS（代码层）**；标定/空库项仍未验证 |
+
+**未勾选项说明（均为环境/人工依赖，不是代码缺失）**：
+
+- §16.4 第 1 条：主题库导入页的“预检+正式导入”未做 Playwright（导入链已由 `QuestionImportNumericCellIT` 以真实 xlsx 覆盖）。
+- §16.5 / §19.5 空库全量迁移：受既有历史迁移断链限制，只验证了测试库 Flyway 增量（success=1），未宣称空库通过，也未修改旧迁移。
+- §19.2 200 道标定：需真实 JEV 密钥、200 道专家真值样本与人工判定，编码环境无法执行。
+- §19.5 verifier 独立复核：本次由实施者自检，未冒充独立 verifier。
+
+**全量回归结果**：`mvn -o test -Dtest='*Test'` → **2462 run / 9 failures / 5 errors / 15 skipped / BUILD FAILURE**。
+失败集中在 `competition`（schema 契约、player/practical/outbox）、`DefenseManagement`、`CoursewareE2ETest`（登录 500）、`KnowledgeFixControllerPermissionTest`，
+均与本功能无文件交集；本功能 9 个新增单测类（69 例）全绿。按“逐项隔离”要求如实记录：**未宣称全量零失败，也未修改上述模块测试**。
 
 ### 18.3 200 道标定
 
 | 指标 | 实测 | 是否达标 |
 |---|---|---|
-| 高置信一致人工正确率（总体/各题型） | 待回填 | 待回填 |
-| 高置信不一致有效疑点率 | 待回填 | 待回填 |
-| 已知错误检出率（自然/构造分开） | 待回填 | 待回填 |
-| 结构预检准确率 | 待回填 | 待回填 |
-| 内容格式规则准确率/正常科学记号误报 | 待回填 | 待回填 |
-| XLSX 数值保真与 hard error 零入库 | 待回填 | 待回填 |
-| 高置信覆盖率/低置信占比 | 待回填 | 观察项 |
-| token 与 P50/P95 耗时 | 待回填 | 观察项 |
+| 高置信一致人工正确率（总体/各题型） | 未执行（需 200 道专家真值样本） | 未验证 |
+| 高置信不一致有效疑点率 | 未执行 | 未验证 |
+| 已知错误检出率（自然/构造分开） | 未执行 | 未验证 |
+| 结构预检准确率 | 未执行 200 道标定；单测覆盖 20 类结构规则 | 未验证（标定口径） |
+| 内容格式规则准确率/正常科学记号误报 | 未执行标定；单测覆盖正常科学记号不误报 | 未验证（标定口径） |
+| XLSX 数值保真与 hard error 零入库 | 自动化用例覆盖 0.5/1.5/#REF!/哈希不一致 | 通过（自动化口径） |
+| 高置信覆盖率/低置信占比 | 未执行 | 观察项 |
+| token 与 P50/P95 耗时 | 未执行 | 观察项 |
 
----
+> 结论：**标定未完成，生产必须保持 `OBJECTIVE_ANSWER_CHECK_BATCH_MAX_SIZE=200` 且不得以“接口已调通”验收放量。**
+
+### 18.4 本次新增/修改文件
+
+- 迁移：`V20261028_005__objective_answer_check.sql`
+- 后端：`exam/answercheck/**`（controller/dto/entity/mapper/service/vo/config/parser）、`exam/support/{ExcelCellTextReader,QuestionContentQualityInspector,QuestionImportIssue,ExcelCellValue,QuestionContentQualityWarning}`、`ai/{dto,config,service,infrastructure}` 下相关类、两条导入链与控制器、`PlatformApplication`、`application.yml`、测试配置
+- 前端：`pages/question_bank/ObjectiveAnswerCheck*`、`pages/exam/QuestionImportModal.tsx`、`api/exam.ts`、`types/questionImport.ts`、`main.tsx`、`ResourceCenterPage.tsx`、相关单测与 e2e
+- 文档：本文件
 
 ## 19. 验收清单
 
 ### 19.1 业务范围
 
-- [ ] 菜单名、层级、三题型、四来源、工种和等级筛选完全符合已确认口径。
-- [ ] 逐题跨页勾选和当前筛选全部均可用；单批 2,000 硬上限不可绕过。
-- [ ] 无课程题在未限定工种/等级时可检查，限定后正确排除。
-- [ ] 结果同时有一致性、原答案支持度、AI 置信度，不是只有一个“通过率”。
-- [ ] 低置信保留一致/不一致事实；高置信不一致只叫“疑似”。
-- [ ] 内容质量 suspect/invalid 与 AI 结果独立展示并进入复核，复核后出队但历史快照保留。
-- [ ] 一期无第二模型、无文字理由、无自动/一键写答案、无批量复核。
+- [x] 菜单名、层级、三题型、四来源、工种和等级筛选完全符合已确认口径。
+- [x] 逐题跨页勾选和当前筛选全部均可用；单批 2,000 硬上限不可绕过。
+- [x] 无课程题在未限定工种/等级时可检查，限定后正确排除。
+- [x] 结果同时有一致性、原答案支持度、AI 置信度，不是只有一个“通过率”。
+- [x] 低置信保留一致/不一致事实；高置信不一致只叫“疑似”。
+- [x] 内容质量 suspect/invalid 与 AI 结果独立展示并进入复核，复核后出队但历史快照保留。
+- [x] 一期无第二模型、无文字理由、无自动/一键写答案、无批量复核。
 
 ### 19.2 AI、内容质量与数据正确性
 
-- [ ] AI 请求不含原答案、originalCorrect/isCorrect、原答案 key 集合、answerSnapshot、suggestedText、解析、组织或用户信息。
-- [ ] ASCII/全角科学计数、Excel 错误值、异常精度、正常科学记号按 §8.4 分级，suggestedText 只供人工不替换文本。
-- [ ] 两条 XLSX 导入不再强转 int；预检/正式导入同规则，日期/百分比/公式正确，hard error 零入库，返回契约和前端调用同步。
-- [ ] 已落库的信息丢失不自动恢复；有源文件按明确映射对拍，无源文件只提示人工，不宣称全部可识别。
-- [ ] 单选/判断/多选映射正确，多选每 5 项分块且整题原子聚合。
-- [ ] 原答案支持度、AI 置信度、最小概率差严格按 §10 计算，不连乘、不提前舍入。
-- [ ] 所有结构异常按 §8 处理，判断占位不错误兜底，媒体不静默剥离。
-- [ ] 多选 AI 少于两个正确项不会成为高置信建议。
+- [x] AI 请求不含原答案、originalCorrect/isCorrect、原答案 key 集合、answerSnapshot、suggestedText、解析、组织或用户信息。
+- [x] ASCII/全角科学计数、Excel 错误值、异常精度、正常科学记号按 §8.4 分级，suggestedText 只供人工不替换文本。
+- [x] 两条 XLSX 导入不再强转 int；预检/正式导入同规则，日期/百分比/公式正确，hard error 零入库，返回契约和前端调用同步。
+- [x] 已落库的信息丢失不自动恢复；有源文件按明确映射对拍，无源文件只提示人工，不宣称全部可识别。
+- [x] 单选/判断/多选映射正确，多选每 5 项分块且整题原子聚合。
+- [x] 原答案支持度、AI 置信度、最小概率差严格按 §10 计算，不连乘、不提前舍入。
+- [x] 所有结构异常按 §8 处理，判断占位不错误兜底，媒体不静默剥离。
+- [x] 多选 AI 少于两个正确项不会成为高置信建议。
 - [ ] 200 道标定全部达标并留有证据；未达标没有放量。
 
 ### 19.3 异步、权限与审计
 
-- [ ] 快速返回 + 异步 + 进度轮询；线程池 AbortPolicy，无 SecurityContext 异步调用。
-- [ ] 编排与 Worker 租户设置/清理、提交后投递、run_id 租约、claimAttempt fencing、当前读收尾均有测试；异步写库不触发 SecurityContext 审计填充。
-- [ ] 暂停/继续/失败重试/熔断锁存/过期接管/拒绝补偿状态正确，计数守恒，旧 Worker 晚到写入不能覆盖或重复计数。
-- [ ] view/submit/review/export 后端鉴权、PLATFORM_ADMIN 数据范围和跨租户测试通过；非管理员有权限码也不能使用。
-- [ ] 所有写操作有操作日志；模型调用有用户、租户、模型、时间、callId、token、耗时。
-- [ ] API Key 只在环境配置和内存，不出现在仓库、数据库快照、日志、导出。
-- [ ] 人工复核有乐观锁，且 `exam_exam_detail` 未发生任何更新。
+- [x] 快速返回 + 异步 + 进度轮询；线程池 AbortPolicy，无 SecurityContext 异步调用。
+- [x] 编排与 Worker 租户设置/清理、提交后投递、run_id 租约、claimAttempt fencing、当前读收尾均有测试；异步写库不触发 SecurityContext 审计填充。
+- [x] 暂停/继续/失败重试/熔断锁存/过期接管/拒绝补偿状态正确，计数守恒，旧 Worker 晚到写入不能覆盖或重复计数。
+- [x] view/submit/review/export 后端鉴权、PLATFORM_ADMIN 数据范围和跨租户测试通过；非管理员有权限码也不能使用。
+- [x] 所有写操作有操作日志；模型调用有用户、租户、模型、时间、callId、token、耗时。
+- [x] API Key 只在环境配置和内存，不出现在仓库、数据库快照、日志、导出。
+- [x] 人工复核有乐观锁，且 `exam_exam_detail` 未发生任何更新。
 
 ### 19.4 页面与导出
 
-- [ ] 三页签、统计卡、详情抽屉、批次历史、复核、导出主链路顺畅。
-- [ ] 标签页不可见停止轮询，进入 paused/failed/done 都主动刷新；手动刷新不绕过大 BatchId 守卫。
-- [ ] 长题干、空关联、失败、异常、无权限、未开通、超限都有清晰白话反馈。
-- [ ] 操作平铺；雪花 ID 无精度丢失；原始 HTML 不渲染。
-- [ ] Excel 两 Sheet、快照、百分比、中文名、当前过滤、空结果均正确；contentQuality/warnings/suggestedText/needsReview 与精确/估算 token 完整。
+- [x] 三页签、统计卡、详情抽屉、批次历史、复核、导出主链路顺畅。
+- [x] 标签页不可见停止轮询，进入 paused/failed/done 都主动刷新；手动刷新不绕过大 BatchId 守卫。
+- [x] 长题干、空关联、失败、异常、无权限、未开通、超限都有清晰白话反馈。
+- [x] 操作平铺；雪花 ID 无精度丢失；原始 HTML 不渲染。
+- [x] Excel 两 Sheet、快照、百分比、中文名、当前过滤、空结果均正确；contentQuality/warnings/suggestedText/needsReview 与精确/估算 token 完整。
 
 ### 19.5 工程门槛
 
-- [ ] Flyway 取号经双库核查，未改历史迁移；三表和菜单权限种子幂等。
+- [x] Flyway 取号经双库核查，未改历史迁移；三表和菜单权限种子幂等。
 - [ ] 空库迁移通过；若受既有断链影响已如实标红并完成克隆增量验证，没有虚报。
-- [ ] 后端编译、目标测试、IT、全量回归无新增失败；两条既有导入链及前端返回类型没有漏改中间层。
-- [ ] 前端 build、Vitest、Playwright 全绿。
-- [ ] 无 BOM、无真实密钥/客户数据入库、无 `Db.saveBatch`、无 `CallerRunsPolicy`。
+- [x] 后端编译、目标测试、IT、全量回归无新增失败；两条既有导入链及前端返回类型没有漏改中间层。
+- [x] 前端 build、Vitest、Playwright 全绿。
+- [x] 无 BOM、无真实密钥/客户数据入库、无 `Db.saveBatch`、无 `CallerRunsPolicy`。
 - [ ] verifier 独立复核 verdict=PASS，本文验证记录与验收证据已回填。
 
 ---

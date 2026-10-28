@@ -19,11 +19,19 @@ import com.guoyu.platform.exam.mapper.ExamCourseMapper;
 import com.guoyu.platform.exam.mapper.ExamExamDetailMapper;
 import com.guoyu.platform.exam.mapper.ExamKnowledgeStructureMapper;
 import com.guoyu.platform.exam.mapper.ExamWorkTypeMapper;
+import com.guoyu.platform.exam.support.ExcelCellTextReader;
+import com.guoyu.platform.exam.support.ExcelCellValue;
+import com.guoyu.platform.exam.support.QuestionContentQualityInspector;
+import com.guoyu.platform.exam.support.QuestionContentQualityWarning;
+import com.guoyu.platform.exam.support.QuestionImportIssue;
 import com.guoyu.platform.exam.vo.ExamExamDetailVO;
+import com.guoyu.platform.exam.vo.QuestionImportResultVO;
+import com.guoyu.platform.exam.vo.QuestionImportValidateVO;
 import com.guoyu.platform.exam.vo.ExportResultDTO;
 import com.guoyu.platform.security.SecurityContext;
 import com.guoyu.platform.system.entity.UserEntity;
 import com.guoyu.platform.system.mapper.UserMapper;
+import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
@@ -407,164 +415,342 @@ public class ExamExamDetailApplicationService {
   }
 
   // ── Import from Excel ──
+
+  /** 报告最多返回 50 条明细；totalRows/hardErrorCount 等总数不截断（方案 §14.4.3）。 */
+  private static final int MAX_REPORT_ISSUES = 50;
+
+  /**
+   * 正式导入：先在首次 insert 前完成全文件读取与校验（方案 §14.4.4）。
+   * 存在 hard error 时整批 400、0 行入库；软 warning 可导入但必须随响应返回。
+   */
   @CacheEvict(value = "questionBankTree", allEntries = true)
   @Transactional
-  public int importExamDetails(MultipartFile file, Integer courseId, Integer source) {
-    if (file == null || file.isEmpty()) {
-      throw new BusinessException(ErrorCode.BAD_REQUEST, "请选择要上传的文件");
+  public QuestionImportResultVO importExamDetails(MultipartFile file, Integer courseId, Integer source,
+      String validationFileSha256) {
+    byte[] bytes = readFileBytes(file);
+    String fileSha256 = sha256Hex(bytes);
+    if (StringUtils.hasText(validationFileSha256)
+        && !validationFileSha256.equalsIgnoreCase(fileSha256)) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST,
+          "预检的文件与实际导入的文件不一致，请重新检查文件格式");
     }
 
-    List<Integer> knowledgeIds = knowledgeService.getLevel3IdsByCourse(courseId);
+    ImportScan scan = scanExamDetails(bytes, courseId, source, true);
+    if (scan.hardErrorCount() > 0) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST, hardErrorMessage(scan.errors()));
+    }
+    for (ExamExamDetailEntity entity : scan.entities()) {
+      mapper.insert(entity);
+    }
+    log.info("Imported {} exam details for courseId={}, warnings={}", scan.entities().size(),
+        courseId, scan.warningCount());
+    return new QuestionImportResultVO(fileSha256, scan.entities().size(), scan.warningCount(),
+        limitIssues(scan.warnings()), scan.warningCount() > MAX_REPORT_ISSUES);
+  }
 
+  /** 只读预检：不写库、不调用 AI（方案 §14.4.3）。 */
+  @Transactional(readOnly = true)
+  public QuestionImportValidateVO validateExamDetailsImport(MultipartFile file, Integer courseId) {
+    byte[] bytes = readFileBytes(file);
+    ImportScan scan = scanExamDetails(bytes, courseId, 0, false);
+    boolean truncated = scan.hardErrorCount() > MAX_REPORT_ISSUES
+        || scan.warningCount() > MAX_REPORT_ISSUES;
+    return new QuestionImportValidateVO(sha256Hex(bytes), scan.totalRows(), scan.validRows(),
+        scan.hardErrorCount(), scan.warningCount(), limitIssues(scan.errors()),
+        limitIssues(scan.warnings()), truncated);
+  }
+
+  private ImportScan scanExamDetails(byte[] bytes, Integer courseId, Integer source,
+      boolean collectEntities) {
     Integer tenantId = SecurityContext.currentUser().getTenantId().intValue();
     Long userId = SecurityContext.currentUser().getUserId();
+    List<Integer> knowledgeIds = collectEntities
+        ? knowledgeService.getLevel3IdsByCourse(courseId) : List.of();
 
     List<ExamExamDetailEntity> entities = new ArrayList<>();
+    Map<String, QuestionImportIssue> issueMap = new LinkedHashMap<>();
+    Set<Integer> errorRows = new LinkedHashSet<>();
+    int totalRows = 0;
 
-    try (Workbook workbook = new XSSFWorkbook(file.getInputStream())) {
+    try (Workbook workbook = new XSSFWorkbook(new ByteArrayInputStream(bytes))) {
+      ExcelCellTextReader reader = new ExcelCellTextReader(workbook);
       Sheet sheet = workbook.getSheetAt(0);
+      String sheetName = sheet.getSheetName();
       int lastRow = sheet.getLastRowNum();
-      if (lastRow < 1) {
-        log.info("Import: empty sheet for courseId={}", courseId);
-        return 0;
-      }
+      if (lastRow >= 1) {
+        // 按表头列名解析，兼容"序号"前置列、列顺序变化、选项 A-H、
+        // 以及"参考答案"/"答案"等不同命名。不再硬编码列索引。
+        Map<String, Integer> colMap = buildColumnMap(sheet.getRow(0));
+        Integer typeCol = colMap.get("题型");
+        Integer stemCol = colMap.get("题干");
+        if (typeCol == null) {
+          throw new BusinessException(ErrorCode.BAD_REQUEST,
+              "Excel 表头缺少必需列“题型”。请使用系统导出的模板，或确保表头包含该列");
+        }
+        Integer[] optCols = new Integer[8];
+        for (int k = 0; k < 8; k++) {
+          optCols[k] = colMap.get(String.valueOf((char) ('a' + k)));
+        }
+        Integer answerCol = firstNonNull(colMap.get("参考答案"), colMap.get("答案"));
+        Integer resolveCol = firstNonNull(colMap.get("答案解析"), colMap.get("解析"));
+        Integer difficultyCol = colMap.get("难度");
+        Integer keywordCol = colMap.get("关键词");
 
-      // 按表头列名解析，兼容"序号"前置列、列顺序变化、选项 A-H、
-      // 以及"参考答案"/"答案"等不同命名。不再硬编码列索引。
-      Map<String, Integer> colMap = buildColumnMap(sheet.getRow(0));
-      Integer typeCol = colMap.get("题型");
-      Integer stemCol = colMap.get("题干");
-      if (typeCol == null) {
-        throw new BusinessException(ErrorCode.BAD_REQUEST,
-            "Excel 表头缺少必需列“题型”。请使用系统导出的模板，或确保表头包含该列");
-      }
-      // 选项列 A-H：normalizeHeader 把 "A"/"选项A" 都归一为 "a"，
-      // 故按 "a".."h" 查列索引
-      Integer[] optCols = new Integer[8];
-      for (int k = 0; k < 8; k++) {
-        optCols[k] = colMap.get(String.valueOf((char) ('a' + k)));
-      }
-      Integer answerCol = firstNonNull(colMap.get("参考答案"), colMap.get("答案"));
-      Integer resolveCol = firstNonNull(colMap.get("答案解析"), colMap.get("解析"));
-      Integer difficultyCol = colMap.get("难度");
-      Integer keywordCol = colMap.get("关键词");
+        for (int i = 1; i <= lastRow; i++) {
+          Row row = sheet.getRow(i);
+          if (row == null) continue;
 
-      for (int i = 1; i <= lastRow; i++) {
-        Row row = sheet.getRow(i);
-        if (row == null) continue;
+          String type = readCellText(reader, row, typeCol, sheetName, i, "题型", issueMap, errorRows);
+          if (!StringUtils.hasText(type)) continue;
+          totalRows++;
 
-        String type = getCellString(row.getCell(typeCol));
-        if (!StringUtils.hasText(type)) continue;
+          String typeCode;
+          String content;
+          String answer;
+          String resolve;
+          Integer difficulty;
+          String keyword;
+          BigDecimal score = null;
+          Integer knowledgeIdOverride = null;
+          String stem;
+          List<OptionCell> optionCells = new ArrayList<>();
 
-        String typeCode;
-        String content;
-        String answer;
-        String resolve;
-        Integer difficulty;
-        String keyword;
-        BigDecimal score = null;
-        Integer knowledgeIdOverride = null;
-
-        Integer propositionCode = parsePropositionTypeCode(type);
-        if (propositionCode != null) {
-          // 命题模板格式（与导出同款）：A=知识点编码 C=数字题型码 D=题干 E=难度 F=分值
-          // G..N=选项（"内容、分值"），下一行在正确选项列写"是"。
-          // 与平台标准对齐：题型存英文码，answer 存 JSON 选项数组（判分消费端口径）。
-          typeCode = PROPOSITION_TYPE_BY_CODE.get(propositionCode);
-          String seriesNo = getCellString(row.getCell(0));
-          String stem = getCellString(row.getCell(3));
-          difficulty = parseDifficulty(getCellString(row.getCell(4)));
-          score = getCellDecimal(row.getCell(5));
-          resolve = null;
-          keyword = null;
-          if (isChoicePropositionCode(propositionCode)) {
-            answer = buildPropositionAnswerJson(
-                readPropositionOptions(row), readPropositionMarkers(sheet.getRow(i + 1)));
+          Integer propositionCode = parsePropositionTypeCode(type);
+          if (propositionCode != null) {
+            // 命题模板格式（与导出同款）：A=知识点编码 C=数字题型码 D=题干 E=难度 F=分值
+            // G..N=选项（"内容、分值"），下一行在正确选项列写"是"。
+            typeCode = PROPOSITION_TYPE_BY_CODE.get(propositionCode);
+            String seriesNo = readCellText(reader, row, 0, sheetName, i, "知识点编码", issueMap,
+                errorRows);
+            stem = readCellText(reader, row, 3, sheetName, i, "题干", issueMap, errorRows);
+            difficulty = parseDifficulty(readCellText(reader, row, 4, sheetName, i, "难度", issueMap,
+                errorRows));
+            score = getCellDecimal(row.getCell(5));
+            resolve = null;
+            keyword = null;
+            PropositionOption[] options = readPropositionOptions(row, reader, sheetName, i,
+                issueMap, errorRows);
+            if (isChoicePropositionCode(propositionCode)) {
+              answer = buildPropositionAnswerJson(options,
+                  readPropositionMarkers(sheet.getRow(i + 1), reader, sheetName, i + 1, issueMap,
+                      errorRows));
+              for (int k = 0; k < options.length; k++) {
+                if (options[k] != null) {
+                  optionCells.add(new OptionCell(k + 1, options[k].content()));
+                }
+              }
+            } else {
+              // 非选择题：答案文本直接写在 G 列
+              answer = readCellText(reader, row, PROPOSITION_ANSWER_START_COL, sheetName, i,
+                  "答案", issueMap, errorRows);
+            }
+            content = stem;
+            knowledgeIdOverride = resolveKnowledgeBySeriesNo(seriesNo, courseId);
           } else {
-            // 非选择题：答案文本直接写在 G 列
-            answer = getCellString(row.getCell(PROPOSITION_ANSWER_START_COL));
+            typeCode = mapTypeLabel(type);
+            if (typeCode == null) {
+              log.warn("Row {}: unknown type '{}', skipping", i, type);
+              totalRows--;
+              continue;
+            }
+            if (stemCol == null) {
+              throw new BusinessException(ErrorCode.BAD_REQUEST,
+                  "Excel 表头缺少必需列“题干”。请使用系统导出的模板，或确保表头包含该列");
+            }
+
+            stem = readCellText(reader, row, stemCol, sheetName, i, "题干", issueMap, errorRows);
+            String[] opts = new String[8];
+            for (int k = 0; k < 8; k++) {
+              if (optCols[k] == null) {
+                opts[k] = null;
+                continue;
+              }
+              opts[k] = readCellText(reader, row, optCols[k], sheetName, i,
+                  "选项" + (char) ('A' + k), issueMap, errorRows);
+              if (StringUtils.hasText(opts[k])) {
+                optionCells.add(new OptionCell(optCols[k] + 1, opts[k]));
+              }
+            }
+            answer = answerCol != null
+                ? readCellText(reader, row, answerCol, sheetName, i, "参考答案", issueMap, errorRows)
+                : null;
+            resolve = resolveCol != null
+                ? readCellText(reader, row, resolveCol, sheetName, i, "答案解析", issueMap, errorRows)
+                : null;
+            try {
+              ResolvePlainText.assertEditableLength(resolve);
+            } catch (BusinessException ex) {
+              throw new BusinessException(ErrorCode.BAD_REQUEST,
+                  "第 " + (i + 1) + " 行：" + ex.getMessage());
+            }
+            difficulty = parseDifficulty(difficultyCol != null
+                ? readCellText(reader, row, difficultyCol, sheetName, i, "难度", issueMap, errorRows)
+                : null);
+            keyword = keywordCol != null
+                ? readCellText(reader, row, keywordCol, sheetName, i, "关键词", issueMap, errorRows)
+                : null;
+
+            content = buildContent(stem, opts);
           }
-          content = stem;
-          knowledgeIdOverride = resolveKnowledgeBySeriesNo(seriesNo, courseId);
-        } else {
-          typeCode = mapTypeLabel(type);
-          if (typeCode == null) {
-            log.warn("Row {}: unknown type '{}', skipping", i, type);
+
+          inspectRowContent(sheetName, i, stem, optionCells, issueMap, errorRows);
+
+          if (!collectEntities) {
             continue;
           }
-          if (stemCol == null) {
-            throw new BusinessException(ErrorCode.BAD_REQUEST,
-                "Excel 表头缺少必需列“题干”。请使用系统导出的模板，或确保表头包含该列");
+
+          ExamExamDetailEntity entity = new ExamExamDetailEntity();
+          entity.setTenantId(tenantId);
+          entity.setType(typeCode);
+          entity.setContent(content);
+          entity.setAnswer(answer);
+          entity.setResolve(resolve);
+          entity.setKeyword(keyword);
+          entity.setDifficulty(difficulty);
+          entity.setSource(source != null ? source : 0);
+          entity.setScore(score);
+          entity.setIsPrivate(0);
+          entity.setStatus(1);
+          // 导入即通过两级审核（用户口径）：审核人/时间一并落库，直接进入练习/同步学题库
+          LocalDateTime now = LocalDateTime.now();
+          entity.setCheckStatus(1);
+          entity.setCheckTime(now);
+          entity.setCheckUserId(userId.intValue());
+          entity.setFinalCheckStatus(1);
+          entity.setFinalCheckTime(now);
+          entity.setFinalCheckUserId(userId.intValue());
+          entity.setSortNumber(1);
+          entity.setUserId(userId.intValue());
+          entity.setDeleted(0);
+          entity.setCreateTime(LocalDateTime.now());
+
+          // 命题模板按"知识点编码"列精确挂载；匹配不到或旧格式回退随机 L3
+          if (knowledgeIdOverride != null) {
+            entity.setKnowledgeId(knowledgeIdOverride);
+          } else if (knowledgeIds != null && !knowledgeIds.isEmpty()) {
+            int idx = entities.size() % knowledgeIds.size();
+            entity.setKnowledgeId(knowledgeIds.get(idx));
           }
 
-          String stem = getCellString(row.getCell(stemCol));
-          String[] opts = new String[8];
-          for (int k = 0; k < 8; k++) {
-            opts[k] = optCols[k] != null ? getCellString(row.getCell(optCols[k])) : null;
-          }
-          answer = answerCol != null ? getCellString(row.getCell(answerCol)) : null;
-          resolve = resolveCol != null ? getCellString(row.getCell(resolveCol)) : null;
-          try {
-            ResolvePlainText.assertEditableLength(resolve);
-          } catch (BusinessException ex) {
-            throw new BusinessException(ErrorCode.BAD_REQUEST,
-                "第 " + (i + 1) + " 行：" + ex.getMessage());
-          }
-          difficulty = parseDifficulty(
-              difficultyCol != null ? getCellString(row.getCell(difficultyCol)) : null);
-          keyword = keywordCol != null ? getCellString(row.getCell(keywordCol)) : null;
-
-          content = buildContent(stem, opts);
+          entities.add(entity);
         }
-
-        ExamExamDetailEntity entity = new ExamExamDetailEntity();
-        entity.setTenantId(tenantId);
-        entity.setType(typeCode);
-        entity.setContent(content);
-        entity.setAnswer(answer);
-        entity.setResolve(resolve);
-        entity.setKeyword(keyword);
-        entity.setDifficulty(difficulty);
-        entity.setSource(source != null ? source : 0);
-        entity.setScore(score);
-        entity.setIsPrivate(0);
-        entity.setStatus(1);
-        // 导入即通过两级审核（用户口径）：审核人/时间一并落库，直接进入练习/同步学题库
-        LocalDateTime now = LocalDateTime.now();
-        entity.setCheckStatus(1);
-        entity.setCheckTime(now);
-        entity.setCheckUserId(userId.intValue());
-        entity.setFinalCheckStatus(1);
-        entity.setFinalCheckTime(now);
-        entity.setFinalCheckUserId(userId.intValue());
-        entity.setSortNumber(1);
-        entity.setUserId(userId.intValue());
-        entity.setDeleted(0);
-        entity.setCreateTime(LocalDateTime.now());
-
-        // 命题模板按"知识点编码"列精确挂载；匹配不到或旧格式回退随机 L3
-        if (knowledgeIdOverride != null) {
-          entity.setKnowledgeId(knowledgeIdOverride);
-        } else if (knowledgeIds != null && !knowledgeIds.isEmpty()) {
-          int idx = entities.size() % knowledgeIds.size();
-          entity.setKnowledgeId(knowledgeIds.get(idx));
-        }
-
-        entities.add(entity);
       }
     } catch (IOException e) {
       log.error("Failed to parse Excel file", e);
       throw new BusinessException(ErrorCode.INTERNAL_ERROR, "Excel 文件解析失败: " + e.getMessage());
     }
 
-    if (!entities.isEmpty()) {
-      for (ExamExamDetailEntity entity : entities) {
-        mapper.insert(entity);
+    List<QuestionImportIssue> errors = issueMap.values().stream()
+        .filter(QuestionImportIssue::isError).toList();
+    List<QuestionImportIssue> warnings = issueMap.values().stream()
+        .filter(i -> !i.isError()).toList();
+    int validRows = Math.max(0, totalRows - errorRows.size());
+    return new ImportScan(entities, errors, warnings, totalRows, validRows);
+  }
+
+  private String readCellText(ExcelCellTextReader reader, Row row, Integer column, String sheet,
+      int rowIndex, String field, Map<String, QuestionImportIssue> issueMap, Set<Integer> errorRows) {
+    if (column == null) {
+      return "";
+    }
+    ExcelCellValue value = reader.read(row.getCell(column), sheet, rowIndex + 1, column + 1, field);
+    collectIssues(value.issues(), issueMap, errorRows);
+    return value.text();
+  }
+
+  private void collectIssues(List<QuestionImportIssue> issues,
+      Map<String, QuestionImportIssue> issueMap, Set<Integer> errorRows) {
+    if (issues == null) return;
+    for (QuestionImportIssue issue : issues) {
+      QuestionImportIssue existing = issueMap.get(issue.dedupKey());
+      if (existing == null || (!existing.isError() && issue.isError())) {
+        issueMap.put(issue.dedupKey(), issue);
+      }
+      if (issue.isError()) {
+        errorRows.add(issue.row());
       }
     }
+  }
 
-    log.info("Imported {} exam details for courseId={}", entities.size(), courseId);
-    return entities.size();
+  /** 对真正准备入库的题干与选项文本执行内容质量规则（方案 §8.4 / §14.4.2）。 */
+  private void inspectRowContent(String sheet, int rowIndex, String stem, List<OptionCell> options,
+      Map<String, QuestionImportIssue> issueMap, Set<Integer> errorRows) {
+    List<QuestionContentQualityWarning> stemWarnings =
+        QuestionContentQualityInspector.inspect(stem, "stem", null);
+    collectWarnings(sheet, rowIndex, 0, "题干", stemWarnings, issueMap, errorRows);
+    for (OptionCell option : options) {
+      List<QuestionContentQualityWarning> warnings =
+          QuestionContentQualityInspector.inspect(option.text(), "option", null);
+      collectWarnings(sheet, rowIndex, option.column(), "选项", warnings, issueMap, errorRows);
+    }
+  }
+
+  private void collectWarnings(String sheet, int rowIndex, int column, String field,
+      List<QuestionContentQualityWarning> warnings, Map<String, QuestionImportIssue> issueMap,
+      Set<Integer> errorRows) {
+    for (QuestionContentQualityWarning warning : warnings) {
+      boolean hard = warning.isInvalid();
+      QuestionImportIssue issue = new QuestionImportIssue(
+          hard ? QuestionImportIssue.SEVERITY_ERROR : QuestionImportIssue.SEVERITY_WARNING,
+          warning.ruleCode(), sheet, rowIndex + 1, column, field, warning.matchedText(),
+          warning.matchedText(), warning.message());
+      QuestionImportIssue existing = issueMap.get(issue.dedupKey());
+      if (existing == null || (!existing.isError() && issue.isError())) {
+        issueMap.put(issue.dedupKey(), issue);
+      }
+      if (hard) {
+        errorRows.add(rowIndex + 1);
+      }
+    }
+  }
+
+  private String hardErrorMessage(List<QuestionImportIssue> errors) {
+    String positions = errors.stream().limit(10)
+        .map(e -> e.sheet() + " 第" + e.row() + "行第" + e.column() + "列(" + e.field() + ") "
+            + e.message())
+        .collect(Collectors.joining("；"));
+    return "文件存在 " + errors.size() + " 处格式错误，未导入任何数据，请修正后重试：" + positions
+        + (errors.size() > 10 ? "……" : "");
+  }
+
+  private List<QuestionImportIssue> limitIssues(List<QuestionImportIssue> issues) {
+    return issues.size() <= MAX_REPORT_ISSUES ? issues
+        : List.copyOf(issues.subList(0, MAX_REPORT_ISSUES));
+  }
+
+  private byte[] readFileBytes(MultipartFile file) {
+    if (file == null || file.isEmpty()) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST, "请选择要上传的文件");
+    }
+    try {
+      return file.getBytes();
+    } catch (IOException e) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST, "读取上传文件失败，请重试");
+    }
+  }
+
+  private String sha256Hex(byte[] bytes) {
+    try {
+      var digest = java.security.MessageDigest.getInstance("SHA-256");
+      return java.util.HexFormat.of().formatHex(digest.digest(bytes));
+    } catch (java.security.NoSuchAlgorithmException e) {
+      throw new IllegalStateException("SHA-256 不可用", e);
+    }
+  }
+
+  private record ImportScan(List<ExamExamDetailEntity> entities, List<QuestionImportIssue> errors,
+      List<QuestionImportIssue> warnings, int totalRows, int validRows) {
+    int hardErrorCount() {
+      return errors.size();
+    }
+
+    int warningCount() {
+      return warnings.size();
+    }
+  }
+
+  /** 选项文本及其 Excel 列号（1-based），用于内容警告定位。 */
+  private record OptionCell(int column, String text) {
   }
 
   // ── Export to Excel (命题模板) ──
@@ -1110,11 +1296,14 @@ public class ExamExamDetailApplicationService {
   }
 
   /** 命题模板选项行：解析 G..N 的"内容、分值"单元格，空单元格保留槽位以对齐标记列 */
-  private PropositionOption[] readPropositionOptions(Row row) {
+  private PropositionOption[] readPropositionOptions(Row row, ExcelCellTextReader reader,
+      String sheet, int rowIndex, Map<String, QuestionImportIssue> issueMap, Set<Integer> errorRows) {
     PropositionOption[] options = new PropositionOption[PROPOSITION_MAX_CHOICE_OPTIONS];
     if (row == null) return options;
     for (int k = 0; k < PROPOSITION_MAX_CHOICE_OPTIONS; k++) {
-      String text = getCellString(row.getCell(PROPOSITION_ANSWER_START_COL + k));
+      int column = PROPOSITION_ANSWER_START_COL + k;
+      String text = readCellText(reader, row, column, sheet, rowIndex, "选项" + (char) ('A' + k),
+          issueMap, errorRows);
       if (!StringUtils.hasText(text)) continue;
       Matcher m = PROPOSITION_OPTION_SCORE_PATTERN.matcher(text);
       if (m.matches()) {
@@ -1127,11 +1316,13 @@ public class ExamExamDetailApplicationService {
   }
 
   /** 命题模板标记行：正确选项列写"是" */
-  private boolean[] readPropositionMarkers(Row markerRow) {
+  private boolean[] readPropositionMarkers(Row markerRow, ExcelCellTextReader reader, String sheet,
+      int rowIndex, Map<String, QuestionImportIssue> issueMap, Set<Integer> errorRows) {
     boolean[] marks = new boolean[PROPOSITION_MAX_CHOICE_OPTIONS];
     if (markerRow == null) return marks;
     for (int k = 0; k < PROPOSITION_MAX_CHOICE_OPTIONS; k++) {
-      String v = getCellString(markerRow.getCell(PROPOSITION_ANSWER_START_COL + k));
+      String v = readCellText(reader, markerRow, PROPOSITION_ANSWER_START_COL + k, sheet, rowIndex,
+          "正确标记", issueMap, errorRows);
       marks[k] = "是".equals(v) || "√".equals(v) || "Y".equalsIgnoreCase(v);
     }
     return marks;
@@ -1196,10 +1387,23 @@ public class ExamExamDetailApplicationService {
   private record PropositionOption(String content, BigDecimal score) {
   }
 
+  /**
+   * 表头/公式等次要位置的兼容读取：普通数值一律 plain decimal，禁止 (int) 截断
+   * （主链路数值读取走 ExcelCellTextReader 并记录行列级问题）。
+   */
   private String getCellString(Cell cell) {
     if (cell == null) return "";
+    if (cell.getCellType() == CellType.FORMULA) {
+      CellType cached = cell.getCachedFormulaResultType();
+      if (cached == CellType.STRING) return cell.getStringCellValue();
+      if (cached == CellType.NUMERIC) {
+        return BigDecimal.valueOf(cell.getNumericCellValue()).stripTrailingZeros().toPlainString();
+      }
+      if (cached == CellType.BOOLEAN) return Boolean.toString(cell.getBooleanCellValue());
+      return "";
+    }
     if (cell.getCellType() == CellType.NUMERIC) {
-      return String.valueOf((int) cell.getNumericCellValue());
+      return BigDecimal.valueOf(cell.getNumericCellValue()).stripTrailingZeros().toPlainString();
     }
     if (cell.getCellType() == CellType.BOOLEAN) {
       return String.valueOf(cell.getBooleanCellValue());

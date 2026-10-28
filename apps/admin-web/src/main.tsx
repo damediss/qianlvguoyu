@@ -20,6 +20,8 @@ import './styles/global.css';
 const KnowledgePage = React.lazy(() => import('./pages/knowledge/KnowledgePage').then((m) => ({ default: m.KnowledgePage })));
 const ResourceCenterPage = React.lazy(() => import('./pages/question_bank/ResourceCenterPage'));
 const KnowledgeFixPage = React.lazy(() => import('./pages/question_bank/KnowledgeFixPage'));
+// 课程管理 > 支持保障 > 资源管理 > 客观题答案AI检查（方案 §4.1）
+const ObjectiveAnswerCheckPage = React.lazy(() => import('./pages/question_bank/ObjectiveAnswerCheckPage'));
 const XiMuBiaoGuanLiPage = React.lazy(() => import('./pages/zhi_neng_ke_cheng_cai_liao_guan_li/XiMuBiaoGuanLiPage'));
 const TheoryQuestionGenPage = React.lazy(() => import('./pages/zhi_neng_ke_cheng_cai_liao_guan_li/TheoryQuestionGenPage'));
 const SkillQuestionGenPage = React.lazy(() => import('./pages/zhi_neng_ke_cheng_cai_liao_guan_li/SkillQuestionGenPage'));
@@ -170,6 +172,7 @@ const pageMap: Record<string, React.ReactNode> = {
   // 课程管理 > 资源管理（知识归属修正）
   question_resource: <ResourceCenterPage />,
   knowledge_fix: <KnowledgeFixPage />,
+  objective_answer_check: <ObjectiveAnswerCheckPage />,
   xi_mu_biao_guan_li: <XiMuBiaoGuanLiPage />,
   // 智能课程材料管理 > 理论知识试题生成管理
   theory_question_gen: <TheoryQuestionGenPage />,

@@ -149,7 +149,7 @@ class ExamExamDetailImportPropositionTest {
         new String[] {"A-B-A-004", "3", "3", "题干丁____。", "易", "1", "填空答案"}));
 
     doReturn(1).when(mapper).insert(any(ExamExamDetailEntity.class));
-    int count = service.importExamDetails(file, 205, 0);
+    int count = service.importExamDetails(file, 205, 0, null).importedCount();
     assertEquals(4, count);
 
     ArgumentCaptor<ExamExamDetailEntity> captor = ArgumentCaptor.forClass(ExamExamDetailEntity.class);
@@ -210,7 +210,7 @@ class ExamExamDetailImportPropositionTest {
     doReturn(List.of(node)).when(knowledgeMapper).selectList(any());
     doReturn(1).when(mapper).insert(any(ExamExamDetailEntity.class));
 
-    service.importExamDetails(file, 205, 0);
+    service.importExamDetails(file, 205, 0, null);
 
     ArgumentCaptor<ExamExamDetailEntity> captor = ArgumentCaptor.forClass(ExamExamDetailEntity.class);
     org.mockito.Mockito.verify(mapper).insert(captor.capture());
@@ -224,7 +224,7 @@ class ExamExamDetailImportPropositionTest {
         new String[] {"A-B-A-001", "3", "1", "题干己。（　　）", "易", "0.5", "正确、1", "错误、0"}));
 
     doReturn(1).when(mapper).insert(any(ExamExamDetailEntity.class));
-    int count = service.importExamDetails(file, 205, 0);
+    int count = service.importExamDetails(file, 205, 0, null).importedCount();
     assertEquals(1, count);
 
     ArgumentCaptor<ExamExamDetailEntity> captor = ArgumentCaptor.forClass(ExamExamDetailEntity.class);
@@ -238,7 +238,7 @@ class ExamExamDetailImportPropositionTest {
         new String[] {"单选题", "题干庚（　　）。", "选项1", "选项2", "A", "简单"}});
 
     doReturn(1).when(mapper).insert(any(ExamExamDetailEntity.class));
-    int count = service.importExamDetails(file, 205, 0);
+    int count = service.importExamDetails(file, 205, 0, null).importedCount();
     assertEquals(1, count);
 
     ArgumentCaptor<ExamExamDetailEntity> captor = ArgumentCaptor.forClass(ExamExamDetailEntity.class);
@@ -261,7 +261,7 @@ class ExamExamDetailImportPropositionTest {
         new String[] {null, null, null, null, null, null, "是"}));
 
     doReturn(1).when(mapper).insert(any(ExamExamDetailEntity.class));
-    int count = service.importExamDetails(file, 205, 0);
+    int count = service.importExamDetails(file, 205, 0, null).importedCount();
     assertEquals(1, count);
 
     ArgumentCaptor<ExamExamDetailEntity> captor = ArgumentCaptor.forClass(ExamExamDetailEntity.class);

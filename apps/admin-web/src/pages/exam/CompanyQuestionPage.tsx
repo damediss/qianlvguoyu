@@ -291,11 +291,30 @@ export function CompanyQuestionPage() {
 
     setImportLoading(true);
     try {
-      const count = await importCompanyQuestions(formData);
-      message.success(`成功导入 ${count} 道试题`);
+      const result = await importCompanyQuestions(formData);
+      message.success(
+        `成功导入 ${result.importedCount} 道试题`
+          + (result.warningCount > 0 ? `，另有 ${result.warningCount} 条格式提醒` : ''),
+      );
       setImportModalOpen(false);
       setImportFileList([]);
       queryClient.invalidateQueries({ queryKey: ['companyQuestions'] });
+      if (result.warningCount > 0) {
+        Modal.info({
+          title: `格式提醒（${result.warningCount} 条）`,
+          width: 640,
+          content: (
+            <div>
+              {result.warnings.slice(0, 20).map((issue, index) => (
+                <div key={`${issue.row}-${issue.column}-${index}`} style={{ marginTop: 6 }}>
+                  第 {issue.row} 行第 {issue.column} 列（{issue.field}）：{issue.message}
+                </div>
+              ))}
+              {result.truncated && <div style={{ marginTop: 8 }}>仅展示前 20 条。</div>}
+            </div>
+          ),
+        });
+      }
     } catch (e: any) {
       message.error(e?.message || '导入失败');
     } finally {

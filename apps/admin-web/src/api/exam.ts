@@ -1,5 +1,6 @@
 import { apiClient, unwrap } from './client';
 import type { PageResponse } from '../types/api';
+import type { QuestionImportResult, QuestionImportValidateResult } from '../types/questionImport';
 import type {
   FaqBatchVO,
   FaqConversionVO,
@@ -318,9 +319,16 @@ export function batchDeleteExamDetails(ids: number[]) {
   return unwrap<number>(apiClient.post('/exam/exam-details/batch-delete', ids));
 }
 
-/** 导入试题: FormData 包含 file + courseId + source */
+/** 导入前只读预检：不写库、不调 AI；返回行列级硬错误与软提醒。 */
+export function validateExamDetailsImport(formData: FormData) {
+  return unwrap<QuestionImportValidateResult>(
+    apiClient.post('/exam/exam-details/import/validate', formData),
+  );
+}
+
+/** 导入试题: FormData 包含 file + courseId + source + validationFileSha256 */
 export function importExamDetails(formData: FormData) {
-  return unwrap<number>(apiClient.post('/exam/exam-details/import', formData));
+  return unwrap<QuestionImportResult>(apiClient.post('/exam/exam-details/import', formData));
 }
 
 /** 按题型配额抽题导出参数:single/multi/judge 为各题型配额,source 为题库来源(默认 0=内部) */
@@ -378,7 +386,7 @@ export function batchDeleteCompanyQuestions(ids: number[]) {
 
 /** 导入公司试题: FormData 包含 file + orgId + orgName + source */
 export function importCompanyQuestions(formData: FormData) {
-  return unwrap<number>(apiClient.post('/exam/company-questions/import', formData));
+  return unwrap<QuestionImportResult>(apiClient.post('/exam/company-questions/import', formData));
 }
 
 /** 导出公司试题:返回 blob 流,orgId 为空时导出全部公司试题 */

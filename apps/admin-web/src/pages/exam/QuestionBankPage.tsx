@@ -9,8 +9,10 @@ import {
   InboxOutlined,
 } from '@ant-design/icons';
 import {
+  Alert,
   Badge,
   Button,
+  Checkbox,
   Card,
   Form,
   Input,
@@ -40,6 +42,7 @@ import {
   deleteExamDetail,
   batchDeleteExamDetails,
   importExamDetails,
+  validateExamDetailsImport,
   exportExamDetails,
 } from '../../api/exam';
 import { parseContentDispositionFilename } from '../../utils/download';
@@ -60,6 +63,7 @@ import {
   CHECK_STATUS_MAP,
 } from '../../types/exam';
 import { PathContextBar } from '../../components/ContextBar/PathContextBar';
+import QuestionImportModal from './QuestionImportModal';
 import { BatchActionBar } from '../../components/BatchActionBar/BatchActionBar';
 
 const { Text } = Typography;
@@ -339,8 +343,6 @@ export function QuestionBankPage() {
   const [sampleJudge, setSampleJudge] = useState<number | null>(null);
   const [sampleSource, setSampleSource] = useState(0);
   const [importSource, setImportSource] = useState<number>(0); // 0=内部, 1=外部, 3=赛前复习
-  const [importFileList, setImportFileList] = useState<any[]>([]);
-  const [importLoading, setImportLoading] = useState(false);
   const [exportLoading, setExportLoading] = useState(false);
 
   // ── Data loading: 单次拉取完整 6 级聚合树 ──
@@ -493,36 +495,6 @@ export function QuestionBankPage() {
       okButtonProps: { danger: true },
       onOk: () => batchDeleteMut.mutate(ids),
     });
-  };
-
-  // ── Import handler ──
-  const handleImport = async () => {
-    if (!selectedCourseId) {
-      message.warning('请先选择科目');
-      return;
-    }
-    if (importFileList.length === 0) {
-      message.warning('请选择要导入的文件');
-      return;
-    }
-    const formData = new FormData();
-    formData.append('file', importFileList[0].originFileObj as Blob);
-    formData.append('courseId', String(selectedCourseId));
-    formData.append('source', String(importSource));
-
-    setImportLoading(true);
-    try {
-      const count = await importExamDetails(formData);
-      message.success(`成功导入 ${count} 道试题`);
-      setImportModalOpen(false);
-      setImportFileList([]);
-      queryClient.invalidateQueries({ queryKey: ['examDetails'] });
-      queryClient.invalidateQueries({ queryKey: ['exam', 'question-bank-tree'] });
-    } catch (e: any) {
-      message.error(e?.message || '导入失败');
-    } finally {
-      setImportLoading(false);
-    }
   };
 
   // ── Export handlers ──
@@ -997,8 +969,7 @@ export function QuestionBankPage() {
                     return;
                   }
                   setImportSource(0);
-                  setImportFileList([]);
-                  setImportModalOpen(true);
+                              setImportModalOpen(true);
                 }}
               >
                 导入内部试题
@@ -1011,8 +982,7 @@ export function QuestionBankPage() {
                     return;
                   }
                   setImportSource(1);
-                  setImportFileList([]);
-                  setImportModalOpen(true);
+                              setImportModalOpen(true);
                 }}
               >
                 导入外部试题
@@ -1025,8 +995,7 @@ export function QuestionBankPage() {
                     return;
                   }
                   setImportSource(3);
-                  setImportFileList([]);
-                  setImportModalOpen(true);
+                              setImportModalOpen(true);
                 }}
               >
                 导入赛前复习试题
@@ -1155,38 +1124,13 @@ export function QuestionBankPage() {
         )}
       </Modal>
 
-      {/* ── Import Modal ── */}
-      <Modal
-        title={`导入${EXAM_SOURCE_MAP[importSource] ?? ''}试题`}
+      <QuestionImportModal
         open={importModalOpen}
-        onOk={handleImport}
-        onCancel={() => {
-          setImportModalOpen(false);
-          setImportFileList([]);
-        }}
-        confirmLoading={importLoading}
-        okText="开始导入"
-        destroyOnHidden
-      >
-        <Upload.Dragger
-          accept=".xls,.xlsx"
-          maxCount={1}
-          fileList={importFileList}
-          beforeUpload={() => false}
-          onChange={({ fileList }) => setImportFileList(fileList)}
-        >
-          <p style={{ fontSize: 40, color: '#1677ff', marginBottom: 8 }}>
-            <InboxOutlined />
-          </p>
-          <p style={{ fontSize: 14 }}>点击或将文件拖拽到这里上传</p>
-          <p style={{ color: '#999', fontSize: 12 }}>支持 .xls / .xlsx 格式</p>
-        </Upload.Dragger>
-        <div style={{ marginTop: 12 }}>
-          <a href="/templates/exam-import-template.xlsx" download="试题导入模板-命题.xlsx">
-            <DownloadOutlined /> 下载导入模板
-          </a>
-        </div>
-      </Modal>
+        courseId={selectedCourseId}
+        source={importSource}
+        sourceLabel={EXAM_SOURCE_MAP[importSource]}
+        onCancel={() => setImportModalOpen(false)}
+      />
     </div>
   );
 }

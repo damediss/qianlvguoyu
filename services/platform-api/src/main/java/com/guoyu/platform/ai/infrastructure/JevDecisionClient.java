@@ -3,9 +3,15 @@ package com.guoyu.platform.ai.infrastructure;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.guoyu.platform.ai.dto.JevBatchDecisionResult;
 import com.guoyu.platform.ai.dto.JevDecisionResult;
+import com.guoyu.platform.ai.dto.JevQuestion;
+import com.guoyu.platform.ai.dto.JevSubDecision;
+import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import lombok.extern.slf4j.Slf4j;
@@ -131,6 +137,177 @@ public class JevDecisionClient {
         + (lastFailure == null ? "未知" : lastFailure.getMessage()), lastFailure);
   }
 
+  /**
+   * 多子问题 choice 判定（方案 §9）。questions 的 key 原样作为响应 answers 的 key。
+   *
+   * <p>响应零信任校验：缺子答案、choice 越界、confidence 非法、概率 key 集不一致、概率和异常、
+   * choice 不在最高概率集合，均整批失败，不使用部分结果。
+   */
+  public JevBatchDecisionResult decideBatch(String baseUrl, String apiKey, String model,
+      String state, Map<String, JevQuestion> questions, int readTimeoutSeconds) {
+    if (questions == null || questions.isEmpty()) {
+      throw new JevValidationException("questions 不能为空");
+    }
+    ObjectNode body = objectMapper.createObjectNode();
+    body.put("model", model);
+    body.put("state", state == null ? "" : state);
+    ObjectNode questionsNode = body.putObject("questions");
+    for (Map.Entry<String, JevQuestion> entry : questions.entrySet()) {
+      JevQuestion question = entry.getValue();
+      if (question == null || question.criteria() == null || question.criteria().size() < 2) {
+        throw new JevValidationException(
+            "子问题 " + entry.getKey() + " 的 criteria 至少 2 个选项");
+      }
+      if (question.criteria().size() > 255) {
+        throw new JevValidationException("子问题 " + entry.getKey() + " 的 criteria 超过 255 项");
+      }
+      ObjectNode node = questionsNode.putObject(entry.getKey());
+      node.put("type", "choice");
+      node.put("instructions", question.instructions() == null ? "" : question.instructions());
+      ObjectNode criteriaNode = node.putObject("criteria");
+      question.criteria().forEach(criteriaNode::put);
+    }
+    String requestBody = body.toString();
+    RestClient client = clientFor(readTimeoutSeconds);
+    long t0 = System.currentTimeMillis();
+    RuntimeException lastFailure = null;
+    for (int attempt = 0; attempt <= Math.max(0, maxRetries); attempt++) {
+      if (attempt > 0) {
+        sleepBeforeRetry(attempt, lastFailure);
+      }
+      try {
+        String resp = client.post()
+            .uri(baseUrl + "/typesafe/v1/systemone")
+            .header(HttpHeaders.AUTHORIZATION, "Bearer " + apiKey)
+            .contentType(MediaType.APPLICATION_JSON)
+            .body(requestBody)
+            .retrieve()
+            .body(String.class);
+        JsonNode root = objectMapper.readTree(resp == null ? "" : resp);
+        return parseBatch(root, questions, requestBody, (int) (System.currentTimeMillis() - t0));
+      } catch (RestClientResponseException e) {
+        int status = e.getStatusCode().value();
+        String responseBody = e.getResponseBodyAsString();
+        if (status == 401) {
+          throw new JevUnauthorizedException("Jev 401 鉴权失败（API 密钥无效）: " + tail(responseBody));
+        }
+        if (status == 422) {
+          if (responseBody != null && (responseBody.contains("token_budget")
+              || responseBody.contains("budget_exceeded") || responseBody.contains("input_tokens"))) {
+            throw new JevBudgetExceededException("内容超出模型输入上限: " + tail(responseBody));
+          }
+          throw new JevValidationException("Jev 422 请求校验失败: " + tail(responseBody));
+        }
+        if (status == 429 || status == 529 || status >= 500) {
+          lastFailure = e;
+          log.warn("[Jev] HTTP {} 第 {} 次失败，准备重试: {}", status, attempt + 1, tail(responseBody));
+          continue;
+        }
+        throw new JevServerException("Jev HTTP " + status + ": " + tail(responseBody), e);
+      } catch (RestClientException e) {
+        lastFailure = e;
+        log.warn("[Jev] 网络/超时失败（第 {} 次）: {}", attempt + 1, e.getMessage());
+      } catch (com.fasterxml.jackson.core.JsonProcessingException e) {
+        lastFailure = new JevServerException("Jev 响应非法 JSON: " + e.getMessage(), e);
+        log.warn("[Jev] 响应非法 JSON（第 {} 次）: {}", attempt + 1, e.getMessage());
+      }
+    }
+    throw new JevServerException("Jev 调用重试超限（" + (maxRetries + 1) + " 次）: "
+        + (lastFailure == null ? "未知" : lastFailure.getMessage()), lastFailure);
+  }
+
+  private JevBatchDecisionResult parseBatch(JsonNode root, Map<String, JevQuestion> questions,
+      String requestBody, int durationMs) {
+    JsonNode answers = root.path("answers");
+    if (!answers.isObject()) {
+      throw new JevParseException("Jev 响应缺少 answers 对象");
+    }
+    Map<String, JevSubDecision> parsed = new LinkedHashMap<>();
+    for (Map.Entry<String, JevQuestion> entry : questions.entrySet()) {
+      String key = entry.getKey();
+      JsonNode answer = answers.path(key);
+      if (!answer.isObject()) {
+        throw new JevParseException("Jev 响应缺少子答案 " + key);
+      }
+      String choice = answer.path("choice").asText("");
+      if (choice.isBlank()) {
+        throw new JevParseException("Jev 子答案 " + key + " 的 choice 为空");
+      }
+      Map<String, String> criteria = entry.getValue().criteria();
+      if (!criteria.containsKey(choice)) {
+        throw new JevParseException("Jev 子答案 " + key + " 的 choice 越界: " + choice);
+      }
+      JsonNode confNode = answer.path("confidence");
+      if (!confNode.isNumber()) {
+        throw new JevParseException("Jev 子答案 " + key + " 的 confidence 非数值");
+      }
+      double confidence = confNode.asDouble();
+      if (!Double.isFinite(confidence) || confidence < 0 || confidence > 1) {
+        throw new JevParseException("Jev 子答案 " + key + " 的 confidence 越界: " + confidence);
+      }
+      JsonNode probsNode = answer.path("probabilities");
+      if (!probsNode.isObject() || probsNode.isEmpty()) {
+        throw new JevParseException("Jev 子答案 " + key + " 的 probabilities 缺失");
+      }
+      Map<String, Double> probabilities = new LinkedHashMap<>();
+      Iterator<Map.Entry<String, JsonNode>> it = probsNode.fields();
+      while (it.hasNext()) {
+        Map.Entry<String, JsonNode> en = it.next();
+        if (!en.getValue().isNumber()) {
+          throw new JevParseException("Jev 子答案 " + key + " 的概率非数值: " + en.getKey());
+        }
+        double value = en.getValue().asDouble();
+        if (!Double.isFinite(value) || value < 0 || value > 1) {
+          throw new JevParseException("Jev 子答案 " + key + " 的概率越界: " + en.getKey());
+        }
+        probabilities.put(en.getKey(), value);
+      }
+      if (!probabilities.keySet().equals(criteria.keySet())) {
+        throw new JevParseException("Jev 子答案 " + key + " 的概率 key 集与 criteria 不一致");
+      }
+      double sum = probabilities.values().stream().mapToDouble(Double::doubleValue).sum();
+      if (Math.abs(sum - 1.0) > 0.01) {
+        throw new JevParseException("Jev 子答案 " + key + " 的概率和异常: " + sum);
+      }
+      List<Map.Entry<String, Double>> sorted = new ArrayList<>(probabilities.entrySet());
+      sorted.sort(Map.Entry.<String, Double>comparingByValue(Comparator.reverseOrder()));
+      double top1 = sorted.get(0).getValue();
+      double top2 = sorted.size() > 1 ? sorted.get(1).getValue() : 0.0;
+      double choiceProb = probabilities.get(choice);
+      if (choiceProb + 1e-9 < top1) {
+        throw new JevParseException(
+            "Jev 子答案 " + key + " 的 choice 不在最高概率集合（choice=" + choice + "）");
+      }
+      double margin = Math.max(0.0, choiceProb - top2);
+      parsed.put(key, new JevSubDecision(choice, confidence, probabilities, margin, top1, top2));
+    }
+
+    JsonNode usage = root.path("usage");
+    long inputTokens;
+    long outputTokens;
+    boolean usageEstimated = false;
+    JsonNode inputNode = usage.path("input_tokens");
+    JsonNode outputNode = usage.path("output_tokens");
+    if (inputNode.isNumber() && outputNode.isNumber() && inputNode.asDouble() >= 0
+        && outputNode.asDouble() >= 0 && inputNode.asDouble() == Math.rint(inputNode.asDouble())
+        && outputNode.asDouble() == Math.rint(outputNode.asDouble())) {
+      inputTokens = inputNode.asLong();
+      outputTokens = outputNode.asLong();
+    } else if (!inputNode.isMissingNode() || !outputNode.isMissingNode()) {
+      throw new JevParseException("Jev usage token 非法");
+    } else {
+      usageEstimated = true;
+      inputTokens = Math.max(1, (int) Math.ceil(requestBody.length() / 3.0));
+      outputTokens = 0;
+      log.warn("[Jev] 响应缺 usage，按完整请求体估算 inputTokens={}（estimated）", inputTokens);
+    }
+    String responseModel = root.path("model").isTextual() ? root.path("model").asText() : null;
+    String confidenceDefinition = root.path("metadata").path("confidence_definition").asText(null);
+    String requestId = root.path("request_id").isTextual() ? root.path("request_id").asText() : null;
+    return new JevBatchDecisionResult(parsed, inputTokens, outputTokens, usageEstimated, responseModel,
+        confidenceDefinition, requestId, durationMs);
+  }
+
   /** 解析响应（零信任，规范 #5）：answers.key.{choice,confidence,probabilities} + usage 必需；metadata 容缺失 */
   private JevDecisionResult parseResult(JsonNode root, String questionKey, String state,
       int durationMs) {
@@ -196,6 +373,8 @@ public class JevDecisionClient {
           org.apache.hc.client5.http.impl.classic.HttpClients.custom()
               .setConnectionManager(connectionManager)
               .setDefaultRequestConfig(requestConfig)
+              // 禁用内容压缩：避免 Brotli/压缩响应单字节读取缺陷（方案 §9.4）
+              .disableContentCompression()
               .build();
       return RestClient.builder()
           .requestFactory(new HttpComponentsClientHttpRequestFactory(httpClient))

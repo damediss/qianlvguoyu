@@ -179,6 +179,7 @@ class CompanyQuestionResolveLimitTest {
     org.mockito.Mockito.doAnswer(inv -> new ByteArrayInputStream(bytes))
         .when(mock).getInputStream();
     when(mock.isEmpty()).thenReturn(false);
+    when(mock.getBytes()).thenReturn(bytes);
     return mock;
   }
 }
