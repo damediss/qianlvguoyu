@@ -10,8 +10,16 @@ import com.guoyu.platform.exam.service.QuestionResolveInputFactory.QuestionPromp
 import com.guoyu.platform.exam.service.ResolveMarkdownSanitizer.SanitizeResult;
 import org.junit.jupiter.api.Test;
 
-/** 解析生成质量门 S1~S14（《试题解析Markdown表格化_一期实施方案》§5.7/§9）。 */
+/** 解析生成质量门 S1~S14（《试题解析Markdown表格化_一期实施方案》§5.7/§9）+ v2.2 存疑分支（§10.1）。 */
 class ResolveMarkdownSanitizerTest {
+
+  /** v2.2 存疑样例：给定答案 A，原理应为 C，理由 ≥30 字。 */
+  private static String validDisputed() {
+    return "【考点】电压负反馈\n"
+        + "【存疑】给定答案：A。按原理应为：C。电压负反馈取端电压作反馈信号，"
+        + "电网电压波动能被抑制，所以对电网电压变化有补偿能力。"
+        + "它测不到电枢回路电阻压降，负载增大时转速降补不回来，对负载变化无补偿能力。";
+  }
 
   private static QuestionPromptInput singleInput() {
     return new QuestionPromptInput(
@@ -326,6 +334,130 @@ class ResolveMarkdownSanitizerTest {
     assertFalse(ResolveMarkdownSanitizer.isOfficialOnlyKnowledge("电气安全常识"));
     assertFalse(ResolveMarkdownSanitizer.isOfficialOnlyKnowledge(null));
     assertFalse(ResolveMarkdownSanitizer.isOfficialOnlyKnowledge(""));
+  }
+
+  // ──────────────────────── v2.2 存疑分支 ────────────────────────
+
+  @Test
+  void v22StandardDisputedPassesAndKeepsTwoSections() {
+    SanitizeResult out = ResolveMarkdownSanitizer.sanitize(validDisputed(), singleInput());
+    assertTrue(out.disputed());
+    assertNull(out.rejectedReason());
+    assertFalse(out.tableDropped());
+    assertTrue(out.text().startsWith("【考点】电压负反馈"));
+    assertTrue(out.text().contains("【存疑】给定答案：A。按原理应为：C。"));
+    assertFalse(out.text().contains("【正确】"));
+  }
+
+  @Test
+  void v22DisputedMissingExpectedMarkRejected() {
+    String text = "【考点】电压负反馈\n"
+        + "【存疑】给定答案：A。电压负反馈取端电压作反馈信号，负载增大时转速降补不回来，"
+        + "所以对负载变化没有补偿能力，这一点必须说清楚。";
+    assertEquals("dispute_format_invalid",
+        ResolveMarkdownSanitizer.sanitize(text, singleInput()).rejectedReason());
+  }
+
+  @Test
+  void v22DisputedTooShortRejected() {
+    String text = "【考点】电压负反馈\n【存疑】给定答案：A。按原理应为：C。";
+    assertEquals("content_too_short",
+        ResolveMarkdownSanitizer.sanitize(text, singleInput()).rejectedReason());
+  }
+
+  @Test
+  void v22SubjectiveDisputeRejectedAsMissingCorrectSection() {
+    String text = "【考点】作业安全\n"
+        + "【存疑】给定答案：验电挂牌。按原理应为：先验电再挂牌。两者顺序不能颠倒，"
+        + "现场作业必须先验电确认无电，再挂牌防止误送电，否则存在触电风险。";
+    assertEquals("missing_section_正确",
+        ResolveMarkdownSanitizer.sanitize(text, subjectiveInput()).rejectedReason());
+  }
+
+  @Test
+  void v22NormalFourRowStillNotDisputed() {
+    SanitizeResult out = ResolveMarkdownSanitizer.sanitize(validSingle(), singleInput());
+    assertNull(out.rejectedReason());
+    assertFalse(out.disputed());
+    assertFalse(out.tableDropped());
+  }
+
+  @Test
+  void v22ForbiddenTautologyPhrasesRejected() {
+    String withGivenAnswerCliche = validSingle().replace(
+        "【干扰】选 B 错在把市电当安全电压，220 伏远超安全限值。",
+        "【干扰】B 项说两者都有补偿能力。这与题干给出的正确答案不一致。");
+    assertEquals("forbidden_answer_tautology",
+        ResolveMarkdownSanitizer.sanitize(withGivenAnswerCliche, singleInput()).rejectedReason());
+
+    String withBackwardInference = validSingle().replace(
+        "【干扰】选 B 错在把市电当安全电压，220 伏远超安全限值。",
+        "【干扰】按本题给定的正确答案，B 项不成立。");
+    assertEquals("forbidden_answer_tautology",
+        ResolveMarkdownSanitizer.sanitize(withBackwardInference, singleInput()).rejectedReason());
+  }
+
+  @Test
+  void v22DisputedWithHtmlRejectedBeforeDispatch() {
+    String text = validDisputed().replace("电压负反馈取端电压", "<p>电压负反馈取端电压</p>");
+    assertEquals("forbidden_html",
+        ResolveMarkdownSanitizer.sanitize(text, singleInput()).rejectedReason());
+  }
+
+  @Test
+  void v22DisputedWithIllegalTableDropsTableAndStillPasses() {
+    String text = validDisputed() + "\n| a | b | c | d |\n|---|---|---|---|\n| 1 | 2 | 3 | 4 |";
+    SanitizeResult out = ResolveMarkdownSanitizer.sanitize(text, singleInput());
+    assertNull(out.rejectedReason(), "unexpected reject: " + out.rejectedReason());
+    assertTrue(out.disputed());
+    // 非法表格被整表丢弃（disputed 结果不携带 tableDropped 分量，按方案 §4.1 只以文本为准）
+    assertFalse(out.text().contains("| a | b | c | d |"));
+  }
+
+  @Test
+  void v22DisputedOversizeRejectsWhenUncuttable() {
+    // 【存疑】行本身超预算且无法按行截断 → exceeds_length（S7 同口径）
+    StringBuilder longLine = new StringBuilder("【考点】电压负反馈\n【存疑】给定答案：A。按原理应为：C。");
+    while (longLine.length() < 900) {
+      longLine.append("很长");
+    }
+    SanitizeResult out = ResolveMarkdownSanitizer.sanitize(longLine.toString(), singleInput());
+    assertEquals("exceeds_length", out.rejectedReason());
+  }
+
+  @Test
+  void v22DisputedTruncationMayShortenContentBelowFloor() {
+    // 考点一行撑到 800+ 字：截断从尾部删掉【存疑】第 3 行后内容不足 30 字 → content_too_short
+    String topic = "填".repeat(760);
+    String text = "【考点】" + topic + "\n"
+        + "【存疑】给定答案：A。按原理应为：C。\n"
+        + "只取端电压做反馈信号。\n"
+        + "所以它对负载变化确实没有补偿能力。";
+    assertEquals("content_too_short",
+        ResolveMarkdownSanitizer.sanitize(text, singleInput()).rejectedReason());
+  }
+
+  @Test
+  void v22DisputedWithFullFourRowsKeepsOnlyTwoSections() {
+    String text = validDisputed() + "\n"
+        + "【正确】答案：A。电压负反馈只取端电压，所以两者都补不了。\n"
+        + "【干扰】C 项说明电压负反馈对电网电压有补偿能力，与给定答案不同。\n"
+        + "【记法】电压反馈只管电压。";
+    SanitizeResult out = ResolveMarkdownSanitizer.sanitize(text, singleInput());
+    assertTrue(out.disputed());
+    assertNull(out.rejectedReason());
+    assertTrue(out.text().contains("【存疑】"));
+    assertFalse(out.text().contains("【正确】"));
+    assertFalse(out.text().contains("【干扰】"));
+    assertFalse(out.text().contains("【记法】"));
+  }
+
+  @Test
+  void v22DisputedWrongOrderRejected() {
+    String text = "【存疑】给定答案：A。按原理应为：C。电压负反馈取端电压作反馈信号，"
+        + "负载增大时转速降补不回来。\n【考点】电压负反馈";
+    assertEquals("missing_section_存疑",
+        ResolveMarkdownSanitizer.sanitize(text, singleInput()).rejectedReason());
   }
 
   // ──────────────────────── 完整通过路径 ────────────────────────

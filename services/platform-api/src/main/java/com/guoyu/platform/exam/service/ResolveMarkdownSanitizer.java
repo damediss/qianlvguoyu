@@ -25,14 +25,24 @@ public final class ResolveMarkdownSanitizer {
   private ResolveMarkdownSanitizer() {
   }
 
-  /** 清洗结果；rejectedReason != null 时 text=null；tableDropped 表示有表格被整表丢弃。 */
-  public record SanitizeResult(String text, String rejectedReason, boolean tableDropped) {
+  /**
+   * 清洗结果；rejectedReason != null 时 text=null；tableDropped 表示有表格被整表丢弃。
+   *
+   * <p>v2.2 新增 {@code disputed}：true 表示这是「答案存疑」文本（只有【考点】【存疑】两节），
+   * 由编排方走存疑分支（不写 resolve 列、不写 generated/shadow、不进冷却）；
+   * 此时 {@code rejectedReason==null}，{@code text} 为清洗后的两行文本，供留痕与人工复核。
+   */
+  public record SanitizeResult(String text, String rejectedReason, boolean tableDropped, boolean disputed) {
     static SanitizeResult ok(String text, boolean tableDropped) {
-      return new SanitizeResult(text, null, tableDropped);
+      return new SanitizeResult(text, null, tableDropped, false);
     }
 
     static SanitizeResult reject(String reason) {
-      return new SanitizeResult(null, reason, false);
+      return new SanitizeResult(null, reason, false, false);
+    }
+
+    static SanitizeResult disputed(String text) {
+      return new SanitizeResult(text, null, false, true);
     }
   }
 
@@ -46,6 +56,11 @@ public final class ResolveMarkdownSanitizer {
   private static final Pattern LIST_MARKER = Pattern.compile("^(#{1,6}|[*+-])\\s+");
 
   private static final String[] SECTION_OBJECTIVE = {"【考点】", "【正确】", "【干扰】", "【记法】"};
+  /** v2.2 存疑小节：只有客观题可出现，且只与【考点】组成两行结构。 */
+  private static final String SECTION_DISPUTE = "【存疑】";
+  /** 存疑文本必须同时出现的格式标记（prompt 第 8 条 B），确保质疑针对给定答案而非泛泛发牢骚。 */
+  private static final String DISPUTE_GIVEN_MARK = "给定答案";
+  private static final String DISPUTE_EXPECTED_MARK = "按原理应为";
 
   public static boolean isOfficialOnlyKnowledge(String knowledgeTitle) {
     return isOfficialOnlyKnowledge(knowledgeTitle, null);
@@ -100,6 +115,12 @@ public final class ResolveMarkdownSanitizer {
 
     // S6 其他 markdown 标记（仅 "# "/"* "/"- " 带空格形态，不误伤负数）
     text = stripListMarkers(text);
+
+    // v2.2 存疑分派：客观题含【存疑】→ 走存疑校验（不做 S8/S9 四行校验，存疑本就不含【正确】【干扰】）。
+    // 主观题不进入分派：输出【存疑】会因缺【正确】被 S8 以 missing_section_正确 拒绝，实现「主观不开放存疑」。
+    if (!QuestionTypes.isSubjective(input.normalizedType()) && text.contains(SECTION_DISPUTE)) {
+      return sanitizeDisputed(text, tables, input);
+    }
 
     // S8 必需小节与顺序
     List<Section> sections = parseSections(text);
@@ -203,7 +224,17 @@ public final class ResolveMarkdownSanitizer {
       "deepseek", "glm", "openai", "max_tokens", "sys_dict",
       "exam_exam_detail", "ai_generation_draft", "question_resolve"};
 
-  /** S11：保过/必过/稳过、学员作答表述、HTML、链接、模型/内部术语 → 拒绝。 */
+  /**
+   * S11 附加（v2.2 §4.4）：以答案为理由的同义反复/排除句。
+   * prompt 第 8 条已禁，这里是双保险——即使模型照旧写，也不会进入学员可见文本。
+   */
+  private static final String[] ANSWER_TAUTOLOGY_PHRASES = {
+      "与题干给出的正确答案不一致",
+      "按本题给定的正确答案",
+      "题目给出的答案就是"
+  };
+
+  /** S11：保过/必过/稳过、学员作答表述、HTML、链接、模型/内部术语、答案同义反复 → 拒绝。 */
   static String forbiddenReason(String text) {
     if (text.contains("保过") || text.contains("必过") || text.contains("稳过")) {
       return "forbidden_promise";
@@ -221,6 +252,11 @@ public final class ResolveMarkdownSanitizer {
     for (String term : INTERNAL_TERMS) {
       if (lower.contains(term)) {
         return "forbidden_internal_term";
+      }
+    }
+    for (String phrase : ANSWER_TAUTOLOGY_PHRASES) {
+      if (text.contains(phrase)) {
+        return "forbidden_answer_tautology";
       }
     }
     return null;
@@ -414,6 +450,10 @@ public final class ResolveMarkdownSanitizer {
         return marker;
       }
     }
+    // v2.2：【存疑】也要能被 parseSections 解析，否则存疑内容会被并进上一节而无法校验
+    if (t.startsWith(SECTION_DISPUTE)) {
+      return SECTION_DISPUTE;
+    }
     return null;
   }
 
@@ -535,6 +575,86 @@ public final class ResolveMarkdownSanitizer {
       return "same_as_stem";
     }
     return null;
+  }
+
+  // ──────────────────────── v2.2 存疑分支 ────────────────────────
+
+  /**
+   * 存疑校验（v2.2 §4.3）：只接受【考点】【存疑】两节，不做 S9 答案前缀校验、
+   * 不要求【干扰】【记法】。校验顺序：节序 → 格式标记 → 内容下限 → 截断重验 → 与题干相同。
+   *
+   * <p>输出统一重建为两行：模型若同时给出四行结构，只保留【考点】【存疑】，
+   * 避免【正确】等残留进入留痕与人工复核队列。
+   */
+  private static SanitizeResult sanitizeDisputed(String text, TableExtraction tables,
+      QuestionPromptInput input) {
+    DisputeSections parsed = parseDisputeSections(text);
+    if (parsed.error() != null) {
+      return SanitizeResult.reject(parsed.error());
+    }
+
+    // S7 同口径截断：行号基于分派时的 text（与 tables 一致），截断可能砍掉【存疑】尾部 → 重验
+    String truncated = truncatePlainText(text, tables);
+    if (truncated == null) {
+      return SanitizeResult.reject("exceeds_length");
+    }
+    if (!truncated.equals(text)) {
+      parsed = parseDisputeSections(truncated);
+      if (parsed.error() != null) {
+        return SanitizeResult.reject(parsed.error());
+      }
+    }
+
+    // S12 同口径「与题干完全相同」拒绝
+    String stem = nullToEmpty(input.stem()).replaceAll("\\s", "");
+    String flat = (parsed.topic() + parsed.dispute()).replaceAll("\\s", "");
+    if (!stem.isEmpty() && flat.equals(stem)) {
+      return SanitizeResult.reject("same_as_stem");
+    }
+
+    String rebuilt = "【考点】" + parsed.topic() + "\n" + SECTION_DISPUTE + parsed.dispute();
+    return SanitizeResult.disputed(rebuilt);
+  }
+
+  /** 存疑结构解析产物；error != null 表示校验失败（reason 直接返回编排方）。 */
+  private record DisputeSections(String topic, String dispute, String error) {
+    static DisputeSections reject(String reason) {
+      return new DisputeSections(null, null, reason);
+    }
+  }
+
+  /**
+   * 解析并校验存疑结构：必需【考点】且位于【存疑】之前（顺序颠倒按 cursor 语义报缺【存疑】），
+   * 【存疑】须含「给定答案」与「按原理应为」两个格式标记，去空白后不少于 30 字。
+   */
+  private static DisputeSections parseDisputeSections(String text) {
+    Section topic = null;
+    Section dispute = null;
+    for (Section section : parseSections(text)) {
+      if (topic == null && section.marker().equals("【考点】")) {
+        topic = section;
+      }
+      if (dispute == null && section.marker().equals(SECTION_DISPUTE)) {
+        dispute = section;
+      }
+    }
+    if (dispute == null) {
+      return DisputeSections.reject("missing_section_存疑");
+    }
+    if (topic == null) {
+      return DisputeSections.reject("missing_section_考点");
+    }
+    if (topic.lineIndex() > dispute.lineIndex()) {
+      return DisputeSections.reject("missing_section_存疑");
+    }
+    String disputeText = dispute.content().trim();
+    if (!disputeText.contains(DISPUTE_GIVEN_MARK) || !disputeText.contains(DISPUTE_EXPECTED_MARK)) {
+      return DisputeSections.reject("dispute_format_invalid");
+    }
+    if (disputeText.replaceAll("\\s", "").length() < 30) {
+      return DisputeSections.reject("content_too_short");
+    }
+    return new DisputeSections(topic.content().trim(), disputeText, null);
   }
 
   // ──────────────────────── helpers ────────────────────────

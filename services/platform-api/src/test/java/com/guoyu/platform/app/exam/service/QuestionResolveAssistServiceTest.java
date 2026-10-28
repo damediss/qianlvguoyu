@@ -173,7 +173,8 @@ class QuestionResolveAssistServiceTest {
           .map(Number::longValue).findFirst().orElse(null);
       String status = pairs.values().stream()
           .filter(String.class::isInstance).map(String.class::cast)
-          .filter(s -> s.equals("generated") || s.equals("shadow") || s.equals("rejected"))
+          .filter(s -> s.equals("generated") || s.equals("shadow") || s.equals("rejected")
+              || s.equals("answer_disputed"))
           .findFirst().orElse(null);
       if (sourceId == null || status == null) {
         return null;
@@ -247,7 +248,7 @@ class QuestionResolveAssistServiceTest {
     verify(examDetailMapper, never()).update(any(), any());
     assertEquals(1, drafts.size());
     assertEquals("shadow", drafts.get(0).getStatus());
-    assertTrue(drafts.get(0).getPrompt().startsWith("question_resolve_v2.1#"));
+    assertTrue(drafts.get(0).getPrompt().startsWith("question_resolve_v2.2#"));
 
     Map<String, Object> second = service.ensureResolve(11);
 
@@ -341,7 +342,7 @@ class QuestionResolveAssistServiceTest {
     assertEquals("llm_failed", first.get("reason"));
     assertEquals(1, drafts.size());
     assertEquals("rejected", drafts.get(0).getStatus());
-    assertTrue(drafts.get(0).getPrompt().startsWith("question_resolve_v2.1_rejected#"));
+    assertTrue(drafts.get(0).getPrompt().startsWith("question_resolve_v2.2_rejected#"));
     // 冷却 key 已写入当前 sourceHash
     assertTrue(failStore.containsKey("question_resolve:fail:11"));
 
@@ -492,7 +493,7 @@ class QuestionResolveAssistServiceTest {
     assertTrue(resolveUpdateWrappers.isEmpty());
     assertEquals(1, drafts.size());
     assertEquals("rejected", drafts.get(0).getStatus());
-    assertTrue(drafts.get(0).getPrompt().startsWith("question_resolve_v2.1_rejected#"));
+    assertTrue(drafts.get(0).getPrompt().startsWith("question_resolve_v2.2_rejected#"));
     assertTrue(failStore.containsKey("question_resolve:fail:11"));
     verify(redisTemplate, times(1))
         .execute(any(DefaultRedisScript.class), anyList(), any());
@@ -500,6 +501,133 @@ class QuestionResolveAssistServiceTest {
     Map<String, Object> second = service.ensureResolve(11);
     assertEquals("cooldown", second.get("reason"));
     verify(llmClient, times(1)).chatCompletion(anyString(), anyString(), anyString(), anyString(),
+        anyString(), anyInt(), any(), any(), anyBoolean(), any());
+  }
+
+  // ──────────────────────── v2.2 答案存疑分支 ────────────────────────
+
+  /** 存疑样例：给定答案 A，原理应为 C，理由 ≥30 字。 */
+  private String disputedText() {
+    return "【考点】电压负反馈\n"
+        + "【存疑】给定答案：A。按原理应为：C。电压负反馈取端电压作反馈信号，"
+        + "电网电压波动能被抑制，所以对电网电压变化有补偿能力。"
+        + "它测不到电枢回路电阻压降，负载增大时转速降补不回来，对负载变化无补偿能力。";
+  }
+
+  @Test
+  void disputedOutputWritesAnswerDisputedDraftWithoutResolveOrCooldown() {
+    ExamExamDetailEntity detail = singleDetail();
+    when(examDetailMapper.selectById(11)).thenReturn(detail);
+    dict("question_resolve_generation_enabled", "1");
+    dict("question_resolve_writeback_enabled", "1");
+    when(llmClient.chatCompletion(anyString(), anyString(), anyString(), anyString(), anyString(),
+        anyInt(), any(), any(), anyBoolean(), any())).thenReturn(disputedText());
+
+    Map<String, Object> first = service.ensureResolve(11);
+
+    assertEquals("empty", first.get("source"));
+    assertEquals("answer_disputed", first.get("reason"));
+    assertNull(first.get("resolve"));
+    assertEquals(Boolean.FALSE, first.get("generated"));
+    // 存疑不是生成失败：不写 resolve 列、不写 generated/shadow、不进冷却
+    assertTrue(resolveUpdateWrappers.isEmpty());
+    assertTrue(failStore.isEmpty());
+    assertEquals(1, drafts.size());
+    assertEquals("answer_disputed", drafts.get(0).getStatus());
+    assertTrue(drafts.get(0).getPrompt().startsWith("question_resolve_v2.2#"));
+    assertTrue(drafts.get(0).getResultText().contains("【存疑】"));
+
+    // 第二次：命中存疑缓存，不重复调 LLM
+    Map<String, Object> second = service.ensureResolve(11);
+
+    assertEquals("answer_disputed", second.get("reason"));
+    assertEquals(Boolean.FALSE, second.get("generated"));
+    assertEquals(1, drafts.size());
+    verify(llmClient, times(1)).chatCompletion(anyString(), anyString(), anyString(), anyString(),
+        anyString(), anyInt(), any(), any(), anyBoolean(), any());
+  }
+
+  @Test
+  void disputedCacheHitSkipsRateLimit() {
+    ExamExamDetailEntity detail = singleDetail();
+    when(examDetailMapper.selectById(11)).thenReturn(detail);
+    loginUser(502L);
+    dict("question_resolve_generation_enabled", "1");
+    when(llmClient.chatCompletion(anyString(), anyString(), anyString(), anyString(), anyString(),
+        anyInt(), any(), any(), anyBoolean(), any())).thenReturn(disputedText());
+
+    service.ensureResolveForApp(11);
+    Map<String, Object> second = service.ensureResolveForApp(11);
+
+    assertEquals("answer_disputed", second.get("reason"));
+    // 缓存命中不计限流（限流在步骤 9，命中在步骤 4）
+    verify(rateLimitService, times(1)).acquire(eq(10159L), eq(502L));
+    verify(llmClient, times(1)).chatCompletion(anyString(), anyString(), anyString(), anyString(),
+        anyString(), anyInt(), any(), any(), anyBoolean(), any());
+  }
+
+  @Test
+  void disputeDisabledFallsBackToQualityRejectedAndCooldown() {
+    ExamExamDetailEntity detail = singleDetail();
+    when(examDetailMapper.selectById(11)).thenReturn(detail);
+    dict("question_resolve_generation_enabled", "1");
+    dict("question_resolve_dispute_enabled", "0");
+    when(llmClient.chatCompletion(anyString(), anyString(), anyString(), anyString(), anyString(),
+        anyInt(), any(), any(), anyBoolean(), any())).thenReturn(disputedText());
+
+    Map<String, Object> out = service.ensureResolve(11);
+
+    assertEquals("empty", out.get("source"));
+    assertEquals("quality_rejected", out.get("reason"));
+    assertEquals(1, drafts.size());
+    assertEquals("rejected", drafts.get(0).getStatus());
+    assertTrue(failStore.containsKey("question_resolve:fail:11"));
+  }
+
+  @Test
+  void subjectiveDisputeOutputRejectedByQualityGate() {
+    ExamExamDetailEntity detail = new ExamExamDetailEntity();
+    detail.setId(11);
+    detail.setDeleted(0);
+    detail.setType("essay");
+    detail.setContent("论述停电作业流程");
+    detail.setAnswer("验电；挂牌");
+    when(examDetailMapper.selectById(11)).thenReturn(detail);
+    dict("question_resolve_generation_enabled", "1");
+    when(llmClient.chatCompletion(anyString(), anyString(), anyString(), anyString(), anyString(),
+        anyInt(), any(), any(), anyBoolean(), any())).thenReturn(disputedText());
+
+    Map<String, Object> out = service.ensureResolve(11);
+
+    // 主观题不开放存疑：缺【正确】被 S8 拒绝，走质量门
+    assertEquals("quality_rejected", out.get("reason"));
+    assertEquals(1, drafts.size());
+    assertEquals("rejected", drafts.get(0).getStatus());
+  }
+
+  @Test
+  void oldPromptVersionDraftNotHitAndRegenerates() {
+    ExamExamDetailEntity detail = singleDetail();
+    when(examDetailMapper.selectById(11)).thenReturn(detail);
+    dict("question_resolve_generation_enabled", "1");
+    when(llmClient.chatCompletion(anyString(), anyString(), anyString(), anyString(), anyString(),
+        anyInt(), any(), any(), anyBoolean(), any())).thenReturn(resolveText());
+
+    Map<String, Object> first = service.ensureResolve(11);
+    assertEquals("shadow", first.get("source"));
+    assertEquals(Boolean.TRUE, first.get("generated"));
+
+    // 把已落库 draft 改成 v2.1 前缀（hash 不变）→ v2.2 下不命中，必须重新生成
+    String prompt = drafts.get(0).getPrompt();
+    String hash = prompt.substring(prompt.indexOf('#') + 1);
+    drafts.get(0).setPrompt("question_resolve_v2.1#" + hash);
+
+    Map<String, Object> second = service.ensureResolve(11);
+
+    assertEquals("shadow", second.get("source"));
+    assertEquals(Boolean.TRUE, second.get("generated"));
+    assertEquals(2, drafts.size());
+    verify(llmClient, times(2)).chatCompletion(anyString(), anyString(), anyString(), anyString(),
         anyString(), anyInt(), any(), any(), anyBoolean(), any());
   }
 

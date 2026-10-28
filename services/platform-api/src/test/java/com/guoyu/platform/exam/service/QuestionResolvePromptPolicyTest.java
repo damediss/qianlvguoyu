@@ -55,13 +55,30 @@ class QuestionResolvePromptPolicyTest {
     assertTrue(prompt.contains("【干扰】"));
     assertTrue(prompt.contains("【记法】"));
     assertTrue(prompt.contains("|---|---|"));
-    assertTrue(prompt.contains("列数不超过 3，数据行不超过 4，每格不超过 12 字"));
+    assertTrue(prompt.contains("列数不超过 3，数据行不超过 4"));
+    assertTrue(prompt.contains("12 字；表格数值必须原样来自题干、选项或给定答案"));
     assertTrue(prompt.contains("禁止推算新数据"));
     assertTrue(prompt.contains("保过/必过/稳过"));
-    // v2.1：无依据扩展 / 低价值复述硬约束
-    assertTrue(prompt.contains("禁止只写“符合题意”"));
+    // v2.1 承继：无依据扩展 / 低价值复述硬约束（v2.2 文本在「禁止只写」处折行，分开断言）
+    assertTrue(prompt.contains("禁止只写"));
+    assertTrue(prompt.contains("“符合题意”"));
     assertTrue(prompt.contains("禁止引入题干未提供的"));
-    assertTrue(prompt.contains("不得推断它属于其他等级、其他标准或其他参数"));
+  }
+
+  @Test
+  void systemPromptV22AddsIndependentSolveAndDisputeStructure() {
+    String prompt = QuestionResolvePromptPolicy.systemPrompt(240);
+    // 核心新增：先独立解题 → 对照给定答案
+    assertTrue(prompt.contains("先独立解题，再对照给定答案"));
+    // 存疑结构（仅客观题）
+    assertTrue(prompt.contains("【存疑】"));
+    assertTrue(prompt.contains("给定答案：X。"));
+    assertTrue(prompt.contains("按原理应为：Y。"));
+    assertTrue(prompt.contains("仅客观题（单选/多选/判断）可输出【存疑】"));
+    // 答案不再是作答依据（旧第 4 条「只依据……正确答案……」已删除）
+    assertFalse(prompt.contains("只依据题干、选项、正确答案"));
+    // 旧空话句式必须从 prompt 中删除，否则模型仍会照抄
+    assertFalse(prompt.contains("无法确定时，只写“与题干给出的正确答案"));
   }
 
   @Test
@@ -74,13 +91,16 @@ class QuestionResolvePromptPolicyTest {
     assertTrue(user.contains("知识点：电气安全"));
     assertTrue(user.contains("题干：\n安全电压是多少"));
     assertTrue(user.contains("选项：\nA. 36V\nB. 220V"));
-    assertTrue(user.contains("正确答案：A"));
+    // v2.2 术语：输入侧叫「给定答案」，不再预设"正确答案"
+    assertTrue(user.contains("给定答案：A"));
+    assertFalse(user.contains("正确答案："));
     assertTrue(user.contains("【正确】必须以“答案：A。”开头，"
-        + "解释该答案与题干条件的对应关系，禁止只写“符合题意”。"));
+        + "用原理说明该选项为什么符合题干条件，禁止只写“符合题意”；"
+        + "【干扰】指出具体冲突点，指不出就省略，禁止用答案作排除理由。"));
     // 不再有"（A 替换为真实答案）"类括号说明，避免答案非 A 时误导模型
     assertFalse(user.contains("替换为真实答案"));
     assertFalse(user.contains("替换为真实组合"));
-    assertTrue(user.endsWith("请按四行结构写出解析："));
+    assertTrue(user.endsWith("请先独立分析本题，再对照给定答案，按对应结构输出："));
     // 不泄露学员作答/内部口径
     assertFalse(user.contains("你选了"));
     assertFalse(user.contains("questionId"));
@@ -110,10 +130,12 @@ class QuestionResolvePromptPolicyTest {
     String branch = QuestionResolvePromptPolicy.branchLine(input);
     assertTrue(branch.contains("答案要点：”开头"));
     assertTrue(branch.contains("省略【干扰】行"));
+    // v2.2：主观题不开放存疑
+    assertTrue(branch.contains("不得输出【存疑】"));
 
     String user = QuestionResolvePromptPolicy.userPrompt(input);
     assertFalse(user.contains("选项："));
-    assertTrue(user.contains("正确答案：要点一；要点二"));
+    assertTrue(user.contains("给定答案：要点一；要点二"));
   }
 
   @Test

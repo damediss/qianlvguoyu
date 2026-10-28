@@ -1,6 +1,7 @@
 package com.guoyu.platform.exam.service;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
@@ -143,6 +144,32 @@ class OfficialResolveResolverTest {
 
     OfficialResolve out = resolver.resolve(detail);
     assertEquals("empty", out.source());
+  }
+
+  @Test
+  void isCurrentPromptChecksVersionPrefix() {
+    assertTrue(OfficialResolveResolver.isCurrentPrompt("question_resolve_v2.2#abc"));
+    assertFalse(OfficialResolveResolver.isCurrentPrompt("question_resolve_v2.1#abc"));
+    assertFalse(OfficialResolveResolver.isCurrentPrompt("question_resolve_v2#abc"));
+    // 失败前缀不算当前成功版本（_rejected 在 '#' 之前）
+    assertFalse(OfficialResolveResolver.isCurrentPrompt("question_resolve_v2.2_rejected#abc"));
+    assertFalse(OfficialResolveResolver.isCurrentPrompt(null));
+  }
+
+  @Test
+  void promptVersionUpgradeDoesNotStaleExistingColumn() {
+    // 已回写 resolve 列的 AI 解析不因 prompt 升级判旧（只比 sourceHash）
+    ExamExamDetailEntity detail = singleDetail();
+    QuestionPromptInput input = inputFactory.build(detail);
+    detail.setResolve("v2.1 时代生成的解析");
+    AiGenerationDraftEntity draft = generatedDraft(detail.getId(), "v2.1 时代生成的解析", input.sourceHash());
+    draft.setPrompt("question_resolve_v2.1#" + input.sourceHash());
+    when(draftMapper.selectOne(any())).thenReturn(draft);
+
+    OfficialResolve out = resolver.resolve(detail);
+
+    assertEquals("draft", out.source());
+    assertEquals("v2.1 时代生成的解析", out.text());
   }
 
   private ExamExamDetailEntity singleDetail() {

@@ -65,6 +65,8 @@ class QuestionResolveShadowSampleRunner {
     int shadow = 0;
     int rejected = 0;
     int officialOnly = 0;
+    int disputed = 0;
+    java.util.Map<String, Integer> reasonCounts = new java.util.TreeMap<>();
 
     for (int i = 0; i < samples.size(); i++) {
       ObjectNode sample = (ObjectNode) samples.get(i);
@@ -113,7 +115,12 @@ class QuestionResolveShadowSampleRunner {
         rejected++;
       } else if ("empty".equals(source) && "official_only".equals(reason)) {
         officialOnly++;
+      } else if ("empty".equals(source) && "answer_disputed".equals(reason)) {
+        // v2.2 存疑：不是失败，单独计数（存疑率分子）
+        disputed++;
       }
+      String reasonKey = source + (reason == null ? "" : ":" + reason);
+      reasonCounts.merge(reasonKey, 1, Integer::sum);
       jsonl.append(objectMapper.writeValueAsString(row)).append('\n');
       Files.writeString(outFile.toPath(), jsonl.toString(), StandardCharsets.UTF_8);
       System.out.printf("[shadow %d/%d] layer=%s id=%d type=%s source=%s reason=%s drafts %d->%d %dms%n",
@@ -145,8 +152,16 @@ class QuestionResolveShadowSampleRunner {
     }
     assertTrue(secondRoundLlmCalls == 0, "第二轮 LLM 调用必须为 0");
 
-    System.out.printf("[summary] total=%d llmCalls=%d shadow=%d officialOnly=%d secondRoundLlmCalls=%d%n",
-        samples.size(), llmCalls, shadow, officialOnly, secondRoundLlmCalls);
+    System.out.printf("[summary] total=%d llmCalls=%d shadow=%d disputed=%d rejected=%d "
+            + "officialOnly=%d secondRoundLlmCalls=%d%n",
+        samples.size(), llmCalls, shadow, disputed, rejected, officialOnly, secondRoundLlmCalls);
+    // 存疑率口径（v2.2 §9）：answer_disputed / (shadow + disputed + rejected 中的生成类)
+    int generatedLike = shadow + disputed;
+    System.out.printf("[dispute-rate] disputed=%d generatedLike=%d rate=%.2f%%%n",
+        disputed, generatedLike, generatedLike == 0 ? 0.0 : disputed * 100.0 / generatedLike);
+    System.out.println("[reason-distribution] " + reasonCounts);
+    Files.writeString(new File("target/shadow-reason-distribution.txt").toPath(),
+        reasonCounts + System.lineSeparator(), StandardCharsets.UTF_8);
   }
 
   private ObjectNode findFirstShadowSample(ArrayNode samples, File outFile) throws Exception {
@@ -187,10 +202,16 @@ class QuestionResolveShadowSampleRunner {
     }
   }
 
-  /** draft.prompt 前缀 → prompt 版本标记（v2 / v2.1 / v2-rejected / unknown）。 */
+  /** draft.prompt 前缀 → prompt 版本标记（v2.2 / v2.2-rejected / v2.1 / v2 / unknown）。 */
   private static String promptVersionOf(String prompt) {
     if (prompt == null) {
       return "";
+    }
+    if (prompt.startsWith("question_resolve_v2.2#")) {
+      return "v2.2";
+    }
+    if (prompt.startsWith("question_resolve_v2.2_rejected#")) {
+      return "v2.2-rejected";
     }
     if (prompt.startsWith("question_resolve_v2.1#")) {
       return "v2.1";

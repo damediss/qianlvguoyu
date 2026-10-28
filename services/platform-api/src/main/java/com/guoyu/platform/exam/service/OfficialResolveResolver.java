@@ -27,10 +27,14 @@ public class OfficialResolveResolver {
 
   public static final String DRAFT_TYPE = "question_resolve";
   public static final String SOURCE_TYPE = "exam_exam_detail";
-  /** 成功/影子 draft 的 prompt 前缀（§5.10，v2.1 起带版本号便于审计；不依赖版本做缓存失效）；hash 取 '#' 后的 64 位 hex。 */
-  public static final String PROMPT_PREFIX = "question_resolve_v2.1#";
+  /**
+   * 成功/影子 draft 的 prompt 前缀（v2.2 §6.1）。版本号参与缓存命中判定：
+   * {@link #isCurrentPrompt(String)} 与 {@link #promptHashEquals(String, String)} 双匹配才算命中，
+   * 否则 prompt 升级后旧 draft 会一直命中、新 prompt 永远不生效。
+   */
+  public static final String PROMPT_PREFIX = "question_resolve_v2.2#";
   /** 失败 draft 的 prompt 前缀（§5.10）；失败文本永不进入读取链。 */
-  public static final String PROMPT_PREFIX_REJECTED = "question_resolve_v2.1_rejected#";
+  public static final String PROMPT_PREFIX_REJECTED = "question_resolve_v2.2_rejected#";
 
   /** source ∈ db | official | draft | empty */
   public record OfficialResolve(String text, String source) {
@@ -118,7 +122,7 @@ public class OfficialResolveResolver {
     }
   }
 
-  /** draft.prompt = {@code question_resolve_v2#{sourceHash}}；取 '#' 后缀比对。 */
+  /** draft.prompt = {@code question_resolve_v2.2#{sourceHash}}；取 '#' 后缀比对。 */
   public static boolean promptHashEquals(String prompt, String sourceHash) {
     if (prompt == null || sourceHash == null) {
       return false;
@@ -128,6 +132,17 @@ public class OfficialResolveResolver {
       return false;
     }
     return sourceHash.equals(prompt.substring(idx + 1).trim());
+  }
+
+  /**
+   * 当前 prompt 版本判定（v2.2 §6.1）：draft 缓存命中必须版本 + hash 双匹配。
+   *
+   * <p>只用于未落列的 draft 缓存（generated / shadow / answer_disputed）与 peekResolve；
+   * 已回写 resolve 列的 AI 解析**不因 prompt 升级判旧**（{@link #isStaleAiResolve} 仍只看 hash），
+   * 避免升级触发全量重生成。
+   */
+  public static boolean isCurrentPrompt(String prompt) {
+    return prompt != null && prompt.startsWith(PROMPT_PREFIX);
   }
 
   /** answer JSON 根节点为对象时按 key 顺序取第一个非空字符串；异常按无官方解析处理。 */

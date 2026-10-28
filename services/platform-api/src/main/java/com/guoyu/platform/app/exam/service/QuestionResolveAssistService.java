@@ -56,6 +56,8 @@ public class QuestionResolveAssistService {
   private static final String DICT_GENERATION_ENABLED = "question_resolve_generation_enabled";
   private static final String DICT_WRITEBACK_ENABLED = "question_resolve_writeback_enabled";
   private static final String DICT_OFFICIAL_ONLY_KEYWORDS = "question_resolve_official_only_keywords";
+  /** v2.2 存疑出口开关：默认开（无字典行即生效）；置 0 时存疑输出退化为质量门拒绝 + 冷却，用于止血。 */
+  private static final String DICT_DISPUTE_ENABLED = "question_resolve_dispute_enabled";
   /** 解析模型独立配置键：与 ai_review_model_code（同步学鼓励语共用）隔离 */
   private static final String DICT_RESOLVE_MODEL_CODE = "question_resolve_model_code";
 
@@ -155,6 +157,8 @@ public class QuestionResolveAssistService {
     if (input != null) {
       AiGenerationDraftEntity draft = findLatestDraft(questionId, "generated");
       if (draft != null && StringUtils.hasText(draft.getResultText())
+          // v2.2 §6.2：只读接口与主链路同口径，旧版本 draft 不算命中
+          && OfficialResolveResolver.isCurrentPrompt(draft.getPrompt())
           && OfficialResolveResolver.promptHashEquals(draft.getPrompt(), input.sourceHash())) {
         return result(questionId, draft.getResultText().trim(), "draft", false, stem, null);
       }
@@ -264,28 +268,40 @@ public class QuestionResolveAssistService {
     }
   }
 
-  /** §5.4 步骤 4：generated draft 同 hash 命中 → draft（writeback=1 且列空补回写）；writeback=0 再查 shadow draft。 */
+  /**
+   * §5.4 步骤 4：generated draft 同版本同 hash 命中 → draft（writeback=1 且列空补回写）；
+   * writeback=0 再查 shadow draft；最后查 v2.2 的 answer_disputed 缓存（存疑不重复调 LLM）。
+   */
   private Map<String, Object> readDraftCache(Integer questionId, ExamExamDetailEntity detail,
       QuestionPromptInput input, Long tenantId) {
     AiGenerationDraftEntity generated = findLatestDraft(questionId, "generated");
     if (generated != null && StringUtils.hasText(generated.getResultText())) {
-      if (OfficialResolveResolver.promptHashEquals(generated.getPrompt(), input.sourceHash())) {
+      if (OfficialResolveResolver.isCurrentPrompt(generated.getPrompt())
+          && OfficialResolveResolver.promptHashEquals(generated.getPrompt(), input.sourceHash())) {
         if (dictInt(DICT_WRITEBACK_ENABLED, 0) == 1 && !StringUtils.hasText(detail.getResolve())) {
           backfillResolveColumn(detail.getId(), generated.getResultText().trim());
         }
         return result(questionId, generated.getResultText().trim(), "draft", false,
             extractStem(detail), null);
       }
-      // sourceHash 不一致 → 旧 draft，不使用，继续生成流程
+      // 旧版本或 sourceHash 不一致 → 旧 draft，不使用，继续生成流程
       return null;
     }
     if (dictInt(DICT_WRITEBACK_ENABLED, 0) != 1) {
       AiGenerationDraftEntity shadow = findLatestDraft(questionId, "shadow");
       if (shadow != null && StringUtils.hasText(shadow.getResultText())
+          && OfficialResolveResolver.isCurrentPrompt(shadow.getPrompt())
           && OfficialResolveResolver.promptHashEquals(shadow.getPrompt(), input.sourceHash())) {
         return result(questionId, shadow.getResultText().trim(), "shadow", false,
             extractStem(detail), null);
       }
+    }
+    // v2.2 §5.2：存疑缓存命中——同版本同 hash 直接返回，学员端只拿中性文案，不展示【存疑】全文
+    AiGenerationDraftEntity disputed = findLatestDraft(questionId, "answer_disputed");
+    if (disputed != null && StringUtils.hasText(disputed.getResultText())
+        && OfficialResolveResolver.isCurrentPrompt(disputed.getPrompt())
+        && OfficialResolveResolver.promptHashEquals(disputed.getPrompt(), input.sourceHash())) {
+      return result(questionId, null, "empty", false, extractStem(detail), "answer_disputed");
     }
     return null;
   }
@@ -337,6 +353,19 @@ public class QuestionResolveAssistService {
       log.info("[题目解析] 质量门拒绝 questionId={} reason={}", questionId, sanitized.rejectedReason());
       onGenerationFailed(questionId, input, tenantId, content);
       return result(questionId, null, "empty", false, stem, "quality_rejected");
+    }
+    // v2.2 §5.1 答案存疑分支：不写 resolve 列、不写 generated/shadow、不进冷却；
+    // 只落 answer_disputed draft 作为人工复核工单，学员端拿到中性文案。
+    if (sanitized.disputed()) {
+      if (dictInt(DICT_DISPUTE_ENABLED, 1) != 1) {
+        // 存疑出口被关（止血）：按质量门拒绝处理
+        log.info("[题目解析] 存疑出口已关闭，按拒绝处理 questionId={}", questionId);
+        onGenerationFailed(questionId, input, tenantId, content);
+        return result(questionId, null, "empty", false, stem, "quality_rejected");
+      }
+      writeDraft(questionId, input.sourceHash(), sanitized.text().trim(), tenantId, "answer_disputed", false);
+      log.info("[题目解析] 答案存疑 questionId={} knowledge={}", questionId, input.knowledgeTitle());
+      return result(questionId, null, "empty", false, stem, "answer_disputed");
     }
     if (sanitized.tableDropped()) {
       log.info("[题目解析] 表格超限整表丢弃 questionId={}", questionId);
