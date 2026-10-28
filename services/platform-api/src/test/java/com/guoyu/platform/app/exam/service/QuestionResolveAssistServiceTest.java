@@ -605,6 +605,44 @@ class QuestionResolveAssistServiceTest {
     assertEquals("rejected", drafts.get(0).getStatus());
   }
 
+  /**
+   * 2026-10-28 verifier 复核发现的 P2：v2.1 遗留的 generated（hash 相同、版本不同）不得挡住
+   * answer_disputed 缓存——否则同题每次点击都重新调 LLM、重复写草稿，App 链路还会计限流。
+   */
+  @Test
+  void legacyGeneratedDraftDoesNotBlockDisputedCache() {
+    ExamExamDetailEntity detail = singleDetail();
+    when(examDetailMapper.selectById(11)).thenReturn(detail);
+    dict("question_resolve_generation_enabled", "1");
+    when(llmClient.chatCompletion(anyString(), anyString(), anyString(), anyString(), anyString(),
+        anyInt(), any(), any(), anyBoolean(), any())).thenReturn(resolveText(), disputedText());
+
+    // 第一次：正常解析 → shadow draft，顺带拿到当前 sourceHash
+    Map<String, Object> first = service.ensureResolve(11);
+    assertEquals("shadow", first.get("source"));
+
+    // 模拟 M6 写回验证留下的 v2.1 generated：hash 相同、prompt 版本是旧的
+    String prompt = drafts.get(0).getPrompt();
+    String hash = prompt.substring(prompt.indexOf('#') + 1);
+    drafts.get(0).setStatus("generated");
+    drafts.get(0).setPrompt("question_resolve_v2.1#" + hash);
+
+    // 第二次：旧 generated 不命中 → 走生成，输出存疑
+    Map<String, Object> second = service.ensureResolve(11);
+    assertEquals("answer_disputed", second.get("reason"));
+
+    // 第三次：必须命中存疑缓存——零 LLM、不计限流、不新增草稿
+    loginUser(502L);
+    Map<String, Object> third = service.ensureResolveForApp(11);
+
+    assertEquals("answer_disputed", third.get("reason"));
+    assertEquals(Boolean.FALSE, third.get("generated"));
+    assertEquals(2, drafts.size());
+    verify(rateLimitService, never()).acquire(anyLong(), anyLong());
+    verify(llmClient, times(2)).chatCompletion(anyString(), anyString(), anyString(), anyString(),
+        anyString(), anyInt(), any(), any(), anyBoolean(), any());
+  }
+
   @Test
   void oldPromptVersionDraftNotHitAndRegenerates() {
     ExamExamDetailEntity detail = singleDetail();

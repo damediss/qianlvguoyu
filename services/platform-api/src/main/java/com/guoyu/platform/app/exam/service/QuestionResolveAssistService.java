@@ -271,6 +271,11 @@ public class QuestionResolveAssistService {
   /**
    * §5.4 步骤 4：generated draft 同版本同 hash 命中 → draft（writeback=1 且列空补回写）；
    * writeback=0 再查 shadow draft；最后查 v2.2 的 answer_disputed 缓存（存疑不重复调 LLM）。
+   *
+   * <p>注意：某条 generated 不可用（旧 prompt 版本或 sourceHash 已变）时**不能短路返回**，
+   * 必须继续查 shadow / answer_disputed。否则 v2.1 遗留的 generated（hash 相同、版本不同）
+   * 会永久挡住存疑缓存——同题每次点击都重新调 LLM、重复写 answer_disputed，App 链路还要计限流
+   * （2026-10-28 verifier 复核发现的 P2，修复见方案 §15.6）。
    */
   private Map<String, Object> readDraftCache(Integer questionId, ExamExamDetailEntity detail,
       QuestionPromptInput input, Long tenantId) {
@@ -284,8 +289,9 @@ public class QuestionResolveAssistService {
         return result(questionId, generated.getResultText().trim(), "draft", false,
             extractStem(detail), null);
       }
-      // 旧版本或 sourceHash 不一致 → 旧 draft，不使用，继续生成流程
-      return null;
+      // 该 generated 不可用（旧版本 / 题面已变）：不使用它，但继续往下查 shadow 与存疑缓存
+      log.debug("[题目解析] generated draft 版本或 hash 不匹配，继续查下级缓存 questionId={}",
+          questionId);
     }
     if (dictInt(DICT_WRITEBACK_ENABLED, 0) != 1) {
       AiGenerationDraftEntity shadow = findLatestDraft(questionId, "shadow");

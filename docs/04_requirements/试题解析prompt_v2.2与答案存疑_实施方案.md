@@ -508,6 +508,26 @@ prompt 版本分布：v2.2=29, v2.2-rejected=3, v2.1=6（这 6 道 resolve 列�
 占位题干（"题目1"/"答案1"）不会被输入资格拦截，会一路走到存疑或质量拒绝，向复核队列注入噪声。
 建议按 §B.2 第 4 条，下期复用 JEV 的 `QuestionContentQualityInspector` + 媒体题检测，在 `inputFactory.build` 后拦成 `invalid_input`，不给坏题生成解析。
 
+### 15.6 评审修复记录（2026-10-28，verifier 复核发现的 P2）
+
+**缺陷**：`QuestionResolveAssistService.readDraftCache` 的 generated 分支在「版本或 sourceHash 不匹配」时直接 `return null`，
+不再往下查 shadow 与 `answer_disputed`。方案 §5.2 只写「在 generated / shadow 检查之后追加存疑命中」，未交代"不命中时不得短路"。
+
+**触发路径（真实可达）**：题目存在 v2.1 遗留的 generated draft（hash 相同、仅 prompt 版本旧）→ 第一次点击走生成、输出存疑、
+写 `answer_disputed` → 第二次点击又被那条旧 generated 挡回生成流程 → **每次都重新调 LLM、重复写 answer_disputed，App 链路还计限流**，
+存疑缓存完全失效。
+
+**影响面**：当前生产 `writeback=0` 且无 generated 历史，暂不触发；但测试库有 M6 写回验证留下的 generated，**一旦开 writeback=1 会普遍触发**，属放量前必修项。
+
+**修复**：generated 不可用时只记录日志、不 return，继续查 shadow 与存疑缓存；generated 命中时的返回逻辑不变。
+
+**回归测试**：`QuestionResolveAssistServiceTest#legacyGeneratedDraftDoesNotBlockDisputedCache`
+构造「v2.1 generated（同 hash）+ 新 answer_disputed」，第三次经 App 入口调用必须命中缓存——零 LLM、不计限流、不新增草稿。
+正反验证：回退修复后该用例失败（`drafts` 3 ≠ 2，与复核复现一致），修复后 `QuestionResolveAssistServiceTest` 30/30 通过，
+四类解析测试合计 **93** 用例全绿。
+
+**未重跑**：40 题 shadow 抽样未重跑——本次只改缓存读取顺序，生成与质量门逻辑未变，§15.3 数据仍然有效。
+
 ## 附录 A：存疑复核操作手册（给复核人）
 
 ### A.1 复核频率与队列
