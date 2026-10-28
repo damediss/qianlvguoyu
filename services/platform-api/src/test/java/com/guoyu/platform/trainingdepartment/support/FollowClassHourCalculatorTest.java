@@ -178,6 +178,35 @@ class FollowClassHourCalculatorTest {
   }
 
   @Test
+  void attendedHoursPreferRemarkOverScheduleDuration() {
+    // 课表 08:00-12:00=5.3，备注 08:30-11:30=4.0 → 已上课时按备注累加
+    SessionInput session = new SessionInput(1L, "2026-08-01", "08:00", "12:00", "4");
+    ClassHours result = FollowClassHourCalculator.compute(
+        List.of(session),
+        List.of(new AttendanceInput(10L, "2026-08-01", 1L, 1, "导入课次：08:30-11:30")),
+        List.of(new StudentInput(10L, "张三")),
+        AS_OF);
+    assertThat(result.plannedHours()).isEqualByComparingTo("5.3");
+    assertThat(hoursOf(result, 10L)).isEqualByComparingTo("4.0");
+  }
+
+  @Test
+  void attendedHoursSumMultipleRemarkSessions() {
+    List<SessionInput> sessions = List.of(
+        new SessionInput(1L, "2026-08-01", "08:00", "12:00", null),
+        new SessionInput(2L, "2026-08-01", "14:00", "18:00", null));
+    ClassHours result = FollowClassHourCalculator.compute(
+        sessions,
+        List.of(
+            new AttendanceInput(10L, "2026-08-01", 1L, 1, "导入课次：08:30-11:30"),
+            new AttendanceInput(10L, "2026-08-01", 2L, 1, "导入课次：14:30-17:30")),
+        List.of(new StudentInput(10L, "张三")),
+        AS_OF);
+    assertThat(hoursOf(result, 10L)).isEqualByComparingTo("8.0");
+    assertThat(row(result, 10L).presentSessions()).isEqualTo(2);
+  }
+
+  @Test
   void classHoursWithoutTimeNotDividedBy45() {
     SessionInput session = new SessionInput(1L, "2026-08-01", null, null, "4");
     ClassHours result = FollowClassHourCalculator.compute(

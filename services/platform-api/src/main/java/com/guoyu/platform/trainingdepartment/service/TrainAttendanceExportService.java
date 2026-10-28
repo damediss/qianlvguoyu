@@ -52,9 +52,9 @@ import org.springframework.util.StringUtils;
  * 跟班考勤表导出（矩阵式 学员×日期，模板填充）。
  *
  * <p>口径（docs/04_requirements/跟班考勤导出考勤表方案.md）：全部考勤日期、
- * 同日多课次按日合并取最优（出勤>迟到>早退>缺勤，与跟班考勤页同口径）、
- * 行末有效出勤（出勤+迟到+早退）/迟到/早退/缺勤天数 + 已上课时 + 完成率（复用 FollowClassHourCalculator）+ 签名列。
- * 「有效出勤」与学员考勤详情抽屉 {@code present+late+early} 同口径（按合并日后计）。</p>
+ * 日期格同日多课次按日合并取最优（出勤>迟到>早退>缺勤）；
+ * 行末有效出勤/迟到/早退/缺勤按<strong>课次次数</strong>计（与详情抽屉逐条 status 累加同口径，不按日合并）；
+ * 已上课时/完成率复用 FollowClassHourCalculator；末列签名留空。</p>
  */
 @Service
 @Slf4j
@@ -120,7 +120,7 @@ public class TrainAttendanceExportService {
   /**
    * 一行学员：固定列 + 日期格（空串=无记录）+ 汇总统计。
    *
-   * @param effectivePresent 有效出勤天数（合并日后 status∈{出勤,迟到,早退}），与详情抽屉同口径
+   * @param effectivePresent 有效出勤次数（逐条 status∈{出勤,迟到,早退}），与详情抽屉同口径
    */
   record RowModel(
       int seq,
@@ -173,17 +173,33 @@ public class TrainAttendanceExportService {
       List<TrainPeopleListEntity> students,
       List<TrainAttendanceEntity> attendances,
       Map<Long, StudentHours> hoursByPeople) {
-    // userId + 归一日期 → 最优状态（同日多课次合并，取优先级最高）
+    // 日期格：userId + 归一日期 → 最优状态（同日多课次合并，仅影响格内文案）
     Map<Long, Map<String, Integer>> bestByUserDate = new HashMap<>();
+    // 汇总列：按课次次数累加（与详情抽屉逐条 status 同口径，不按日合并）
+    Map<Long, int[]> countByUser = new HashMap<>(); // [onTime, late, early, absent]
     for (TrainAttendanceEntity att : attendances) {
-      String date = normalizeDate(att.getAttendanceDate());
-      if (date.isEmpty() || att.getUserId() == null) {
+      if (att.getUserId() == null) {
         continue;
       }
-      bestByUserDate
-          .computeIfAbsent(att.getUserId(), k -> new HashMap<>())
-          .merge(date, att.getStatus(), (oldVal, newVal) ->
-              statusRank(newVal) > statusRank(oldVal) ? newVal : oldVal);
+      String date = normalizeDate(att.getAttendanceDate());
+      if (!date.isEmpty()) {
+        bestByUserDate
+            .computeIfAbsent(att.getUserId(), k -> new HashMap<>())
+            .merge(date, att.getStatus(), (oldVal, newVal) ->
+                statusRank(newVal) > statusRank(oldVal) ? newVal : oldVal);
+      }
+      Integer status = att.getStatus();
+      if (status == null || status < 0 || status >= STATUS_LABELS.length) {
+        continue;
+      }
+      int[] c = countByUser.computeIfAbsent(att.getUserId(), k -> new int[4]);
+      switch (status) {
+        case 1 -> c[0]++;
+        case 2 -> c[1]++;
+        case 3 -> c[2]++;
+        case 0 -> c[3]++;
+        default -> { }
+      }
     }
     List<String> dates = sortedDistinctDates(attendances);
 
@@ -192,10 +208,6 @@ public class TrainAttendanceExportService {
     for (TrainPeopleListEntity student : students) {
       Map<String, Integer> byDate = bestByUserDate.get(student.getId());
       List<String> cells = new ArrayList<>(dates.size());
-      int onTime = 0;
-      int late = 0;
-      int early = 0;
-      int absent = 0;
       for (String date : dates) {
         Integer status = byDate == null ? null : byDate.get(date);
         if (status == null || status < 0 || status >= STATUS_LABELS.length) {
@@ -203,15 +215,13 @@ public class TrainAttendanceExportService {
           continue;
         }
         cells.add(STATUS_LABELS[status]);
-        switch (status) {
-          case 1 -> onTime++;
-          case 2 -> late++;
-          case 3 -> early++;
-          case 0 -> absent++;
-          default -> { }
-        }
       }
-      // 有效出勤 = 出勤 + 迟到 + 早退（与 StudentAttendanceDetailDrawer 同口径）
+      int[] c = countByUser.getOrDefault(student.getId(), new int[4]);
+      int onTime = c[0];
+      int late = c[1];
+      int early = c[2];
+      int absent = c[3];
+      // 有效出勤次数 = 出勤 + 迟到 + 早退（与 StudentAttendanceDetailDrawer 同口径）
       int effectivePresent = onTime + late + early;
       StudentHours hours = hoursByPeople.get(student.getId());
       rows.add(new RowModel(

@@ -18,6 +18,7 @@ import com.guoyu.platform.system.mapper.RoleMenuMapper;
 import com.guoyu.platform.system.mapper.TenantMapper;
 import com.guoyu.platform.system.mapper.UserMapper;
 import com.guoyu.platform.system.mapper.UserRoleMapper;
+import com.guoyu.platform.trainingdepartment.service.EnterpriseFeatureConfigService;
 import com.guoyu.platform.trainingdepartment.service.TrainingOperatorScopeService;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -36,12 +37,15 @@ class AuthApplicationServiceLoginFailureMessageTest {
   private final PasswordEncoder passwordEncoder = mock(PasswordEncoder.class);
   private final TrainingOperatorScopeService trainingOperatorScopeService =
       mock(TrainingOperatorScopeService.class);
+  private final EnterpriseFeatureConfigService enterpriseFeatureConfigService =
+      mock(EnterpriseFeatureConfigService.class);
   private final LoginFailureGuard loginFailureGuard = mock(LoginFailureGuard.class);
 
   private AuthApplicationService service(int warnFailures) {
     return new AuthApplicationService(
         tenantMapper, userMapper, userRoleMapper, roleMenuMapper, menuMapper,
-        passwordEncoder, trainingOperatorScopeService, loginFailureGuard, warnFailures);
+        passwordEncoder, trainingOperatorScopeService, enterpriseFeatureConfigService,
+        loginFailureGuard, warnFailures);
   }
 
   private static final LoginReq REQ = new LoginReq("demo", "admin", "wrong-password");
