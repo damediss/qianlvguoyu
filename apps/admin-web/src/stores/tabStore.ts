@@ -5,7 +5,7 @@ import { isHiddenRoutePath } from '../routes/hiddenRoutes';
 
 /**
  * 标签页数据层（《admin-web标签页外壳改造方案》§3.2）。
- * - 一个菜单码一个标签；tabs[0] 固定为 knowledge（不可关闭）
+ * - 一个菜单码一个标签；tabs[0] 为首页（优先 knowledge，无权限则取菜单树首个页面）
  * - persist：localStorage `guoyu_admin_tabs:${tenantId}`（租户隔离）
  * - URL 联动：activateTab 时 pushState；隐藏路由标签走 overridePath + popstate（§3.4/§3.7）
  * - clearTabs 仅由显式登出/切换端入口调用（401 被动失效不清，见 §3.2 清退时机）
@@ -19,8 +19,32 @@ export interface TabItem {
   overridePath?: string;
 }
 
-export const FIXED_TAB_KEY = 'knowledge';
+/** 首选首页（有菜单权限时） */
+export const PREFERRED_HOME_TAB_KEY = 'knowledge';
+/** @deprecated 请使用 resolveHomeTabKey(menuTree)；保留导出兼容旧引用 */
+export const FIXED_TAB_KEY = PREFERRED_HOME_TAB_KEY;
 export const FIXED_TAB_TITLE = '管理概览';
+
+function findFirstPageCode(tree: MenuVO[]): string | null {
+  for (const node of tree) {
+    if ((node.menuType === 'page' || node.menuType === 'menu') && node.code) {
+      return node.code;
+    }
+    if (node.children?.length) {
+      const found = findFirstPageCode(node.children);
+      if (found) return found;
+    }
+  }
+  return null;
+}
+
+/** 当前用户可用的首页菜单码：优先 knowledge，否则菜单树第一个页面 */
+export function resolveHomeTabKey(tree: MenuVO[] = []): string {
+  if (findMenuNode(tree, PREFERRED_HOME_TAB_KEY)) {
+    return PREFERRED_HOME_TAB_KEY;
+  }
+  return findFirstPageCode(tree) || PREFERRED_HOME_TAB_KEY;
+}
 
 /** 软提示阈值（Q10/v1.3）：打开第 11 个标签时提示一次 */
 export const SOFT_PROMPT_LIMIT = 10;
@@ -79,19 +103,34 @@ export function normalizeTabKey(key: string, tree: MenuVO[]): { key: string; nod
 }
 
 function fixedTab(tree: MenuVO[] = []): TabItem {
-  const node = findMenuNode(tree, FIXED_TAB_KEY);
+  const homeKey = resolveHomeTabKey(tree);
+  const node = findMenuNode(tree, homeKey);
   return {
-    key: FIXED_TAB_KEY,
-    title: node?.name || FIXED_TAB_TITLE,
+    key: homeKey,
+    title: homeKey === PREFERRED_HOME_TAB_KEY
+      ? (node?.name || FIXED_TAB_TITLE)
+      : (node?.name || homeKey),
     path: node?.path || '',
     closable: false,
   };
 }
 
-/** 保证固定标签存在、唯一且在首位 */
+/** 保证固定首页标签存在、唯一且在首位 */
 function ensureFixedFirst(tabs: TabItem[], tree: MenuVO[]): TabItem[] {
-  const withoutFixed = tabs.filter((tab) => tab.key !== FIXED_TAB_KEY);
-  return [fixedTab(tree), ...withoutFixed];
+  const home = fixedTab(tree);
+  const withoutHome = tabs.filter((tab) => {
+    if (tab.key === home.key) return false;
+    // 用户无 knowledge 权限时，丢掉历史残留的 knowledge 固定页，避免 403
+    if (
+      tab.key === PREFERRED_HOME_TAB_KEY
+      && home.key !== PREFERRED_HOME_TAB_KEY
+      && !findMenuNode(tree, PREFERRED_HOME_TAB_KEY)
+    ) {
+      return false;
+    }
+    return true;
+  });
+  return [home, ...withoutHome];
 }
 
 /** 软提示同会话（browser session）仅一次 */
@@ -170,14 +209,15 @@ function persist(state: Pick<TabState, 'tabs' | 'activeKey' | 'scrollPositions'>
 
 export const useTabStore = create<TabState>((set, get) => ({
   tabs: [fixedTab()],
-  activeKey: FIXED_TAB_KEY,
-  visitedKeys: [FIXED_TAB_KEY],
+  activeKey: PREFERRED_HOME_TAB_KEY,
+  visitedKeys: [PREFERRED_HOME_TAB_KEY],
   scrollPositions: {},
   refreshCounters: {},
   softPromptVisible: false,
 
   openTab: (key, title, path) => {
     const tree = useAuthStore.getState().menuTree;
+    const homeKey = resolveHomeTabKey(tree);
     const normalized = normalizeTabKey(key, tree);
     const tabKey = normalized.key;
     const existing = get().tabs.find((tab) => tab.key === tabKey);
@@ -199,7 +239,7 @@ export const useTabStore = create<TabState>((set, get) => ({
       key: tabKey,
       title: title || node?.name || tabKey,
       path: path ?? node?.path ?? '',
-      closable: tabKey !== FIXED_TAB_KEY,
+      closable: tabKey !== homeKey,
     };
     const tabs = ensureFixedFirst([...get().tabs, tab], tree);
     set({
@@ -233,11 +273,12 @@ export const useTabStore = create<TabState>((set, get) => ({
       persist(get());
       return;
     }
+    const homeKey = resolveHomeTabKey(tree);
     const tab: TabItem = {
       key: tabKey,
       title: title || node?.name || tabKey,
       path: node?.path ?? '',
-      closable: tabKey !== FIXED_TAB_KEY,
+      closable: tabKey !== homeKey,
       overridePath,
     };
     set({
@@ -262,14 +303,16 @@ export const useTabStore = create<TabState>((set, get) => ({
   },
 
   closeTab: (key) => {
+    const tree = useAuthStore.getState().menuTree;
+    const homeKey = resolveHomeTabKey(tree);
     const { tabs, activeKey, scrollPositions } = get();
     const index = tabs.findIndex((tab) => tab.key === key);
     if (index < 0 || !tabs[index].closable) return;
     const next = tabs.filter((tab) => tab.key !== key);
-    // 激活位 fallback：左邻 → 右邻 → 固定 tab（§3.2）
+    // 激活位 fallback：左邻 → 右邻 → 固定首页（§3.2）
     let nextActive = activeKey;
     if (activeKey === key) {
-      nextActive = next[index - 1]?.key ?? next[index]?.key ?? FIXED_TAB_KEY;
+      nextActive = next[index - 1]?.key ?? next[index]?.key ?? homeKey;
     }
     const nextScrolls = { ...scrollPositions };
     delete nextScrolls[key];
@@ -304,7 +347,8 @@ export const useTabStore = create<TabState>((set, get) => ({
 
   closeAll: () => {
     const tree = useAuthStore.getState().menuTree;
-    set({ tabs: [fixedTab(tree)], activeKey: FIXED_TAB_KEY, scrollPositions: {} });
+    const home = fixedTab(tree);
+    set({ tabs: [home], activeKey: home.key, scrollPositions: {} });
     persist(get());
   },
 
@@ -340,24 +384,27 @@ export const useTabStore = create<TabState>((set, get) => ({
 
   clearTabs: () => {
     const tree = useAuthStore.getState().menuTree;
-    set({ tabs: [fixedTab(tree)], activeKey: FIXED_TAB_KEY, visitedKeys: [FIXED_TAB_KEY], scrollPositions: {} });
+    const home = fixedTab(tree);
+    set({ tabs: [home], activeKey: home.key, visitedKeys: [home.key], scrollPositions: {} });
     persist(get());
   },
 
   restoreFromStorage: (tree, isValidKey) => {
+    const homeKey = resolveHomeTabKey(tree);
     const persisted = readPersisted();
     if (!persisted) {
       // 该租户无存储（首次加载或换租户）：复位为本租户的初始态，避免串到上一租户的内存标签（§3.2）
+      const home = fixedTab(tree);
       set({
-        tabs: [fixedTab(tree)],
-        activeKey: FIXED_TAB_KEY,
-        visitedKeys: [FIXED_TAB_KEY],
+        tabs: [home],
+        activeKey: home.key,
+        visitedKeys: [home.key],
         scrollPositions: {},
       });
       // 旧存储迁移（§3.5/Q8）：guoyu_admin_selected_menu 的值作为首个激活标签读取，不删除该 key
       try {
         const legacy = localStorage.getItem('guoyu_admin_selected_menu');
-        if (legacy && legacy !== FIXED_TAB_KEY && isValidKey(legacy) && findMenuNode(tree, legacy)) {
+        if (legacy && legacy !== homeKey && isValidKey(legacy) && findMenuNode(tree, legacy)) {
           get().openTab(legacy);
         }
       } catch {
@@ -366,10 +413,12 @@ export const useTabStore = create<TabState>((set, get) => ({
       return;
     }
     const valid = persisted.tabs.filter(
-      (tab) => tab.key === FIXED_TAB_KEY || (isValidKey(tab.key) && Boolean(findMenuNode(tree, tab.key))),
+      (tab) => tab.key === homeKey || (isValidKey(tab.key) && Boolean(findMenuNode(tree, tab.key))),
     );
     const tabs = ensureFixedFirst(valid.length ? valid : [fixedTab(tree)], tree);
-    const activeKey = tabs.some((tab) => tab.key === persisted.activeKey) ? persisted.activeKey : FIXED_TAB_KEY;
+    const activeKey = tabs.some((tab) => tab.key === persisted.activeKey)
+      ? persisted.activeKey
+      : homeKey;
     set({
       tabs,
       activeKey,

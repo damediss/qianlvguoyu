@@ -7,6 +7,7 @@ import com.guoyu.platform.system.entity.UserEntity;
 import com.guoyu.platform.system.mapper.RoleMenuMapper;
 import com.guoyu.platform.system.mapper.UserMapper;
 import com.guoyu.platform.system.mapper.UserRoleMapper;
+import com.guoyu.platform.trainingdepartment.service.EnterpriseFeatureConfigService;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -30,15 +31,18 @@ public class SaTokenBridgeFilter extends OncePerRequestFilter {
   private final UserMapper userMapper;
   private final UserRoleMapper userRoleMapper;
   private final RoleMenuMapper roleMenuMapper;
+  private final EnterpriseFeatureConfigService enterpriseFeatureConfigService;
 
   public SaTokenBridgeFilter(
       UserMapper userMapper,
       UserRoleMapper userRoleMapper,
-      RoleMenuMapper roleMenuMapper
+      RoleMenuMapper roleMenuMapper,
+      EnterpriseFeatureConfigService enterpriseFeatureConfigService
   ) {
     this.userMapper = userMapper;
     this.userRoleMapper = userRoleMapper;
     this.roleMenuMapper = roleMenuMapper;
+    this.enterpriseFeatureConfigService = enterpriseFeatureConfigService;
   }
 
   @Override
@@ -100,6 +104,7 @@ public class SaTokenBridgeFilter extends OncePerRequestFilter {
     // Defensive null guard for MyBatis mapper results
     if (roleCodes == null) roleCodes = List.of();
     if (permissionCodes == null) permissionCodes = List.of();
+    permissionCodes = enterpriseFeatureConfigService.filterPermissionsForUserEntity(user, permissionCodes);
     PlatformUserPrincipal principal = new PlatformUserPrincipal(
         user.getId(),
         user.getTenantId(),

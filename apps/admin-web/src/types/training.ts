@@ -1177,6 +1177,7 @@ export interface TrainTeacherBank {
   eduLicense?: string;
   graduatePaper?: string;
   company?: string;
+  companyId?: number | null;
   address?: string;
   idCardNumber?: string;
   startDate?: string;
@@ -1237,6 +1238,7 @@ export interface TrainTeacherBankQuery {
   page?: number;
   pageSize?: number;
   keyword?: string;
+  companyId?: number;
 }
 
 export interface TrainTeacherBankCreateReq {
@@ -1249,6 +1251,7 @@ export interface TrainTeacherBankCreateReq {
   eduLicense?: string;
   graduatePaper?: string;
   company?: string;
+  companyId?: number | null;
   address?: string;
   idCardNumber?: string;
   startDate?: string;
@@ -2398,6 +2401,8 @@ export interface SystemCompany {
   id: number;
   code: string;
   name: string;
+  parentId?: number | null;
+  parentName?: string | null;
   sortOrder?: number;
   status?: string;
 }
@@ -2406,6 +2411,78 @@ export interface SystemCompanySaveReq {
   name: string;
   sortOrder?: number;
   status?: string;
+}
+
+export interface EnterpriseAccount {
+  id: number;
+  orgId: number;
+  username: string;
+  displayName: string;
+  userType?: string;
+  phone?: string;
+  email?: string;
+  status?: string;
+  roleIds?: number[];
+  roleCodes?: string[];
+  lastLoginAt?: string;
+  createdAt?: string;
+}
+
+export interface EnterpriseAccountCreateReq {
+  username: string;
+  password: string;
+  displayName: string;
+  phone?: string;
+  email?: string;
+  status?: string;
+  roleIds?: number[];
+}
+
+export interface EnterpriseAccountUpdateReq {
+  displayName: string;
+  phone?: string;
+  email?: string;
+  status: string;
+  roleIds: number[];
+}
+
+export interface EnterpriseAccountRole {
+  id: number;
+  code: string;
+  name: string;
+  defaultRole?: boolean;
+}
+
+export interface EnterpriseFeatureConfig {
+  enterpriseId: number;
+  enterpriseName?: string;
+  configurerOrgId?: number;
+  menuCodes: string[];
+  roleIds: number[];
+  constrainEnabled: boolean;
+  configured: boolean;
+}
+
+export interface EnterpriseFeatureConfigSaveReq {
+  menuCodes: string[];
+  roleIds: number[];
+  constrainEnabled: boolean;
+}
+
+export interface EnterpriseFeatureOptions {
+  menus: Array<{
+    id: number;
+    parentId?: number;
+    code: string;
+    name: string;
+    menuType?: string;
+  }>;
+  roles: Array<{
+    id: number;
+    code: string;
+    name: string;
+    defaultRole?: boolean;
+  }>;
 }
 
 // ==================== Train Research Org (培训调研企业) ====================

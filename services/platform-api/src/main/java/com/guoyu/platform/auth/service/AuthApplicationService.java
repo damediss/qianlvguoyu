@@ -22,6 +22,7 @@ import com.guoyu.platform.system.mapper.RoleMenuMapper;
 import com.guoyu.platform.system.mapper.TenantMapper;
 import com.guoyu.platform.system.mapper.UserMapper;
 import com.guoyu.platform.system.mapper.UserRoleMapper;
+import com.guoyu.platform.trainingdepartment.service.EnterpriseFeatureConfigService;
 import com.guoyu.platform.trainingdepartment.service.TrainingOperatorScopeService;
 import java.security.SecureRandom;
 import java.util.Base64;
@@ -46,6 +47,7 @@ public class AuthApplicationService {
   private final MenuMapper menuMapper;
   private final PasswordEncoder passwordEncoder;
   private final TrainingOperatorScopeService trainingOperatorScopeService;
+  private final EnterpriseFeatureConfigService enterpriseFeatureConfigService;
   private final LoginFailureGuard loginFailureGuard;
   private final int warnFailures;
   private final SecureRandom secureRandom = new SecureRandom();
@@ -63,6 +65,7 @@ public class AuthApplicationService {
       MenuMapper menuMapper,
       PasswordEncoder passwordEncoder,
       TrainingOperatorScopeService trainingOperatorScopeService,
+      EnterpriseFeatureConfigService enterpriseFeatureConfigService,
       LoginFailureGuard loginFailureGuard,
       @org.springframework.beans.factory.annotation.Value(
           "${platform.security.login.warn-failures:3}") int warnFailures) {
@@ -73,6 +76,7 @@ public class AuthApplicationService {
     this.menuMapper = menuMapper;
     this.passwordEncoder = passwordEncoder;
     this.trainingOperatorScopeService = trainingOperatorScopeService;
+    this.enterpriseFeatureConfigService = enterpriseFeatureConfigService;
     this.loginFailureGuard = loginFailureGuard;
     this.warnFailures = warnFailures;
   }
@@ -175,6 +179,9 @@ public class AuthApplicationService {
           currentUser.getTenantId(),
           roleMenuMapper.selectMenusByUser(currentUser.getTenantId(), currentUser.getUserId()));
     }
+    if (!PlatformAdminSupport.isPlatformAdmin(currentUser.getRoleCodes())) {
+      menus = enterpriseFeatureConfigService.filterMenusForUser(currentUser.getUserId(), menus);
+    }
     return buildMenuTree(menus);
   }
 
@@ -220,6 +227,7 @@ public class AuthApplicationService {
     List<String> permissions = roleMenuMapper.selectPermissionCodesByUser(user.getTenantId(), user.getId());
     if (roles == null) roles = List.of();
     if (permissions == null) permissions = List.of();
+    permissions = enterpriseFeatureConfigService.filterPermissionsForUserEntity(user, permissions);
     return new PlatformUserPrincipal(
         user.getId(),
         user.getTenantId(),

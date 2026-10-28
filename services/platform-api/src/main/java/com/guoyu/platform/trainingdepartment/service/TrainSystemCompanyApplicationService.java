@@ -8,7 +8,12 @@ import com.guoyu.platform.system.mapper.OrgMapper;
 import com.guoyu.platform.trainingdepartment.dto.SystemCompanyCreateReq;
 import com.guoyu.platform.trainingdepartment.dto.SystemCompanyUpdateReq;
 import com.guoyu.platform.trainingdepartment.vo.SystemCompanyVO;
+import java.util.Collections;
 import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
+import java.util.stream.Collectors;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
@@ -20,9 +25,12 @@ import org.springframework.util.StringUtils;
 public class TrainSystemCompanyApplicationService {
 
   private final OrgMapper orgMapper;
+  private final TrainingOperatorScopeService scopeService;
 
-  public TrainSystemCompanyApplicationService(OrgMapper orgMapper) {
+  public TrainSystemCompanyApplicationService(
+      OrgMapper orgMapper, TrainingOperatorScopeService scopeService) {
     this.orgMapper = orgMapper;
+    this.scopeService = scopeService;
   }
 
   @Transactional(readOnly = true)
@@ -34,11 +42,14 @@ public class TrainSystemCompanyApplicationService {
         .eq(OrgEntity::getOrgType, "company")
         .orderByAsc(OrgEntity::getSortOrder)
         .orderByAsc(OrgEntity::getId);
+    applyManageScope(qw);
     if (StringUtils.hasText(keyword)) {
       String kw = keyword.trim();
       qw.and(w -> w.like(OrgEntity::getName, kw).or().like(OrgEntity::getCode, kw));
     }
-    return orgMapper.selectList(qw).stream().map(this::toVO).toList();
+    List<OrgEntity> companies = orgMapper.selectList(qw);
+    Map<Long, String> parentNames = loadParentNames(tenantId, companies);
+    return companies.stream().map(e -> toVO(e, parentNames)).toList();
   }
 
   @Transactional
@@ -47,9 +58,14 @@ public class TrainSystemCompanyApplicationService {
     String name = req.name().trim();
     ensureNameAvailable(tenantId, name, null);
 
+    // 企业账号不可创建其它企业；机构建企自动挂本机构下（P15）
+    if (scopeService.isEnterpriseScoped()) {
+      throw new BusinessException("FORBIDDEN", "企业账号不可创建新企业");
+    }
+
     OrgEntity entity = new OrgEntity();
     entity.setTenantId(tenantId);
-    entity.setParentId(0L);
+    entity.setParentId(scopeService.resolveNewEnterpriseParentId());
     entity.setOrgType("company");
     entity.setCode(nextCode(tenantId));
     entity.setName(name);
@@ -57,12 +73,13 @@ public class TrainSystemCompanyApplicationService {
     entity.setStatus(StringUtils.hasText(req.status()) ? req.status() : "enabled");
     entity.setDeleted(0);
     orgMapper.insert(entity);
-    return toVO(entity);
+    return toVO(entity, loadParentNames(tenantId, List.of(entity)));
   }
 
   @Transactional
   public SystemCompanyVO update(Long id, SystemCompanyUpdateReq req) {
     Long tenantId = SecurityContext.currentUser().getTenantId();
+    scopeService.assertCanManageEnterprise(id);
     OrgEntity entity = getCompany(tenantId, id);
     String name = req.name().trim();
     ensureNameAvailable(tenantId, name, id);
@@ -71,12 +88,16 @@ public class TrainSystemCompanyApplicationService {
     entity.setSortOrder(req.sortOrder() == null ? 0 : req.sortOrder());
     entity.setStatus(req.status());
     orgMapper.updateById(entity);
-    return toVO(entity);
+    return toVO(entity, loadParentNames(tenantId, List.of(entity)));
   }
 
   @Transactional
   public void delete(Long id) {
     Long tenantId = SecurityContext.currentUser().getTenantId();
+    scopeService.assertCanManageEnterprise(id);
+    if (scopeService.isEnterpriseScoped()) {
+      throw new BusinessException("FORBIDDEN", "企业账号不可删除企业");
+    }
     OrgEntity entity = getCompany(tenantId, id);
     boolean hasChildren = orgMapper.exists(new LambdaQueryWrapper<OrgEntity>()
         .eq(OrgEntity::getTenantId, tenantId)
@@ -87,6 +108,14 @@ public class TrainSystemCompanyApplicationService {
     }
     entity.setDeleted(1);
     orgMapper.updateById(entity);
+  }
+
+  private void applyManageScope(LambdaQueryWrapper<OrgEntity> qw) {
+    // 企业账号仅见本企；机构暂看全量（调研/需求选企业仍依赖名录），开设账号接口单独校验下属
+    if (scopeService.isEnterpriseScoped()) {
+      Long orgId = scopeService.currentScope().orgId();
+      qw.eq(OrgEntity::getId, orgId == null ? -1L : orgId);
+    }
   }
 
   private OrgEntity getCompany(Long tenantId, Long id) {
@@ -127,7 +156,36 @@ public class TrainSystemCompanyApplicationService {
     return code;
   }
 
-  private SystemCompanyVO toVO(OrgEntity e) {
-    return new SystemCompanyVO(e.getId(), e.getCode(), e.getName(), e.getSortOrder(), e.getStatus());
+  private Map<Long, String> loadParentNames(Long tenantId, List<OrgEntity> companies) {
+    Set<Long> parentIds = companies.stream()
+        .map(OrgEntity::getParentId)
+        .filter(Objects::nonNull)
+        .filter(id -> id > 0)
+        .collect(Collectors.toSet());
+    if (parentIds.isEmpty()) {
+      return Collections.emptyMap();
+    }
+    return orgMapper.selectList(new LambdaQueryWrapper<OrgEntity>()
+            .eq(OrgEntity::getTenantId, tenantId)
+            .eq(OrgEntity::getDeleted, 0)
+            .in(OrgEntity::getId, parentIds))
+        .stream()
+        .collect(Collectors.toMap(OrgEntity::getId, OrgEntity::getName, (a, b) -> a));
+  }
+
+  private SystemCompanyVO toVO(OrgEntity e, Map<Long, String> parentNames) {
+    Long parentId = e.getParentId();
+    String parentName = null;
+    if (parentId != null && parentId > 0) {
+      parentName = parentNames.get(parentId);
+    }
+    return new SystemCompanyVO(
+        e.getId(),
+        e.getCode(),
+        e.getName(),
+        parentId,
+        parentName,
+        e.getSortOrder(),
+        e.getStatus());
   }
 }

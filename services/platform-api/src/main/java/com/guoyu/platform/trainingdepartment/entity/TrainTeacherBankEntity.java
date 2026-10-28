@@ -34,6 +34,8 @@ public class TrainTeacherBankEntity {
   private String graduatePaper;
   /** 工作单位 */
   private String company;
+  /** 归属企业组织 ID（sys_org） */
+  private Long companyId;
   /** 地址 */
   private String address;
   /** 身份证号 */
@@ -114,6 +116,8 @@ public class TrainTeacherBankEntity {
   public void setGraduatePaper(String graduatePaper) { this.graduatePaper = graduatePaper; }
   public String getCompany() { return company; }
   public void setCompany(String company) { this.company = company; }
+  public Long getCompanyId() { return companyId; }
+  public void setCompanyId(Long companyId) { this.companyId = companyId; }
   public String getAddress() { return address; }
   public void setAddress(String address) { this.address = address; }
   public String getIdCardNumber() { return idCardNumber; }
