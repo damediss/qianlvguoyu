@@ -239,6 +239,7 @@ export function EnterpriseManagePage() {
     mutationFn: () =>
       trainApi.saveEnterpriseFeatureConfig(featureCompany!.id, {
         menuCodes: featureMenuCodes,
+        // roleIds 全程用字符串：后端以字符串收发（雪花 ID 超出 JS 安全整数），转 Number 会丢精度
         roleIds: featureRoleIds,
         constrainEnabled: featureConstrain,
       }),

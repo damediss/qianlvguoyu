@@ -2460,14 +2460,16 @@ export interface EnterpriseFeatureConfig {
   enterpriseName?: string;
   configurerOrgId?: number;
   menuCodes: string[];
-  roleIds: number[];
+  /** 后端用 ToStringSerializer 输出字符串（雪花 ID 超出 JS 安全整数），收发都按字符串处理 */
+  roleIds: string[];
   constrainEnabled: boolean;
   configured: boolean;
 }
 
 export interface EnterpriseFeatureConfigSaveReq {
   menuCodes: string[];
-  roleIds: number[];
+  /** 字符串形态的角色 ID；后端 List<Long> 由 Jackson 直接转数字，避免转 Number 丢精度 */
+  roleIds: string[];
   constrainEnabled: boolean;
 }
 
