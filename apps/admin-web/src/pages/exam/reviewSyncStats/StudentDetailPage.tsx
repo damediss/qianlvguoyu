@@ -304,7 +304,7 @@ export function StudentDetailPage({ examId, planId }: { examId: number; planId: 
           columns={wrongColumns}
           dataSource={detail?.wrongList ?? []}
           expandable={{ expandedRowRender: wrongExpandedRender, rowExpandable: (r) => r.content != null }}
-          pagination={{ pageSize: 20, showTotal: (t) => `共 ${t} 条` }}
+          pagination={{ defaultPageSize: 20, showTotal: (t) => `共 ${t} 条` }}
         />
       </Card>
 
