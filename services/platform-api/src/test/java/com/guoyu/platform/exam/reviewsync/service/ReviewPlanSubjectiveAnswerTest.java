@@ -168,6 +168,26 @@ class ReviewPlanSubjectiveAnswerTest {
         "single", 440L, 901L, 42L, "对", new BigDecimal("2"));
   }
 
+  @Test
+  void objectiveDuplicateKeyOnInsertReplaysWinnerInsteadOf500() {
+    // 901：客观题（单选）；预检（第一次 selectOne）无记录 → 走判分落库；
+    // insert 撞 uk_ai_review_answer_once（真并发后到者）→ 兜底当前读（第二次 selectOne）回放先到者
+    AiReviewAnswerEntity winner = new AiReviewAnswerEntity();
+    winner.setIsCorrect(1);
+    winner.setUserAnswer("对");
+    when(answerMapper.selectOne(any())).thenReturn(null, winner);
+    when(answerMapper.insert(any(AiReviewAnswerEntity.class)))
+        .thenThrow(new org.springframework.dao.DuplicateKeyException("uk_ai_review_answer_once"));
+
+    Map<String, Object> result = service.answer(42L, 440L, 500L, 901L, "new", "对", 5, 10159L);
+
+    // 回放先到者结果：correct=1 + 正确答案，无 500；不重复写 exam_result
+    assertThat(result.get("correct")).isEqualTo(1);
+    assertThat(result.get("correctAnswer")).isEqualTo("对");
+    verify(answerMapper).insert(any(AiReviewAnswerEntity.class));
+    verifyNoInteractions(examResultWriteRepository);
+  }
+
   // ------------------------------------------------------------------
   // 无参考答案：ungradeable=1，不调 LLM 不落判分
   // ------------------------------------------------------------------

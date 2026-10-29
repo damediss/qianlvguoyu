@@ -330,8 +330,33 @@ public class ReviewPlanApplicationService {
       return answerSubjective(plan, day, detail, platformUserId, examId, dayId, questionId,
           roundType, userAnswer, useTimeSec, tenantId, selfAssessed, selfCorrect, giveUp);
     }
-    return self.answerObjectiveInTx(plan, day, detail, platformUserId, examId, dayId, questionId,
+    return persistObjectiveWithDupReplay(plan, day, detail, platformUserId, examId, dayId, questionId,
         roundType, userAnswer, useTimeSec, tenantId);
+  }
+
+  /**
+   * 客观题落库真并发撞 uk 兜底：RR 快照读防不住未提交行，后到者 insert 撞
+   * uk_ai_review_answer_once → 本方法捕获后当前读回放先到者结果
+   * （与主观题 persistSubjectiveWithDupReplay 同款，评审 #3 口径）。
+   * 捕获必须在事务外：事务内异常已标 rollback-only，同事务回放会二次失败。
+   */
+  private Map<String, Object> persistObjectiveWithDupReplay(AiReviewPlanEntity plan,
+      AiReviewPlanDayEntity day, ReviewQuestionDetail detail, long platformUserId, long examId,
+      long dayId, long questionId, String roundType, String userAnswer, Integer useTimeSec,
+      Long tenantId) {
+    try {
+      return self.answerObjectiveInTx(plan, day, detail, platformUserId, examId, dayId, questionId,
+          roundType, userAnswer, useTimeSec, tenantId);
+    } catch (DuplicateKeyException e) {
+      log.warn("[AI复习] 并发双提交撞唯一键，回放先到者结果：planId={} questionId={}",
+          plan.getId(), questionId);
+      AiReviewAnswerEntity winner = findLatestAnswer(plan.getId(), dayId, questionId, roundType);
+      if (winner != null) {
+        return answerView(winner.getIsCorrect() == 1, parseOptions(detail.answerJson()),
+            detail.resolve(), null);
+      }
+      throw e;
+    }
   }
 
   /** 客观题作答（原 answer() 大事务路径，自注入代理开启事务；判分/落库/计数逻辑与原实现一致） */
