@@ -8,7 +8,10 @@ public final class SkillGenPromptBuilder {
   private SkillGenPromptBuilder() {
   }
 
-  /** 输出格式示例（稳定前缀的一部分：缓存命中后边际成本极低；内容明确禁止照抄） */
+  /**
+   * 输出格式示例（稳定前缀的一部分：缓存命中后边际成本极低；内容明确禁止照抄）。
+   * 给 2 个元素：单元素示例会诱导模型模仿示例结构只输出 1 题（GLM 数组塌缩事故 2026-10-29）。
+   */
   private static final String EXAMPLE = """
       [{
         "name": "联机启动集控室监控设备",
@@ -27,6 +30,23 @@ public final class SkillGenPromptBuilder {
           {"item": "开机前安全检查", "score": "20", "scoreDesc": "未确认断电状态扣5分；未检查接地扣5分；防护用品未佩戴扣5分；安全警示未确认扣5分", "maxDeduct": "20", "step": "5"},
           {"item": "联机启动操作", "score": "50", "scoreDesc": "操作步骤漏一步扣5分；顺序错误扣5分；参数设置错误扣5分；未观察设备状态扣5分；通信链路未建立扣5分；启动后未自检扣5分；未按规程停机扣5分；记录不完整扣5分；超时操作扣5分；违规操作扣5分", "maxDeduct": "50", "step": "5"},
           {"item": "通信状态确认", "score": "30", "scoreDesc": "未确认通信状态扣5分；未核对监控点位扣5分；报警功能未验证扣5分；数据记录缺失扣5分；交接事项未确认扣5分；异常情况未上报扣5分", "maxDeduct": "30", "step": "5"}
+        ]
+      }, {
+        "name": "识读监控系统通信异常故障记录",
+        "durationMinutes": 15,
+        "examForm": "实操",
+        "sitePrepare": {
+          "equipment": [
+            {"name": "监控系统故障记录表", "unit": "份", "qty": "3"}
+          ]
+        },
+        "examineePrepare": "本人身份证×1、准考证×1、黑色签字笔×1",
+        "requirements": "识读监控系统显示的通信异常、设备运转不同步等故障记录，分析原因并提出处理措施",
+        "negatives": "若考生发生下列情况之一，则应及时终止其考试，考生该试题成绩记为零分：伪造故障记录或隐瞒异常情况不报",
+        "scoring": [
+          {"item": "故障记录识读", "score": "40", "scoreDesc": "未识别异常项扣10分；异常类型判断错误扣10分；关键信息遗漏扣10分；记录判读不完整扣10分", "maxDeduct": "40", "step": "5"},
+          {"item": "原因分析", "score": "35", "scoreDesc": "原因分析缺失扣10分；分析结论错误扣10分；未区分故障性质扣5分；依据不足扣10分", "maxDeduct": "35", "step": "5"},
+          {"item": "处理措施", "score": "25", "scoreDesc": "处理措施缺失扣10分；措施不当扣10分；安全注意事项遗漏扣5分", "maxDeduct": "25", "step": "5"}
         ]
       }]""";
 
@@ -63,7 +83,7 @@ public final class SkillGenPromptBuilder {
         .append("\"examineePrepare\":\"考生自带清单\",\"requirements\":\"具体考核要求\",\"negatives\":\"否定项说明\",")
         .append("\"scoring\":[{\"item\":\"评分要素\",\"score\":\"配分\",\"scoreDesc\":\"评分标准\",\"maxDeduct\":\"最大扣分\",\"step\":\"步长\"}]}\n")
         .append("scoring 中的配分/最大扣分/步长用数字字符串；配分合计必须为 100。\n")
-        .append("\n输出示例（仅示范格式与颗粒度，内容不得照抄）：\n").append(EXAMPLE);
+        .append("\n输出示例（仅示范格式与颗粒度，示例为 2 个元素，实际输出的元素个数必须与题目要求一致，内容不得照抄）：\n").append(EXAMPLE);
     return sb.toString();
   }
 

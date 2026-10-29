@@ -27,6 +27,25 @@ public interface SkillGenAiService {
       String thinking, String reasoningEffort, int maxTokens,
       String systemPrompt, String userPrompt);
 
+  /**
+   * 生成 + 解析 + 修正重试（GLM 数组塌缩对策，2026-10-29）：
+   * json_object 只保证输出合法 JSON、不约束根为数组（GLM 官方文档无 json_schema/strict），
+   * 模型可能把 5 题塌缩成 1 个试题对象。首次输出形态不符时把失败输出回喂做修正重试，
+   * 最多 {@value #MAX_REPAIR_ATTEMPTS} 次（含首次共 3 次调用）；usage 按全部尝试累计。
+   * 最终仍失败抛 BusinessException，由调用方记失败并计入熔断。
+   *
+   * @param expectedCount 要求试题道数（当前固定 5）
+   * @return items（已解析）+ content（末次成功输出）+ attempts + usage 累计
+   */
+  SkillGenGeneration generateForPointWithRepair(Long tenantId, String baseUrl, String apiKey, String modelId,
+      String thinking, String reasoningEffort, int maxTokens,
+      String systemPrompt, String userPrompt, int expectedCount);
+
   /** 解析模型输出 JSON → 试题列表（解析失败抛 BusinessException，由调用方记失败） */
   List<SkillQuestionItem> parseQuestions(String rawContent);
+
+  /** 生成结果：items + content + attempts + usage 累计（usage 含全部尝试） */
+  record SkillGenGeneration(List<SkillQuestionItem> items, String content, int attempts,
+      long promptTokens, long completionTokens, long totalTokens, long cachedTokens) {
+  }
 }

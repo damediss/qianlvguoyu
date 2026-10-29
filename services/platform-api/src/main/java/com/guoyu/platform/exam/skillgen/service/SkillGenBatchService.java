@@ -5,7 +5,6 @@ import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.guoyu.platform.ai.dto.LlmChatCompletionResult;
 import com.guoyu.platform.common.api.PageResponse;
 import com.guoyu.platform.common.exception.BusinessException;
 import com.guoyu.platform.common.exception.ErrorCode;
@@ -419,17 +418,22 @@ public class SkillGenBatchService {
       AtomicInteger consecutiveFailures) {
     Long tenantId = batch.getTenantId();
     TenantContextHolder.setTenantId(tenantId);
-    LlmChatCompletionResult result = null;
+    SkillGenAiService.SkillGenGeneration gen = null;
     try {
       long t0 = System.currentTimeMillis();
       SkillBlueprintNodeEntity l2 = parentOf(point, nodeMap);
       SkillBlueprintNodeEntity l1 = l2 == null ? null : parentOf(l2, nodeMap);
-      result = aiService.generateForPoint(tenantId, cfg.getBaseUrl(), cfg.getApiKey(),
+      gen = aiService.generateForPointWithRepair(tenantId, cfg.getBaseUrl(), cfg.getApiKey(),
           cfg.getModelId(), cfg.getThinking(), cfg.getReasoningEffort(),
           cfg.getMaxTokens() == null ? 16384 : cfg.getMaxTokens(),
           systemPrompt, SkillGenPromptBuilder.buildUserPrompt(point, l2, l1,
-              SkillBlueprintApplicationService.PER_POINT_QUOTA));
-      List<SkillQuestionItem> questions = aiService.parseQuestions(result.content());
+              SkillBlueprintApplicationService.PER_POINT_QUOTA),
+          SkillBlueprintApplicationService.PER_POINT_QUOTA);
+      List<SkillQuestionItem> questions = gen.items();
+      if (gen.attempts() > 1) {
+        log.info("考评点修正重试后成功：batchId={}, point={}, attempts={}",
+            batch.getId(), point.getFullCode(), gen.attempts());
+      }
       List<String> errors = validator.validateAll(questions,
           SkillBlueprintApplicationService.PER_POINT_QUOTA);
       if (!errors.isEmpty()) {
@@ -442,8 +446,8 @@ public class SkillGenBatchService {
         log.info("考评点已有草稿，跳过重复落库：batchId={}, point={}", batch.getId(), point.getFullCode());
         return;
       }
-      batchMapper.incrementDone(batch.getId(), questions.size(), result.totalTokens(),
-          result.promptTokens(), result.completionTokens(), result.cachedTokens());
+      batchMapper.incrementDone(batch.getId(), questions.size(), gen.totalTokens(),
+          gen.promptTokens(), gen.completionTokens(), gen.cachedTokens());
       consecutiveFailures.set(0);
     } catch (Exception e) {
       log.warn("考评点生成失败：batchId={}, point={}, err={}",
@@ -453,11 +457,11 @@ public class SkillGenBatchService {
       if (dispatched != null) {
         dispatched.remove(point.getId());
       }
-      if (result == null) {
+      if (gen == null) {
         batchMapper.incrementFailed(batch.getId(), 0, 0, 0, 0);
       } else {
-        batchMapper.incrementFailed(batch.getId(), result.totalTokens(), result.promptTokens(),
-            result.completionTokens(), result.cachedTokens());
+        batchMapper.incrementFailed(batch.getId(), gen.totalTokens(), gen.promptTokens(),
+            gen.completionTokens(), gen.cachedTokens());
       }
       consecutiveFailures.incrementAndGet();
     } finally {

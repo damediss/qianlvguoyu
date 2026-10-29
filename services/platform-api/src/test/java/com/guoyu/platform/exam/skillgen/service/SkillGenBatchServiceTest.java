@@ -4,6 +4,10 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -15,6 +19,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.guoyu.platform.common.exception.BusinessException;
 import com.guoyu.platform.exam.entity.ExamFaqModelConfigEntity;
 import com.guoyu.platform.exam.mapper.ExamFaqModelConfigMapper;
+import com.guoyu.platform.exam.skillgen.dto.SkillQuestionItem;
 import com.guoyu.platform.exam.skillgen.entity.SkillBlueprintEntity;
 import com.guoyu.platform.exam.skillgen.entity.SkillBlueprintNodeEntity;
 import com.guoyu.platform.exam.skillgen.entity.SkillGenBatchEntity;
@@ -238,5 +243,130 @@ class SkillGenBatchServiceTest {
     BusinessException ex = assertThrows(BusinessException.class,
         () -> service.submit(TENANT, USER, BP_ID, CFG_ID));
     assertTrue(ex.getMessage().contains("api_key 未配置"));
+  }
+
+  // ---------- runBlock 回归：修正重试后 usage 累计、失败计数 ----------
+
+  private static void invokeRunBlock(SkillGenBatchService service, SkillGenBatchEntity batch,
+      ExamFaqModelConfigEntity cfg, SkillBlueprintNodeEntity point,
+      java.util.Map<Long, SkillBlueprintNodeEntity> nodeMap,
+      java.util.concurrent.atomic.AtomicInteger failures) throws Exception {
+    java.lang.reflect.Method m = SkillGenBatchService.class.getDeclaredMethod("runBlock",
+        SkillGenBatchEntity.class, ExamFaqModelConfigEntity.class, String.class,
+        SkillBlueprintNodeEntity.class, java.util.Map.class,
+        java.util.concurrent.atomic.AtomicInteger.class);
+    m.setAccessible(true);
+    m.invoke(service, batch, cfg, "sys", point, nodeMap, failures);
+  }
+
+  private static SkillQuestionItem validItem(String name) {
+    SkillQuestionItem it = new SkillQuestionItem();
+    it.setName(name);
+    it.setDurationMinutes(20);
+    it.setExamForm("实操");
+    SkillQuestionItem.SitePrepare sp = new SkillQuestionItem.SitePrepare();
+    SkillQuestionItem.Equipment eq = new SkillQuestionItem.Equipment();
+    eq.setName("考核设备");
+    eq.setUnit("台");
+    eq.setQty("1");
+    sp.setEquipment(java.util.List.of(eq));
+    it.setSitePrepare(sp);
+    it.setExamineePrepare("本人身份证×1、准考证×1、黑色签字笔×1");
+    it.setRequirements("请完成" + name + "规定的考核操作");
+    it.setNegatives("若考生发生下列情况之一，则应及时终止其考试，考生该试题成绩记为零分：违反安全操作规程");
+    it.setScoring(java.util.List.of(
+        scoringItem("要素一", "50", "50", deductDesc(10)),
+        scoringItem("要素二", "30", "30", deductDesc(6)),
+        scoringItem("要素三", "20", "20", deductDesc(4))));
+    return it;
+  }
+
+  private static SkillQuestionItem.ScoringItem scoringItem(String item, String score,
+      String maxDeduct, String desc) {
+    SkillQuestionItem.ScoringItem s = new SkillQuestionItem.ScoringItem();
+    s.setItem(item);
+    s.setScore(score);
+    s.setScoreDesc(desc);
+    s.setMaxDeduct(maxDeduct);
+    s.setStep("5");
+    return s;
+  }
+
+  private static String deductDesc(int count) {
+    StringBuilder sb = new StringBuilder();
+    for (int i = 0; i < count; i++) {
+      sb.append("考核点未达标扣5分；");
+    }
+    return sb.toString();
+  }
+
+  private SkillGenBatchEntity batch() {
+    SkillGenBatchEntity batch = new SkillGenBatchEntity();
+    batch.setId(300L);
+    batch.setTenantId(TENANT);
+    batch.setBlueprintId(BP_ID);
+    batch.setCreatedBy(USER);
+    return batch;
+  }
+
+  @Test
+  void runBlock_repairGenerationCountsCumulativeUsage() throws Exception {
+    ExamFaqModelConfigEntity cfg = modelConfig();
+    SkillBlueprintNodeEntity point = points(1).get(0);
+    List<SkillQuestionItem> items = List.of(validItem("题一"), validItem("题二"),
+        validItem("题三"), validItem("题四"), validItem("题五"));
+    when(aiService.generateForPointWithRepair(any(), anyString(), anyString(), anyString(),
+        anyString(), anyString(), anyInt(), anyString(), anyString(), anyInt()))
+        .thenReturn(new SkillGenAiService.SkillGenGeneration(items, "[...]", 2,
+            100, 200, 300, 10));
+    when(transactionTemplate.execute(any())).thenReturn(true);
+    when(draftMapper.selectCount(any())).thenReturn(0L);
+
+    java.util.concurrent.atomic.AtomicInteger failures = new java.util.concurrent.atomic.AtomicInteger();
+    invokeRunBlock(service, batch(), cfg, point, java.util.Map.of(), failures);
+
+    verify(batchMapper).incrementDone(eq(300L), eq(5), eq(300L), eq(100L), eq(200L), eq(10L));
+    assertEquals(0, failures.get());
+    // runBlock 不再自行解析（解析在 AI 服务内随重试完成）
+    verify(aiService, never()).parseQuestions(any());
+  }
+
+  @Test
+  void runBlock_repairExhaustedCountsFailure() throws Exception {
+    ExamFaqModelConfigEntity cfg = modelConfig();
+    SkillBlueprintNodeEntity point = points(1).get(0);
+    when(aiService.generateForPointWithRepair(any(), anyString(), anyString(), anyString(),
+        anyString(), anyString(), anyInt(), anyString(), anyString(), anyInt()))
+        .thenThrow(new BusinessException(com.guoyu.platform.common.exception.ErrorCode.BAD_GATEWAY,
+            "模型输出不是试题数组（已调用 3 次）"));
+
+    java.util.concurrent.atomic.AtomicInteger failures = new java.util.concurrent.atomic.AtomicInteger();
+    invokeRunBlock(service, batch(), cfg, point, java.util.Map.of(), failures);
+
+    // gen == null（LLM 调用前就失败）：usage 按 0 计，但失败计数必须 +1
+    verify(batchMapper).incrementFailed(eq(300L), eq(0L), eq(0L), eq(0L), eq(0L));
+    assertEquals(1, failures.get());
+  }
+
+  @Test
+  void runBlock_invalidOutputCountsFailureWithUsage() throws Exception {
+    ExamFaqModelConfigEntity cfg = modelConfig();
+    SkillBlueprintNodeEntity point = points(1).get(0);
+    // 5 题但名称重复（第 5 题与第 1 题同名）：validator 拒绝，gen 已产出 usage 必须计入失败
+    List<SkillQuestionItem> items = List.of(validItem("题一"), validItem("题二"),
+        validItem("题三"), validItem("题四"), validItem("题一"));
+    when(aiService.generateForPointWithRepair(any(), anyString(), anyString(), anyString(),
+        anyString(), anyString(), anyInt(), anyString(), anyString(), anyInt()))
+        .thenReturn(new SkillGenAiService.SkillGenGeneration(items, "[...]", 2,
+            100, 200, 300, 10));
+    when(transactionTemplate.execute(any())).thenReturn(true);
+    when(draftMapper.selectCount(any())).thenReturn(0L);
+
+    java.util.concurrent.atomic.AtomicInteger failures = new java.util.concurrent.atomic.AtomicInteger();
+    invokeRunBlock(service, batch(), cfg, point, java.util.Map.of(), failures);
+
+    verify(batchMapper, never()).incrementDone(any(), anyInt(), anyLong(), anyLong(), anyLong(), anyLong());
+    verify(batchMapper).incrementFailed(eq(300L), eq(300L), eq(100L), eq(200L), eq(10L));
+    assertEquals(1, failures.get());
   }
 }
