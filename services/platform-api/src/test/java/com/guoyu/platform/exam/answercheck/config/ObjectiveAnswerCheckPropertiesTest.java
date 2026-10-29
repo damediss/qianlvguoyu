@@ -3,7 +3,6 @@ package com.guoyu.platform.exam.answercheck.config;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import com.guoyu.platform.ai.config.ObjectiveAnswerJevProperties;
 import jakarta.validation.Validation;
 import jakarta.validation.Validator;
 import jakarta.validation.ValidatorFactory;
@@ -60,16 +59,5 @@ class ObjectiveAnswerCheckPropertiesTest {
     ObjectiveAnswerCheckProperties margin = new ObjectiveAnswerCheckProperties();
     margin.setMarginThreshold(-0.1);
     assertTrue(!violations(margin).isEmpty());
-  }
-
-  @Test
-  void jevReadTimeoutOutsideFiveTo120Rejected() {
-    ObjectiveAnswerJevProperties properties = new ObjectiveAnswerJevProperties();
-    properties.setReadTimeoutSeconds(3);
-    assertTrue(!violations(properties).isEmpty());
-    properties.setReadTimeoutSeconds(121);
-    assertTrue(!violations(properties).isEmpty());
-    properties.setReadTimeoutSeconds(30);
-    assertTrue(violations(properties).isEmpty());
   }
 }

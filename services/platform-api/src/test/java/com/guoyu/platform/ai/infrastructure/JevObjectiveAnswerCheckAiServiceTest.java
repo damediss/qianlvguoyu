@@ -14,7 +14,6 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.guoyu.platform.ai.config.ObjectiveAnswerJevProperties;
 import com.guoyu.platform.ai.dto.JevBatchDecisionResult;
 import com.guoyu.platform.ai.dto.JevQuestion;
 import com.guoyu.platform.ai.dto.JevSubDecision;
@@ -35,28 +34,27 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
-/**
- * AI 服务（方案 §16.1-D）：请求不泄密、多选分块、整题原子失败、每块审计。
- */
+/** AI 服务（方案 §16.1-D）：请求不泄密、多选分块、整题原子失败、每块审计、批次快照。 */
 @ExtendWith(MockitoExtension.class)
 class JevObjectiveAnswerCheckAiServiceTest {
 
   @Mock
   private JevDecisionClient client;
+  @Mock
+  private ObjectiveAnswerCheckJevConfigResolver configResolver;
 
   private JevObjectiveAnswerCheckAiService service;
 
   private static final ObjectiveAnswerCheckCallContext CONTEXT =
-      new ObjectiveAnswerCheckCallContext(10159L, 7L, 11L, 22L, 33L, 1);
+      new ObjectiveAnswerCheckCallContext(10159L, 7L, 11L, 22L, 33L, 1, "ateve-jev-v1",
+          "http://jev.local/gateway", 30);
 
   @BeforeEach
   void setUp() {
-    ObjectiveAnswerJevProperties properties = new ObjectiveAnswerJevProperties();
-    properties.setBaseUrl("http://jev.local/gateway");
-    properties.setModel("ateve-jev-v1");
-    properties.setApiKey("secret-key");
-    properties.setReadTimeoutSeconds(30);
-    service = new JevObjectiveAnswerCheckAiService(client, properties, new ObjectMapper());
+    when(configResolver.runtimeFor(any())).thenReturn(
+        new ObjectiveAnswerCheckJevConfigResolver.Runtime("http://jev.local/gateway", "secret-key",
+            "ateve-jev-v1", 30));
+    service = new JevObjectiveAnswerCheckAiService(client, configResolver, new ObjectMapper());
   }
 
   private ObjectiveAnswerQuestion question(String type, int optionCount) {
@@ -226,13 +224,23 @@ class JevObjectiveAnswerCheckAiServiceTest {
   }
 
   @Test
-  void missingCredentialsRejectsWithoutHttpCall() {
-    ObjectiveAnswerJevProperties properties = new ObjectiveAnswerJevProperties();
-    properties.setApiKey("");
-    JevObjectiveAnswerCheckAiService noKey = new JevObjectiveAnswerCheckAiService(client,
-        properties, new ObjectMapper());
+  void incompleteBatchSnapshotGetsSpecificErrorInsteadOfNotConfigured() {
+    when(configResolver.runtimeFor(any()))
+        .thenThrow(new IllegalStateException("批次 JEV 配置快照不完整"));
     ObjectiveAnswerCheckAiException error = assertThrows(ObjectiveAnswerCheckAiException.class,
-        () -> noKey.check(question("single", 2), CONTEXT, outcome -> {
+        () -> service.check(question("single", 2), CONTEXT, outcome -> {
+        }));
+    assertEquals("SNAPSHOT_INCOMPLETE", error.getErrorCode());
+    verify(client, times(0)).decideBatch(anyString(), anyString(), anyString(), anyString(),
+        anyMap(), anyInt());
+  }
+
+  @Test
+  void missingCredentialsRejectsWithoutHttpCall() {
+    when(configResolver.runtimeFor(any()))
+        .thenThrow(new IllegalStateException("OBJECTIVE_ANSWER_CHECK_JEV_API_KEY 未配置"));
+    ObjectiveAnswerCheckAiException error = assertThrows(ObjectiveAnswerCheckAiException.class,
+        () -> service.check(question("single", 2), CONTEXT, outcome -> {
         }));
     assertEquals("NOT_CONFIGURED", error.getErrorCode());
     verify(client, times(0)).decideBatch(anyString(), anyString(), anyString(), anyString(),

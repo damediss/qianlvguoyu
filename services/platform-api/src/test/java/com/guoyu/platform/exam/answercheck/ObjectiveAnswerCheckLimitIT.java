@@ -56,7 +56,8 @@ class ObjectiveAnswerCheckLimitIT {
   void setUp() {
     clean();
     org.mockito.Mockito.when(aiService.descriptor())
-        .thenReturn(new ObjectiveAnswerCheckAiDescriptor("ateve-jev-v1", true));
+        .thenReturn(new ObjectiveAnswerCheckAiDescriptor("OBJECTIVE_ANSWER_CHECK_JEV_MODEL",
+            "ateve-jev-v1", "https://tokendance.space/gateway", true, 5, 30));
     org.mockito.Mockito.when(aiService.check(org.mockito.ArgumentMatchers.any(),
         org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any()))
         .thenAnswer(invocation -> {

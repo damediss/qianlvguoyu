@@ -25,7 +25,7 @@
     "test:textbook": "vitest run --config vitest.config.ts tests/textbookProjectPage.test.tsx tests/textbookOutlinePage.test.tsx",
     "test:textbook-collaboration": "vitest run --config vitest.config.ts tests/textbookCollaborationPage.test.tsx tests/textbookMyTasksPage.test.tsx tests/textbookWritingWorkbenchPage.test.tsx tests/textbookReviewWorkbenchPage.test.tsx tests/textbookVersionDrawer.test.tsx",
     "test:e2e:textbook-collaboration": "playwright test --config playwright.chrome.config.ts e2e/textbook-collaboration.spec.ts",
-    "test:objective-answer-check": "vitest run --config vitest.config.ts tests/objectiveAnswerCheckUtils.test.ts tests/objectiveAnswerCheckSelection.test.tsx tests/objectiveAnswerCheckResults.test.tsx tests/objectiveAnswerCheckExport.test.tsx tests/questionImportValidation.test.tsx",
+    "test:objective-answer-check": "vitest run --config vitest.config.ts tests/objectiveAnswerCheckUtils.test.ts tests/objectiveAnswerCheckSelection.test.tsx tests/objectiveAnswerCheckResults.test.tsx tests/objectiveAnswerCheckExport.test.tsx tests/questionImportValidation.test.tsx tests/faqModelConfigDialog.test.tsx",
     "test:e2e:objective-answer-check": "playwright test --config playwright.chrome.config.ts e2e/objective-answer-check.spec.ts"
   },
   "dependencies": {

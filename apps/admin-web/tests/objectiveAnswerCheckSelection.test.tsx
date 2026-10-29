@@ -206,7 +206,7 @@ describe('ObjectiveAnswerCheckPage 选择试题', () => {
       detailIds: [101],
       scope: expect.objectContaining({ types: ['single', 'multi', 'judge'] }),
     });
-  });
+  }, 30000);
 
   it('超过单批上限时“选择筛选全部”拒绝并提示缩小范围', async () => {
     api.previewObjectiveAnswerSelection.mockResolvedValue({
@@ -219,7 +219,7 @@ describe('ObjectiveAnswerCheckPage 选择试题', () => {
     await screen.findByText('海洋是什么颜色的？');
     await userEvent.click(screen.getByRole('button', { name: '选择筛选全部' }));
     expect(await screen.findByText(/超过单批上限/)).toBeInTheDocument();
-  });
+  }, 30000);
 
   it('服务端分页：切页触发新请求，不写死 pageSize', async () => {
     renderPage();

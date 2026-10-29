@@ -283,7 +283,8 @@ public class ObjectiveAnswerCheckApplicationService {
         nz(batch.getContentSuspect()), nz(batch.getContentInvalid()), nz(batch.getExpectedCalls()),
         nz(batch.getCallCount()), nz(batch.getInputTokensExact()),
         nz(batch.getInputTokensEstimated()), nz(batch.getUsageEstimatedCalls()),
-        nz(batch.getOutputTokens()), batch.getModelId(), batch.getPromptVersion(),
+        nz(batch.getOutputTokens()), batch.getModelId(), batch.getJevBaseUrl(),
+        batch.getJevConcurrency(), batch.getJevReadTimeoutSeconds(), batch.getPromptVersion(),
         batch.getConfidenceThreshold(), batch.getMarginThreshold(), batch.getCreatedBy(),
         displayName(batch.getCreatedBy()), batch.getCreatedAt(), batch.getStartedAt(),
         batch.getFinishedAt(), batch.getFailReason(), canPause, canResume, canRetryFailed);

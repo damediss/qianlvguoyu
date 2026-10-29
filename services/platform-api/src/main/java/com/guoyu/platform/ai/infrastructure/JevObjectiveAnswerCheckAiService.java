@@ -1,7 +1,6 @@
 package com.guoyu.platform.ai.infrastructure;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.guoyu.platform.ai.config.ObjectiveAnswerJevProperties;
 import com.guoyu.platform.ai.dto.JevBatchDecisionResult;
 import com.guoyu.platform.ai.dto.JevQuestion;
 import com.guoyu.platform.ai.dto.JevSubDecision;
@@ -33,7 +32,7 @@ import org.springframework.stereotype.Service;
  *
  * <p>单选/判断一次逻辑调用；多选每个选项一个二元子问题、每 5 个选项一块。
  * 每个逻辑块结束立即回调 auditSink（成功与失败都要），审计写失败会使整题失败。
- * 任何一块失败都不产生半份 AI 答案。
+ * 任何一块失败都不产生半份 AI 答案。Worker 必须使用批次快照，不得重新读取 DB 配置。
  */
 @Slf4j
 @Service
@@ -45,36 +44,43 @@ public class JevObjectiveAnswerCheckAiService implements ObjectiveAnswerCheckAiS
   private static final String PROMPT_VERSION = "objective-answer-v1";
 
   private final JevDecisionClient client;
-  private final ObjectiveAnswerJevProperties properties;
+  private final ObjectiveAnswerCheckJevConfigResolver configResolver;
   private final ObjectMapper objectMapper;
 
   public JevObjectiveAnswerCheckAiService(JevDecisionClient client,
-      ObjectiveAnswerJevProperties properties, ObjectMapper objectMapper) {
+      ObjectiveAnswerCheckJevConfigResolver configResolver, ObjectMapper objectMapper) {
     this.client = client;
-    this.properties = properties;
+    this.configResolver = configResolver;
     this.objectMapper = objectMapper;
   }
 
   @Override
   public ObjectiveAnswerCheckAiDescriptor descriptor() {
-    return new ObjectiveAnswerCheckAiDescriptor(properties.getModel(),
-        properties.apiKeyOrNull() != null && properties.baseUrlOrNull() != null);
+    return configResolver.descriptor();
   }
 
   @Override
   public ObjectiveAnswerDecision check(ObjectiveAnswerQuestion question,
       ObjectiveAnswerCheckCallContext context, Consumer<ObjectiveAnswerCallOutcome> auditSink) {
-    if (!descriptor().credentialsReady()) {
+    ObjectiveAnswerCheckJevConfigResolver.Runtime runtime;
+    try {
+      runtime = configResolver.runtimeFor(context);
+    } catch (IllegalStateException e) {
+      if (e.getMessage() != null && e.getMessage().contains("快照不完整")) {
+        throw new ObjectiveAnswerCheckAiException("批次模型配置快照缺失，请新建批次后再检查",
+            "SNAPSHOT_INCOMPLETE", false, false, null);
+      }
       throw unavailable();
     }
     if ("multi".equals(question.questionType())) {
-      return checkMulti(question, context, auditSink);
+      return checkMulti(question, context, runtime, auditSink);
     }
-    return checkSingleOrJudge(question, context, auditSink);
+    return checkSingleOrJudge(question, context, runtime, auditSink);
   }
 
   private ObjectiveAnswerDecision checkSingleOrJudge(ObjectiveAnswerQuestion question,
-      ObjectiveAnswerCheckCallContext context, Consumer<ObjectiveAnswerCallOutcome> auditSink) {
+      ObjectiveAnswerCheckCallContext context, ObjectiveAnswerCheckJevConfigResolver.Runtime runtime,
+      Consumer<ObjectiveAnswerCallOutcome> auditSink) {
     List<ObjectiveAnswerOption> ordered = rotateForQuestion(question);
     boolean judge = "judge".equals(question.questionType());
     String state = buildState(question, ordered, judge);
@@ -96,15 +102,15 @@ public class JevObjectiveAnswerCheckAiService implements ObjectiveAnswerCheckAiS
 
     JevBatchDecisionResult result;
     try {
-      result = client.decideBatch(properties.baseUrlOrNull(), properties.apiKeyOrNull(),
-          properties.getModel(), state, questions, properties.getReadTimeoutSeconds());
+      result = client.decideBatch(runtime.baseUrl(), runtime.apiKey(), runtime.modelId(), state,
+          questions, runtime.readTimeoutSeconds());
     } catch (RuntimeException e) {
-      auditSink.accept(failedOutcome(callId, context, 1, 1, question.questionType(), promptSha,
-          question, e));
+      auditSink.accept(failedOutcome(callId, context, runtime.modelId(), 1, 1,
+          question.questionType(), promptSha, question, e));
       throw toAiException(e);
     }
-    auditSink.accept(successOutcome(callId, context, 1, 1, question.questionType(), promptSha,
-        question, result));
+    auditSink.accept(successOutcome(callId, context, runtime.modelId(), 1, 1,
+        question.questionType(), promptSha, question, result));
 
     JevSubDecision sub = result.answers().get("answer");
     if (sub == null) {
@@ -132,7 +138,8 @@ public class JevObjectiveAnswerCheckAiService implements ObjectiveAnswerCheckAiS
   }
 
   private ObjectiveAnswerDecision checkMulti(ObjectiveAnswerQuestion question,
-      ObjectiveAnswerCheckCallContext context, Consumer<ObjectiveAnswerCallOutcome> auditSink) {
+      ObjectiveAnswerCheckCallContext context, ObjectiveAnswerCheckJevConfigResolver.Runtime runtime,
+      Consumer<ObjectiveAnswerCallOutcome> auditSink) {
     List<ObjectiveAnswerOption> options = question.options();
     int chunkCount = (options.size() + MULTI_CHUNK_SIZE - 1) / MULTI_CHUNK_SIZE;
     String state = buildState(question, options, false);
@@ -152,14 +159,14 @@ public class JevObjectiveAnswerCheckAiService implements ObjectiveAnswerCheckAiS
       String callId = UUID.randomUUID().toString();
       JevBatchDecisionResult result;
       try {
-        result = client.decideBatch(properties.baseUrlOrNull(), properties.apiKeyOrNull(),
-            properties.getModel(), state, questions, properties.getReadTimeoutSeconds());
+        result = client.decideBatch(runtime.baseUrl(), runtime.apiKey(), runtime.modelId(), state,
+            questions, runtime.readTimeoutSeconds());
       } catch (RuntimeException e) {
-        auditSink.accept(failedOutcome(callId, context, chunkIndex, chunkCount,
+        auditSink.accept(failedOutcome(callId, context, runtime.modelId(), chunkIndex, chunkCount,
             question.questionType(), promptSha, question, e));
         throw toAiException(e);
       }
-      auditSink.accept(successOutcome(callId, context, chunkIndex, chunkCount,
+      auditSink.accept(successOutcome(callId, context, runtime.modelId(), chunkIndex, chunkCount,
           question.questionType(), promptSha, question, result));
 
       for (ObjectiveAnswerOption option : chunk) {
@@ -235,22 +242,24 @@ public class JevObjectiveAnswerCheckAiService implements ObjectiveAnswerCheckAiS
   }
 
   private ObjectiveAnswerCallOutcome successOutcome(String callId,
-      ObjectiveAnswerCheckCallContext context, int chunkIndex, int chunkCount, String questionType,
-      String promptSha, ObjectiveAnswerQuestion question, JevBatchDecisionResult result) {
+      ObjectiveAnswerCheckCallContext context, String requestedModel, int chunkIndex, int chunkCount,
+      String questionType, String promptSha, ObjectiveAnswerQuestion question,
+      JevBatchDecisionResult result) {
     return new ObjectiveAnswerCallOutcome(callId, context.batchId(), context.itemId(),
         question.detailId(), context.runId(), context.claimAttempt(), chunkIndex, chunkCount,
-        questionType, properties.getModel(), result.responseModel(),
-        result.confidenceDefinition(), promptSha, preview(question.stemText()),
-        result.inputTokens(), result.outputTokens(), result.usageEstimated(), result.durationMs(),
-        ObjectiveAnswerCallOutcome.STATUS_SUCCESS, null, null);
+        questionType, requestedModel, result.responseModel(), result.confidenceDefinition(),
+        promptSha, preview(question.stemText()), result.inputTokens(), result.outputTokens(),
+        result.usageEstimated(), result.durationMs(), ObjectiveAnswerCallOutcome.STATUS_SUCCESS,
+        null, null);
   }
 
   private ObjectiveAnswerCallOutcome failedOutcome(String callId,
-      ObjectiveAnswerCheckCallContext context, int chunkIndex, int chunkCount, String questionType,
-      String promptSha, ObjectiveAnswerQuestion question, RuntimeException error) {
+      ObjectiveAnswerCheckCallContext context, String requestedModel, int chunkIndex, int chunkCount,
+      String questionType, String promptSha, ObjectiveAnswerQuestion question,
+      RuntimeException error) {
     return new ObjectiveAnswerCallOutcome(callId, context.batchId(), context.itemId(),
         question.detailId(), context.runId(), context.claimAttempt(), chunkIndex, chunkCount,
-        questionType, properties.getModel(), null, null, promptSha, preview(question.stemText()),
+        questionType, requestedModel, null, null, promptSha, preview(question.stemText()),
         null, null, false, null, ObjectiveAnswerCallOutcome.STATUS_FAILED, classify(error),
         truncate(error.getMessage(), 500));
   }

@@ -27,6 +27,10 @@ import org.springframework.util.StringUtils;
 @Slf4j
 public class FaqModelConfigApplicationService {
 
+  public static final String OBJECTIVE_ANSWER_CHECK_JEV_MODEL_CODE =
+      "OBJECTIVE_ANSWER_CHECK_JEV_MODEL";
+  public static final String MODEL_API_KEY_CONFIG_FILE_PLACEHOLDER = "模型API Key走配置文件";
+
   private final ExamFaqModelConfigMapper mapper;
 
   public FaqModelConfigApplicationService(ExamFaqModelConfigMapper mapper) {
@@ -75,7 +79,8 @@ public class FaqModelConfigApplicationService {
     Long tenantId = SecurityContext.currentUser().getTenantId();
     List<ExamFaqModelConfigEntity> list = mapper.selectList(new LambdaQueryWrapper<ExamFaqModelConfigEntity>()
         .eq(ExamFaqModelConfigEntity::getTenantId, tenantId)
-        .eq(ExamFaqModelConfigEntity::getStatus, "enabled"));
+        .eq(ExamFaqModelConfigEntity::getStatus, "enabled")
+        .in(ExamFaqModelConfigEntity::getFeatureScope, "common", "faq-conversion"));
     // 必须返回 mutable list（ArrayList），否则 Redis 缓存反序列化会报 SerializationException
     return list.stream().map(FaqModelConfigVO::from).collect(java.util.stream.Collectors.toCollection(java.util.ArrayList::new));
   }
@@ -85,6 +90,10 @@ public class FaqModelConfigApplicationService {
   public FaqModelConfigVO create(FaqModelConfigCreateReq req) {
     Long tenantId = SecurityContext.currentUser().getTenantId();
     Long userId = SecurityContext.currentUser().getUserId();
+    if (OBJECTIVE_ANSWER_CHECK_JEV_MODEL_CODE.equals(req.modelCode())) {
+      throw new BusinessException(ErrorCode.CONFLICT,
+          "客观题答案检查模型由系统配置管理，不能新建同名模型");
+    }
 
     // 唯一性检查
     boolean exists = mapper.exists(new LambdaQueryWrapper<ExamFaqModelConfigEntity>()
@@ -102,10 +111,13 @@ public class FaqModelConfigApplicationService {
     entity.setBaseUrl(req.baseUrl());
     entity.setApiKey(req.apiKey());
     entity.setApiFormat(req.apiFormat());
+    entity.setFeatureScope("common");
     entity.setModelId(req.modelId());
     entity.setTemperature(req.temperature() != null ? req.temperature() : new BigDecimal("0.70"));
     entity.setMaxTokens(req.maxTokens() != null ? req.maxTokens() : 2000);
     entity.setExtraConfig(req.extraConfig());
+    entity.setJevConcurrency(req.jevConcurrency());
+    entity.setJevReadTimeoutSeconds(req.jevReadTimeoutSeconds());
     entity.setStatus(req.status() != null && req.status() == 1 ? "enabled" : "disabled");
     entity.setCreatedBy(userId);
     entity.setUpdatedBy(userId);
@@ -124,15 +136,26 @@ public class FaqModelConfigApplicationService {
     Long tenantId = SecurityContext.currentUser().getTenantId();
     Long userId = SecurityContext.currentUser().getUserId();
     ExamFaqModelConfigEntity entity = findExisting(tenantId, id);
+    boolean objectiveAnswerJev = OBJECTIVE_ANSWER_CHECK_JEV_MODEL_CODE.equals(entity.getModelCode());
+    if (objectiveAnswerJev && req.apiKey() != null
+        && !MODEL_API_KEY_CONFIG_FILE_PLACEHOLDER.equals(req.apiKey())) {
+      throw new BusinessException(ErrorCode.CONFLICT,
+          "该模型 API Key 由服务器配置文件提供，请不要在此填写");
+    }
 
     if (req.modelName() != null) entity.setModelName(req.modelName());
     if (req.baseUrl() != null) entity.setBaseUrl(req.baseUrl());
-    if (req.apiKey() != null) entity.setApiKey(req.apiKey());
+    // 专用客观题 JEV 行的 api_key 固定为占位文案；普通模型只允许非空轮换，空串不覆盖旧密钥。
+    if (!objectiveAnswerJev && StringUtils.hasText(req.apiKey())) entity.setApiKey(req.apiKey());
     if (req.apiFormat() != null) entity.setApiFormat(req.apiFormat());
     if (req.modelId() != null) entity.setModelId(req.modelId());
     if (req.temperature() != null) entity.setTemperature(req.temperature());
     if (req.maxTokens() != null) entity.setMaxTokens(req.maxTokens());
     if (req.extraConfig() != null) entity.setExtraConfig(req.extraConfig());
+    if (req.jevConcurrency() != null) entity.setJevConcurrency(req.jevConcurrency());
+    if (req.jevReadTimeoutSeconds() != null) {
+      entity.setJevReadTimeoutSeconds(req.jevReadTimeoutSeconds());
+    }
     if (req.status() != null) entity.setStatus(req.status() == 1 ? "enabled" : "disabled");
     entity.setUpdatedBy(userId);
     entity.setUpdatedAt(LocalDateTime.now());
@@ -146,7 +169,11 @@ public class FaqModelConfigApplicationService {
   @Transactional
   public void delete(Long id) {
     Long tenantId = SecurityContext.currentUser().getTenantId();
-    findExisting(tenantId, id);
+    ExamFaqModelConfigEntity entity = findExisting(tenantId, id);
+    if (OBJECTIVE_ANSWER_CHECK_JEV_MODEL_CODE.equals(entity.getModelCode())) {
+      throw new BusinessException(ErrorCode.CONFLICT,
+          "客观题答案检查模型由系统配置管理，不能删除；可在禁用后暂停使用该功能");
+    }
     mapper.deleteById(id);
     log.info("FAQ 模型配置已删除：tenantId={}, id={}", tenantId, id);
   }

@@ -45,9 +45,11 @@ class ObjectiveAnswerCheckRetryFromDoneIT {
       cleanup();
       jdbcTemplate.update(
           "INSERT INTO exam_objective_answer_check_batch (id, tenant_id, selection_mode, filter_json,"
-              + " status, total, done, failed, model_id, prompt_version, confidence_threshold,"
+              + " status, total, done, failed, model_id, jev_base_url, jev_concurrency,"
+              + " jev_read_timeout_seconds, prompt_version, confidence_threshold,"
               + " margin_threshold, created_by, updated_by) VALUES (?, ?, 'ids', '{}', 'done', 1, 1, 1,"
-              + " 'ateve-jev-v1', 'objective-answer-v1', 0.800, 0.200, 7, 7)",
+              + " 'ateve-jev-v1', 'https://tokendance.space/gateway', 5, 30,"
+              + " 'objective-answer-v1', 0.800, 0.200, 7, 7)",
           BATCH_ID, TENANT_ID);
       jdbcTemplate.update(
           "INSERT INTO exam_objective_answer_check_item (id, tenant_id, batch_id, detail_id,"

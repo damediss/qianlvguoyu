@@ -16,6 +16,8 @@ interface Props {
   onClose: () => void;
 }
 
+const OBJECTIVE_ANSWER_CHECK_JEV_MODEL_CODE = 'OBJECTIVE_ANSWER_CHECK_JEV_MODEL';
+
 /** WeKnora & LLM 配置弹层 */
 export function FaqConfigDialog({ open, onClose }: Props) {
   const [activeTab, setActiveTab] = useState('webhook');
@@ -27,6 +29,8 @@ export function FaqConfigDialog({ open, onClose }: Props) {
   const [modelModalOpen, setModelModalOpen] = useState(false);
   const [savingWeknora, setSavingWeknora] = useState(false);
   const [savingModel, setSavingModel] = useState(false);
+  const editingObjectiveJev =
+    editingModel?.modelCode === OBJECTIVE_ANSWER_CHECK_JEV_MODEL_CODE;
 
   // 加载 WeKnora 配置
   const loadWeknoraConfig = async () => {
@@ -88,12 +92,19 @@ export function FaqConfigDialog({ open, onClose }: Props) {
   const handleSaveModel = async () => {
     try {
       const values = await modelForm.validateFields();
+      const payload = { ...values };
+      // 编辑时不重填 Key 不代表清空密钥：空串一律不提交，由后端保留旧值。
+      if (!payload.apiKey) delete payload.apiKey;
+      if (editingObjectiveJev) {
+        // 该模型真实密钥由服务器环境变量提供，页面不提交任何密钥值。
+        delete payload.apiKey;
+      }
       setSavingModel(true);
       if (editingModel) {
-        await updateFaqModelConfig(editingModel.id, values);
+        await updateFaqModelConfig(editingModel.id, payload);
         message.success('模型配置已更新');
       } else {
-        await createFaqModelConfig({ ...values, status: values.status ?? 1 });
+        await createFaqModelConfig({ ...payload, status: values.status ?? 1 });
         message.success('模型配置已创建');
       }
       setModelModalOpen(false);
@@ -128,7 +139,7 @@ export function FaqConfigDialog({ open, onClose }: Props) {
   // 编辑模型
   const handleEditModel = (record: FaqModelConfigVO) => {
     setEditingModel(record);
-    modelForm.setFieldsValue(record);
+    modelForm.setFieldsValue({ ...record, apiKey: '' });
     setModelModalOpen(true);
   };
 
@@ -137,6 +148,7 @@ export function FaqConfigDialog({ open, onClose }: Props) {
     { title: '编码', dataIndex: 'modelCode', width: 120 },
     { title: '名称', dataIndex: 'modelName', width: 120 },
     { title: 'API 格式', dataIndex: 'apiFormat', width: 100 },
+    { title: '适用范围', dataIndex: 'featureScope', width: 130 },
     { title: '模型ID', dataIndex: 'modelId', width: 120 },
     { title: 'API Key', dataIndex: 'apiKeyMasked', width: 140 },
     {
@@ -148,9 +160,11 @@ export function FaqConfigDialog({ open, onClose }: Props) {
       render: (_: unknown, row: FaqModelConfigVO) => (
         <Space>
           <Button size="small" type="link" icon={<EditOutlined />} onClick={() => handleEditModel(row)}>编辑</Button>
-          <Popconfirm title="确定删除？" onConfirm={() => handleDeleteModel(row.id)}>
-            <Button size="small" type="link" danger icon={<DeleteOutlined />}>删除</Button>
-          </Popconfirm>
+          {row.modelCode !== OBJECTIVE_ANSWER_CHECK_JEV_MODEL_CODE && (
+            <Popconfirm title="确定删除？" onConfirm={() => handleDeleteModel(row.id)}>
+              <Button size="small" type="link" danger icon={<DeleteOutlined />}>删除</Button>
+            </Popconfirm>
+          )}
         </Space>
       ),
     },
@@ -231,9 +245,35 @@ export function FaqConfigDialog({ open, onClose }: Props) {
           <Form.Item name="baseUrl" label="API Base URL" rules={[{ required: true }]}>
             <Input placeholder="如 https://api.deepseek.com/v1" />
           </Form.Item>
-          <Form.Item name="apiKey" label="API Key" rules={[{ required: !editingModel }]}>
-            <Input.Password placeholder="输入 API Key" />
+          <Form.Item
+            name="apiKey"
+            label="API Key"
+            rules={[{ required: !editingModel }]}
+            tooltip={editingObjectiveJev ? '真实密钥由服务器环境变量 OBJECTIVE_ANSWER_CHECK_JEV_API_KEY 提供' : undefined}
+          >
+            <Input.Password
+              placeholder={editingObjectiveJev ? '配置文件提供' : '输入 API Key'}
+              disabled={editingObjectiveJev}
+            />
           </Form.Item>
+          {editingObjectiveJev && (
+            <>
+              <Form.Item
+                name="jevConcurrency"
+                label="JEV 派发并发"
+                rules={[{ required: true, message: '请填写 JEV 派发并发' }]}
+              >
+                <InputNumber min={1} max={20} style={{ width: '100%' }} />
+              </Form.Item>
+              <Form.Item
+                name="jevReadTimeoutSeconds"
+                label="JEV 读超时（秒）"
+                rules={[{ required: true, message: '请填写 JEV 读超时' }]}
+              >
+                <InputNumber min={5} max={120} style={{ width: '100%' }} />
+              </Form.Item>
+            </>
+          )}
           <Form.Item name="apiFormat" label="API 格式" rules={[{ required: true }]}>
             <Select options={[{ label: 'OpenAI 兼容', value: 'openai_compatible' }, { label: 'Anthropic', value: 'anthropic' }, { label: '自定义', value: 'custom' }]} />
           </Form.Item>

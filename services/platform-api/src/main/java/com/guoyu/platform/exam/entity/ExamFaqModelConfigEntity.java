@@ -20,6 +20,8 @@ public class ExamFaqModelConfigEntity {
   private String baseUrl;
   private String apiKey;
   private String apiFormat;
+  /** 配置适用范围：common/faq-conversion/theory-gen/skill-gen/objective-answer-check/knowledge-fix */
+  private String featureScope;
   private String modelId;
   private BigDecimal temperature;
   private Integer maxTokens;
@@ -59,6 +61,8 @@ public class ExamFaqModelConfigEntity {
   public void setApiKey(String apiKey) { this.apiKey = apiKey; }
   public String getApiFormat() { return apiFormat; }
   public void setApiFormat(String apiFormat) { this.apiFormat = apiFormat; }
+  public String getFeatureScope() { return featureScope; }
+  public void setFeatureScope(String featureScope) { this.featureScope = featureScope; }
   public String getModelId() { return modelId; }
   public void setModelId(String modelId) { this.modelId = modelId; }
   public BigDecimal getTemperature() { return temperature; }

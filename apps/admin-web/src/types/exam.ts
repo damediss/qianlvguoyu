@@ -841,10 +841,13 @@ export interface FaqModelConfigVO {
   baseUrl: string;
   apiKeyMasked: string;
   apiFormat: string;
+  featureScope: string;
   modelId: string;
   temperature: number;
   maxTokens: number;
   extraConfig: string | null;
+  jevConcurrency?: number | null;
+  jevReadTimeoutSeconds?: number | null;
   status: string;
   createdAt: string;
   updatedAt: string;
@@ -889,6 +892,8 @@ export interface FaqModelConfigCreateReq {
   temperature?: number;
   maxTokens?: number;
   extraConfig?: string;
+  jevConcurrency?: number;
+  jevReadTimeoutSeconds?: number;
   status: number;
 }
 
@@ -901,6 +906,8 @@ export interface FaqModelConfigUpdateReq {
   temperature?: number;
   maxTokens?: number;
   extraConfig?: string;
+  jevConcurrency?: number;
+  jevReadTimeoutSeconds?: number;
   status?: number;
 }
 

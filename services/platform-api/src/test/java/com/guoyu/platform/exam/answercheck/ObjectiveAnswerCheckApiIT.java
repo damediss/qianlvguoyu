@@ -91,7 +91,8 @@ class ObjectiveAnswerCheckApiIT {
   void setUp() {
     cleanUp();
     when(aiService.descriptor())
-        .thenReturn(new ObjectiveAnswerCheckAiDescriptor("ateve-jev-v1", true));
+        .thenReturn(new ObjectiveAnswerCheckAiDescriptor("OBJECTIVE_ANSWER_CHECK_JEV_MODEL",
+            "ateve-jev-v1", "https://tokendance.space/gateway", true, 5, 30));
     when(aiService.check(any(), any(), any())).thenAnswer(invocation -> {
       com.guoyu.platform.ai.dto.ObjectiveAnswerQuestion question = invocation.getArgument(0);
       var context = invocation.getArgument(1,
@@ -328,6 +329,12 @@ class ObjectiveAnswerCheckApiIT {
     assertThat((String) com.jayway.jsonpath.JsonPath.read(batch, "$.data.status")).isEqualTo("done");
     assertThat((String) com.jayway.jsonpath.JsonPath.read(batch, "$.data.modelId"))
         .isEqualTo("ateve-jev-v1");
+    assertThat((String) com.jayway.jsonpath.JsonPath.read(batch, "$.data.jevBaseUrl"))
+        .isEqualTo("https://tokendance.space/gateway");
+    assertThat((Number) com.jayway.jsonpath.JsonPath.read(batch, "$.data.jevConcurrency"))
+        .isEqualTo(5);
+    assertThat((Number) com.jayway.jsonpath.JsonPath.read(batch,
+        "$.data.jevReadTimeoutSeconds")).isEqualTo(30);
     assertThat(((Number) com.jayway.jsonpath.JsonPath.read(batch,
         "$.data.confidenceThreshold")).doubleValue()).isEqualTo(0.8);
     assertThat((Number) com.jayway.jsonpath.JsonPath.read(batch, "$.data.total")).isEqualTo(7);
@@ -440,10 +447,54 @@ class ObjectiveAnswerCheckApiIT {
   }
 
   @Test
+  @DisplayName("v1.5 迁移：专用 JEV 配置行、适用范围与批次快照列已就绪")
+  void v1_5ModelConfigSeedAndBatchColumnsExist() {
+    Map<String, Object> row = jdbc.queryForMap(
+        "SELECT model_code, api_key, api_format, feature_scope, model_id, status, "
+            + "jev_concurrency, jev_read_timeout_seconds FROM exam_faq_model_config "
+            + "WHERE tenant_id=? AND model_code=? AND deleted=0", TENANT_ID,
+        "OBJECTIVE_ANSWER_CHECK_JEV_MODEL");
+    assertThat(row.get("api_key")).isEqualTo("模型API Key走配置文件");
+    assertThat(row.get("api_format")).isEqualTo("custom");
+    assertThat(row.get("feature_scope")).isEqualTo("objective-answer-check");
+    assertThat(row.get("model_id")).isEqualTo("ateve-jev-v1");
+    assertThat(row.get("status")).isEqualTo("disabled");
+    assertThat(((Number) row.get("jev_concurrency")).intValue()).isEqualTo(5);
+    assertThat(((Number) row.get("jev_read_timeout_seconds")).intValue()).isEqualTo(30);
+
+    List<String> batchColumns = jdbc.queryForList(
+        "SELECT COLUMN_NAME FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=DATABASE() "
+            + "AND TABLE_NAME='exam_objective_answer_check_batch' "
+            + "AND COLUMN_NAME IN ('jev_base_url','jev_concurrency','jev_read_timeout_seconds')",
+        String.class);
+    assertThat(batchColumns).containsExactlyInAnyOrder("jev_base_url", "jev_concurrency",
+        "jev_read_timeout_seconds");
+
+    Map<String, String> scopes = jdbc.query(
+        "SELECT model_code, feature_scope FROM exam_faq_model_config WHERE model_code IN "
+            + "('theory-gen-glm','skill-gen-glm','knowledge-fix-pro','knowledge-fix-jev',"
+            + "'courseware-gen-glm','deepseek-review')", rs -> {
+          Map<String, String> map = new LinkedHashMap<>();
+          while (rs.next()) {
+            map.put(rs.getString(1), rs.getString(2));
+          }
+          return map;
+        });
+    assertThat(scopes)
+        .containsEntry("theory-gen-glm", "theory-gen")
+        .containsEntry("skill-gen-glm", "skill-gen")
+        .containsEntry("knowledge-fix-pro", "knowledge-fix")
+        .containsEntry("knowledge-fix-jev", "knowledge-fix")
+        .containsEntry("courseware-gen-glm", "courseware-gen")
+        .containsEntry("deepseek-review", "review-sync");
+  }
+
+  @Test
   @DisplayName("停用配置或凭据缺失时创建返回 503，历史查询不受影响")
   void disabledModelReturns503() throws Exception {
     when(aiService.descriptor())
-        .thenReturn(new ObjectiveAnswerCheckAiDescriptor("ateve-jev-v1", false));
+        .thenReturn(new ObjectiveAnswerCheckAiDescriptor("OBJECTIVE_ANSWER_CHECK_JEV_MODEL",
+            "ateve-jev-v1", "https://tokendance.space/gateway", false, 5, 30));
     mockMvc.perform(post("/exam/objective-answer-check/batches")
             .header("X-Tenant-Id", TENANT_ID)
             .contentType(MediaType.APPLICATION_JSON)

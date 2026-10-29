@@ -107,6 +107,9 @@ export interface ObjectiveAnswerBatch {
   usageEstimatedCalls: number;
   outputTokens: number;
   modelId: string;
+  jevBaseUrl?: string | null;
+  jevConcurrency?: number | null;
+  jevReadTimeoutSeconds?: number | null;
   promptVersion: string;
   confidenceThreshold: number;
   marginThreshold: number;

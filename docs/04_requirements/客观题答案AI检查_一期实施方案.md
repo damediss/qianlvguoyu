@@ -1,9 +1,9 @@
 # 客观题答案 AI 检查（一期）实施方案
 
-> 文档版本：v1.4（XLSX 导入防错与内容质量识别；关联解析存疑方案协同；实施前代码/生产库复核修订）  
+> 文档版本：v1.5（JEV 连接配置集中入库与共享配置适用范围）  
 > 编写日期：2026-10-26  
-> 最近修订：2026-10-27  
-> 状态：一期编码与自动化验证已完成（2026-10-28）；200 道标定、真实 JEV 探针与空库迁移待执行，标定未过不得放量  
+> 最近修订：2026-10-28  
+> 状态：一期编码与自动化验证已完成（2026-10-28）；v1.5 配置集中入库已实施并通过目标测试（2026-10-29）；200 道标定、真实 JEV 探针与空库迁移待执行，标定未过不得放量  
 > 菜单位置：课程管理 → 支持保障 → 资源管理 → **客观题答案AI检查**  
 > 数据主表：`exam_exam_detail`  
 > 决策模型：`ateve-jev-v1`（TokenDance TypeSafe SystemOne，非 OpenAI 协议）  
@@ -86,6 +86,13 @@
 4. §7.2 澄清 JOIN 租户语义（插件过滤、禁止当前租户字面量、允许列间等值）。
 
 本次复核已验证与方案一致、实施可直接照做的仓库事实：菜单 `zi_yuan_guan_li` 现存（支持保障下）、`sort_order=6` 为空位、role 2000=PLATFORM_ADMIN（tenant 10159）、`exam_exam_detail` 及关联表结构与 §1.3 快照一致（题型合计 166,155 行精确吻合）、答案 JSON 主流形状为 `[{content,isCorrect}]`、导入接口权限 `exam:question:create` 与返回 `ApiResponse<Integer>`、两处 `getCellString` 的 `(int)` 强转位置（`ExamExamDetailApplicationService:1202`、`CompanyQuestionApplicationService:431`）、`JevDecisionClient` 尚未禁用内容压缩（§9.4 新增必要）、`AuditMetaObjectHandler` 调用 SecurityContext（§11.6 异步写库约束成立）、`@InterceptorIgnore`/jsoup/`FollowTaskBankQuestionConverter` 均有先例。导入返回契约变更影响面封闭：前端仅 `QuestionBankPage`/`CompanyQuestionPage` 两个消费方，旧 PHP 端不调用这两个接口。另：生产有 175 行无 `isCorrect` 的存量题，按方案落 `CORRECT_OPTION_MISSING` 结构异常属预期行为，不是缺陷。
+
+### 0.8 v1.5 JEV 连接配置集中入库（owner 已确认）
+
+1. `OBJECTIVE_ANSWER_CHECK_JEV_MODEL` 的**非敏感连接配置**集中放入 `exam_faq_model_config`：`status/base_url/api_format/model_id/jev_concurrency/jev_read_timeout_seconds`。
+2. `api_key` 字段固定写入占位值 **`模型API Key走配置文件`**；它只是说明性占位，**永远不得作为请求密钥发送**。真实密钥只从服务器部署配置/环境变量 `OBJECTIVE_ANSWER_CHECK_JEV_API_KEY` 读取。
+3. `exam_faq_model_config` 是共享配置表。新增 `feature_scope` 区分适用范围，避免本行启用后污染 FAQ 转换、理论生成、技能生成等通用模型下拉。
+4. 原功能迁移若已应用，本变更必须写成**新的后续迁移**，禁止修改已应用迁移；取号实施当天查两库 `MAX(version)+1`。
 
 ---
 
@@ -198,7 +205,7 @@ HTTP 线程
   2. 选择逐题 IDs 或“当前筛选全部”
   3. selection/preview：后端重新查询，依次做结构预检 + 内容质量识别，返回数量、格式警告与预计调用量
   4. POST batches：校验平台管理员并捕获 tenantId/userId
-  5. 短事务：重新选题 → 写批次（新 run_id/租约）+ 快照明细（含 invalid 行）→ 提交事务
+  5. 短事务：重新选题 → 写批次（新 run_id/租约 + modelId/JEV baseUrl/并发/读超时快照）+ 快照明细（含 invalid 行）→ 提交事务
   6. 事务提交后投递编排池，立即返回批次 ID；拒绝时持久化 failed 并释放活动槽
                          │
                          ▼
@@ -438,9 +445,9 @@ AI 包：
 
 | 类 | 职责 |
 |---|---|
-| `ai.service.ObjectiveAnswerCheckAiService` | 业务依赖的窄接口；descriptor 只暴露模型名/凭据就绪布尔值；输入归一题目与调用上下文，输出逐选项判断；每个逻辑块都发审计事件 |
-| `ai.config.ObjectiveAnswerJevProperties` | 仅在 ai 包绑定 baseUrl/model/apiKey/readTimeout；业务模块不可见密钥 |
-| `ai.infrastructure.JevObjectiveAnswerCheckAiService` | 构造 SystemOne 请求、分块、调用与聚合；不知道数据库和 Controller |
+| `ai.service.ObjectiveAnswerCheckAiService` | 业务依赖的窄接口；descriptor 只暴露模型编码/模型名/凭据就绪/可快照并发超时；输入归一题目与调用上下文，输出逐选项判断；每个逻辑块都发审计事件 |
+| `ai.infrastructure.ObjectiveAnswerCheckJevConfigResolver` | 仅 ai 包内解析 `exam_faq_model_config` 专用行 + `OBJECTIVE_ANSWER_CHECK_JEV_API_KEY` 环境变量，生成含 baseUrl/apiKey 的内存运行时配置；不把真实密钥交给 exam 业务层 |
+| `ai.infrastructure.JevObjectiveAnswerCheckAiService` | 构造 SystemOne 请求、分块、调用与聚合；不知道 Controller，不返回密钥 |
 | `ai.dto.ObjectiveAnswerCallOutcome` | 单个逻辑块成功或失败的完整审计：callId/chunk/runId/claimAttempt/模型/请求摘要/token/耗时/error |
 | `ai.infrastructure.JevDecisionClient` | 增加通用多子问题 `decideBatch`；保留原 `decide` 给 knowledgefix |
 | `ai.dto.JevQuestion` | `questionKey/instructions/criteria` |
@@ -457,11 +464,11 @@ ObjectiveAnswerDecision check(
     Consumer<ObjectiveAnswerCallOutcome> auditSink);
 ```
 
-`descriptor()` 只返回 `modelId` 与 `credentialsReady`，用于预览、创建/继续前校验和批次模型快照，绝不返回 baseUrl/apiKey。业务 enabled 与 credentialsReady 必须同时满足才可发起新 run。
+`descriptor()` 返回 `modelCode/modelId/baseUrl/credentialsReady/jevConcurrency/jevReadTimeoutSeconds`，用于预览、创建/继续前校验和批次非敏感运行时快照，**绝不返回 apiKey**。业务 enabled 与 credentialsReady 必须同时满足才可发起新 run；baseUrl/并发/超时快照一旦写入批次，本次运行不随 DB 修改变化。
 
-`context` 携带 tenantId/userId/batchId/itemId/runId/claimAttempt，不含 SecurityContext。AI infrastructure 在每个逻辑块成功或失败后都先发 `auditSink`；批次服务的回调用独立短事务写审计。这样 6/9 选项题即使第 2 块失败，第 1 块成功和第 2 块失败也都有审计，AI 层仍不访问数据库。审计写入失败必须使当前题 `failed/retryable=1` 并计系统性失败，禁止在无审计情况下静默标成功。
+`context` 携带 tenantId/userId/batchId/itemId/runId/claimAttempt 以及批次固化的 modelId/baseUrl/jevReadTimeoutSeconds，不含 SecurityContext。AI 调用必须使用 context 中的批次快照值，禁止在 Worker 内重新读取 DB 连接配置。AI infrastructure 在每个逻辑块成功或失败后都先发 `auditSink`；批次服务的回调用独立短事务写审计。这样 6/9 选项题即使第 2 块失败，第 1 块成功和第 2 块失败也都有审计，AI 层仍不访问数据库。审计写入失败必须使当前题 `failed/retryable=1` 并计系统性失败，禁止在无审计情况下静默标成功。
 
-`exam.answercheck` 不得自行 new HTTP client、不得直拼 URL、不得读取/打印 API Key。它只依赖 `ObjectiveAnswerCheckAiService`；baseUrl/model/apiKey/readTimeout 的绑定类只放在 ai 包。
+`exam.answercheck` 不得自行 new HTTP client、不得直拼 URL、不得读取/打印 API Key。它只依赖 `ObjectiveAnswerCheckAiService`；baseUrl/apiKey 的组装只允许发生在 ai 包 `ObjectiveAnswerCheckJevConfigResolver` 内。
 
 > 不要复用 `FollowTaskBankQuestionConverter` 作为本功能预检器：它对缺失判断答案存在默认兜底，会掩盖本功能需要暴露的结构异常。本方案的严格解析器是独立职责，且在本功能内只有一份实现。
 
@@ -644,32 +651,55 @@ record NormalizedOption(
 
 ### 9.1 配置
 
-`application.yml` 只放非敏感默认值与环境变量占位：
+v1.5 起，JEV 连接配置分两层管理：
+
+**A. `application.yml` 只保留本功能运行参数：**
 
 ```yaml
 platform:
   objectiveanswercheck:
     enabled: ${OBJECTIVE_ANSWER_CHECK_ENABLED:false}
     batch-max-size: ${OBJECTIVE_ANSWER_CHECK_BATCH_MAX_SIZE:2000}
-    concurrency: ${OBJECTIVE_ANSWER_CHECK_CONCURRENCY:5}
+    concurrency: ${OBJECTIVE_ANSWER_CHECK_CONCURRENCY:20}   # Worker 池上限
     confidence-threshold: ${OBJECTIVE_ANSWER_CHECK_CONFIDENCE_THRESHOLD:0.80}
     margin-threshold: ${OBJECTIVE_ANSWER_CHECK_MARGIN_THRESHOLD:0.20}
     max-stem-chars: ${OBJECTIVE_ANSWER_CHECK_MAX_STEM_CHARS:12000}
     max-option-chars: ${OBJECTIVE_ANSWER_CHECK_MAX_OPTION_CHARS:2000}
-    jev:
-      base-url: ${OBJECTIVE_ANSWER_CHECK_JEV_BASE_URL:https://tokendance.space/gateway}
-      model: ${OBJECTIVE_ANSWER_CHECK_JEV_MODEL:ateve-jev-v1}
-      api-key: ${OBJECTIVE_ANSWER_CHECK_JEV_API_KEY:}
-      read-timeout-seconds: ${OBJECTIVE_ANSWER_CHECK_JEV_READ_TIMEOUT_SECONDS:30}
 ```
 
-- 默认 `enabled=false`；密钥为空时禁止创建/继续批次，返回 503，历史结果仍可查看。
-- 配置绑定后必须启动校验：`batchMaxSize` 只能 1～2,000，`confidenceThreshold/marginThreshold` 必须在 [0,1]，并发只能 1～20，read timeout 只能 5～120 秒；非法配置拒绝启动。运行时仍用 `min(2000,batchMaxSize)` 防御。
-- **16 个选项上限、每块 5 个多选子问题是本版固定常量，不开放环境配置**，防止配置绕过 §0.2 和输入预算设计。
-- 不在 `exam_faq_model_config` 新增明文密钥行，不改 `knowledge-fix-jev` 配置，避免两个功能互相停用。
-- 阈值只能由部署配置调整，普通页面用户不能在请求里随意降低；每个批次固化阈值、模型和 `promptVersion=objective-answer-v1`。
-- API Key 只在 ai 包的内存运行时配置中传递，**不得写入批次 JSON、调用审计、异常信息或日志**；exam 业务侧只通过 descriptor 获取 credentialsReady，不能接触密钥。
-- 现有 client 的 `platform.knowledgefix.jev-*` 技术默认值本期不改名，避免影响知识归属修正；本功能独立的并发和 read timeout 由上述配置传入。
+真实密钥不在 `application.yml` 中配置，由部署配置文件/环境变量提供：
+
+```bash
+OBJECTIVE_ANSWER_CHECK_JEV_API_KEY=真实TokenDance Key
+```
+
+**B. `exam_faq_model_config` 集中管理模型连接行：**
+
+| 字段 | 值 |
+|---|---|
+| `model_code` | `OBJECTIVE_ANSWER_CHECK_JEV_MODEL` |
+| `model_name` | `客观题答案检查 JEV` |
+| `api_format` | `custom` |
+| `feature_scope` | `objective-answer-check` |
+| `base_url` | `https://tokendance.space/gateway` |
+| `model_id` | `ateve-jev-v1` |
+| `api_key` | `模型API Key走配置文件`（固定占位，绝不发送） |
+| `status` | 种子默认 `disabled`，部署密钥后由管理员启用 |
+| `jev_concurrency` | 5 |
+| `jev_read_timeout_seconds` | 30 |
+| `jev_theta1/jev_theta2` | NULL（本功能不用知识修正双门） |
+| `temperature/max_tokens` | 0.70 / 2000（保留表默认；JEV 非生成式，不参与输出） |
+
+运行时解析规则：
+
+1. 功能开关 `enabled=false` 时直接拒绝创建/继续，历史结果仍可查看。
+2. 按当前租户读取 `model_code=OBJECTIVE_ANSWER_CHECK_JEV_MODEL` 的最新未删行；不存在、`status!=enabled`、`base_url/model_id` 为空均返回“答案 AI 检查未开通/配置不可用”。
+3. 只从环境变量读取真实 `OBJECTIVE_ANSWER_CHECK_JEV_API_KEY`；`api_key='模型API Key走配置文件'`、`PENDING_USER_INPUT`、空串都视为未配置，禁止发送。
+4. DB 中的 `jev_concurrency/jev_read_timeout_seconds` 校验为 1～Worker池上限、5～120 秒；作为批次运行时快照，改配置对下一批次生效。
+5. 应用启动只校验 yml 运行参数；DB 行在提交/继续/重试时实时解析，不要求为了改模型状态而重启服务。
+6. **16 个选项上限、每块 5 个多选子问题仍是固定常量**，不随 DB 配置改变。
+7. API Key 只在 ai 包内存运行时对象中传递，**不得写入批次 JSON、调用审计、异常信息、日志或返回给前端**；exam 业务侧只通过 descriptor 获取 modelId/baseUrl/credentialsReady/非敏感并发超时快照。
+8. 现有 client 的 `platform.knowledgefix.jev-*` 技术默认值不改名，避免影响知识归属修正。
 
 ### 9.2 单选请求示例
 
@@ -994,7 +1024,7 @@ AND 所属 batch.run_id=claimRunId
 2. 选出 `retryable=1` 的 failed 行，实际为 0 时不改状态、不投递；
 3. 将这些行恢复 pending，同时清空 `result_code/consistent/ai_answer_keys/三个置信字段/option_results_json/decision_warning/error_* /checked_at` 和旧复核字段；`retryable=0`，`version=version+1`，attempts 保留用于 fencing；`content_quality/content_warnings_json` 是确定性快照，必须保留；
 4. 按实际行数 n 原子执行 `done=done-n, failed=failed-n`；
-5. 批次置 running，写入新 active 槽/runId/ownerId/lease，清 failReason/finishedAt；提交后再投递。
+5. 批次置 running，写入新 active 槽/runId/ownerId/lease，清 failReason/finishedAt；**保留原批次 modelId/JEV baseUrl/并发/读超时快照，不重新读取当前 DB 配置**；提交后再投递。
 
 重试只检查原快照；题库若已修改，必须另建批次。重试会清除这些失败行的旧复核标记，前端按钮需明确提示。编排池拒绝时按 §11.5 置 failed，pending 和回减后的计数仍保持一致。
 
@@ -1021,7 +1051,7 @@ AND 所属 batch.run_id=claimRunId
 线程池：
 
 - `objectiveAnswerCheckExecutor`：编排池 core=1/max=2/queue=10；
-- `objectiveAnswerCheckWorkerExecutor`：core=max=`concurrency`（默认 5），queue 与并发同源，信号量限制在飞行任务；
+- `objectiveAnswerCheckWorkerExecutor`：core=max=`platform.objectiveanswercheck.concurrency`（v1.5 默认 20，仅作 Worker 池上限）；每个批次实际派发并发取 `min(exam_faq_model_config.jev_concurrency, Worker池上限)`，队列与 Worker 池上限同源；
 - 两者均 `AbortPolicy`、`waitForTasksToCompleteOnShutdown=true`、终止等待 120 秒；
 - 禁止 `CallerRunsPolicy`，禁止裸 `setInterval` 式后端无限调度。恢复扫描用固定 30 秒调度，单测直接调用恢复方法保证确定性。
 
@@ -1210,6 +1240,76 @@ CREATE TABLE IF NOT EXISTS exam_objective_answer_check_call_log (
 8. 空库跑迁移时，既有 `V20260912_001` 的 `question_resource` 是回退父菜单；测试/生产现存 `zi_yuan_guan_li` 时则挂到真实的“课程管理→支持保障→资源管理”链。补“zi_yuan 优先”和“question_resource 回退”两种种子测试。
 9. **空库与克隆库的验收口径分开**：空库只验证三表、父菜单实际 ID、菜单和四条权限可幂等创建；既有迁移并不保证存在 `(2000,10159)` 角色，所以空库不得伪造角色授权。含真实 10159/2000 角色基线的测试库结构克隆再验证 1 条角色菜单和 4 条角色权限。不得为通过本功能测试修改已应用旧迁移或插入跨租户角色关系。
 
+### 12.6 v1.5 模型连接配置种子（后续迁移，禁止改已应用迁移）
+
+原功能迁移可能已应用，本小节必须落在**新的后续迁移**，文件名实施当天按两库 `MAX(version)` 较大者 +1 取号，例如：
+
+`services/platform-api/src/main/resources/db/migration/V<新取号>__objective_answer_jev_model_config.sql`
+
+1. `exam_faq_model_config` 增加适用范围列（更新 Entity/VO/DTO，老数据默认 common）：
+
+```sql
+ALTER TABLE exam_faq_model_config
+  ADD COLUMN feature_scope VARCHAR(32) NOT NULL DEFAULT 'common'
+    COMMENT '配置适用范围：common/faq-conversion/theory-gen/skill-gen/objective-answer-check/knowledge-fix' AFTER api_format,
+  ADD KEY idx_efmc_scope_status (tenant_id, feature_scope, status);
+```
+
+2. 本功能批次表固化 v1.5 JEV 运行时快照（不含密钥，重启续跑仍遵守“改配置只影响下一批次”）：
+
+```sql
+ALTER TABLE exam_objective_answer_check_batch
+  ADD COLUMN jev_base_url VARCHAR(512) NULL COMMENT '批次创建时从模型配置固化的JEV Base URL（非密钥）',
+  ADD COLUMN jev_concurrency INT NULL COMMENT '批次创建时从模型配置固化的JEV派发并发',
+  ADD COLUMN jev_read_timeout_seconds INT NULL COMMENT '批次创建时从模型配置固化的JEV读超时';
+```
+
+3. 插入客观题答案检查专用 JEV 行（`api_key` 为 owner 确认的固定占位文案，不是密钥）：
+
+```sql
+INSERT INTO exam_faq_model_config (
+  id, tenant_id, model_code, model_name, base_url, api_key, api_format, feature_scope,
+  model_id, temperature, max_tokens, thinking, reasoning_effort, extra_config, status,
+  jev_theta1, jev_theta2, jev_concurrency, jev_read_timeout_seconds,
+  jev_prune_stage2, jev_prune_stage1,
+  created_at, updated_at, created_by, updated_by, deleted
+)
+SELECT
+  202610280101, 10159,
+  'OBJECTIVE_ANSWER_CHECK_JEV_MODEL', '客观题答案检查 JEV',
+  'https://tokendance.space/gateway', '模型API Key走配置文件', 'custom', 'objective-answer-check',
+  'ateve-jev-v1', 0.70, 2000, NULL, NULL, NULL, 'disabled',
+  NULL, NULL, 5, 30,
+  0, 0,
+  NOW(), NOW(), 1, 1, 0
+FROM DUAL
+WHERE NOT EXISTS (
+  SELECT 1 FROM exam_faq_model_config c
+  WHERE c.tenant_id = 10159
+    AND c.model_code = 'OBJECTIVE_ANSWER_CHECK_JEV_MODEL'
+    AND c.deleted = 0
+);
+```
+
+实施时若 ID 撞号必须换号，不覆盖旧行；`status='disabled'` 是安全默认，部署环境密钥后由管理员在模型配置页启用。
+
+4. 共享模型下拉的适用范围过滤（防止本行出现在无关功能）：
+
+- `FaqModelConfigApplicationService.listEnabled()`（FAQ 转换）：`feature_scope IN ('common','faq-conversion')`；
+- `TheoryGenBatchService.listEnabledModelConfigs()`：`feature_scope IN ('common','theory-gen')`；
+- `SkillGenBatchService.listEnabledModelConfigs()`：`feature_scope IN ('common','skill-gen')`；
+- 本功能按精确 `model_code` 读取，不受上述下拉过滤影响；模型配置管理页的 `page` 仍展示全部范围，便于管理本行。
+
+5. 模型配置管理面同步：
+
+- `FaqModelConfigVO` 增加 `featureScope/jevConcurrency/jevReadTimeoutSeconds`；列表增加“适用范围”，本行 API Key 列显示“配置文件提供”。
+- `FaqModelConfigCreateReq/UpdateReq` 允许维护 `jevConcurrency/jevReadTimeoutSeconds`；`FaqConfigDialog` 仅在编辑 `OBJECTIVE_ANSWER_CHECK_JEV_MODEL` 时显示这两个字段，普通 LLM 行界面不变。
+- `FaqModelConfigApplicationService.update` 对本行增加密钥保护：请求未传 `apiKey` 时保留占位值；传入占位值视为不修改；传入其他值直接 409“该模型 API Key 由服务器配置文件提供，请不要在此填写”。普通模型编辑时空 Key 也必须忽略，不能清空旧密钥。
+- 本行禁止删除（`delete` 返回 409），避免系统托管配置被删后只能手工 INSERT 恢复；前端隐藏该行删除按钮。
+- `FaqModelConfigVO.maskApiKey` 对 `模型API Key走配置文件` 返回“配置文件提供”，不得把占位值当普通密钥脱敏成前后片段。
+
+6. 存量种子适用范围必须用**独立后续迁移**回填：`V20261029_003__model_config_feature_scope_backfill.sql`（实施时 002 已被并发竞赛功能占用）。按 model_code 幂等更新 `theory-gen-glm→theory-gen`、`skill-gen-glm→skill-gen`、`knowledge-fix-pro/knowledge-fix-jev→knowledge-fix`、`courseware-gen-glm→courseware-gen`、`deepseek-review→review-sync`；禁止修改 V20261029_001/002。
+
 ---
 
 ## 13. API 契约
@@ -1341,7 +1441,7 @@ CREATE TABLE IF NOT EXISTS exam_objective_answer_check_call_log (
 
 两个 Sheet：
 
-1. **批次信息**：批次 ID、筛选快照、模型、promptVersion、阈值、五类结果数、内容格式 suspect/invalid 数、调用数、精确输入 token、估算输入 token、含估算调用数、输出 token、创建人、起止时间。
+1. **批次信息**：批次 ID、筛选快照、模型、promptVersion、阈值、五类结果数、内容格式 suspect/invalid 数、JEV baseUrl/并发/读超时快照、调用数、精确输入 token、估算输入 token、含估算调用数、输出 token、创建人、起止时间。
 2. **检查结果**：批次 ID、试题 ID、工种、等级、课程、知识点路径、来源、题型、题干、选项明细、原解析、原答案、AI 答案、原答案支持度、AI 置信度、最小概率差、一致性、检查结果、内容质量、格式规则/位置/匹配文本/suggestedText、异常/失败原因、needsReview、人工复核、复核备注、模型、检查时间、逻辑调用 ID。
 
 - 置信度单元格为数值 + 百分比格式，不写成带 `%` 的字符串。
@@ -1521,6 +1621,10 @@ record QuestionImportIssue(
 
 完成两种选择模式、五类结果卡 + 内容格式卡、详情警告高亮、复核乐观锁、Excel、长文本/空态/错误态/权限态和 ResourceCenter 卡片；导入预检按钮与警告确认同步可用。
 
+### W7.1：v1.5 模型配置集中入库收口
+
+完成后续迁移、`feature_scope`、专用 JEV 配置行、AI Service 配置解析、通用模型下拉过滤、FAQ 配置弹层 JEV 字段和 API Key 占位保护。迁移已应用的环境必须用新迁移，禁止修改旧迁移；完成本节后重新跑 W8/W9 的相关回归。
+
 ### W8：自动化全验证与 verifier 独立复核
 
 执行 §16；修复缺陷后由 verifier 按本文逐项复核，不能由实施者自报替代。
@@ -1537,9 +1641,9 @@ record QuestionImportIssue(
 
 ### 16.0 验证口径（2026-10-28 回填）
 
-本节复选项只代表“代码已实现，且至少有一个自动化测试或集成测试覆盖该行为”。
-未勾选项为无法在当前环境编码完成的验证（导入页 e2e、空库全量迁移），
-不代表代码缺失；具体证据见 §18.2。
+本节复选项只代表对应版本代码已实现，且至少有一个自动化测试或集成测试覆盖该行为。
+v1.4 已勾选项的证据见 §18.2；**v1.5 配置集中入库新增项（§16.1.1、§19.6）已实施并通过目标测试，证据见 §18.2 的 v1.5 行**。
+其余未勾选项为环境/人工依赖（导入页 e2e、空库全量迁移、200 道标定），不代表 v1.4 代码缺失。
 
 ### 16.1 后端单元测试
 
@@ -1641,6 +1745,16 @@ record QuestionImportIssue(
 - [x] expectedVersion 冲突返回 409；同秒两个复核请求也只有一个成功；复核只更新 item 并递增 version，verify `examDetailMapper` 从未 update。
 - [x] 两个 Sheet、中文文件名、百分比格式、精确/估算 token 与 usageEstimatedCalls、空结果表头、当前过滤、快照不随题库变化。
 - [x] 多选/失败/invalid/null 字段导出无 NPE；contentQuality/warnings/suggestedText/needsReview 完整，2,000 行导出通过。
+
+#### 16.1.1 v1.5 模型配置集中入库增量测试
+
+- [x] 新迁移幂等：`feature_scope` 默认 `common`、索引存在；专用行只插入一次，`api_key` 精确等于 `模型API Key走配置文件`，默认 `status=disabled`。
+- [x] `ObjectiveAnswerCheckAiService` 对配置行缺失、disabled、baseUrl/modelId 为空、DB 占位值、环境密钥为空均返回未就绪；环境密钥有效后使用 DB 的 baseUrl/modelId/readTimeout/concurrency。
+- [x] 环境变量真实密钥绝不写入 VO、批次、审计、日志；descriptor 只暴露非敏感连接配置与就绪布尔值。
+- [x] DB 改 baseUrl/并发/超时/状态只对下一批次生效；并发超过 Worker 池上限被防御性钳制并告警；批次表 `jev_base_url/jev_concurrency/jev_read_timeout_seconds` 快照在续跑/重启后仍保持创建时值。
+- [x] FAQ 转换、理论生成、技能生成的 enabled 模型列表均不出现 `OBJECTIVE_ANSWER_CHECK_JEV_MODEL`；模型配置管理页仍能看到该行及适用范围。
+- [x] 模型配置更新：本行不传 apiKey 保留占位；传占位值不修改；传真实密钥 409；VO 显示“配置文件提供”。
+- [x] `FaqConfigDialog` 编辑本行显示适用范围与 JEV 并发/读超时，API Key 输入禁用并提示环境变量名；普通 LLM 行不显示 JEV 字段。
 
 ### 16.2 后端集成测试
 
@@ -1757,16 +1871,17 @@ AI 准确率指标只使用 `contentQuality=clean` 的标定题；suspect 单独
 ### 17.3 受控上线步骤
 
 1. 先完成两条 XLSX 导入防错、预检和数值保真验收；未通过时不得开启正式 AI 批量检查。
-2. 部署迁移、后端 jar、前端 dist；配置密钥但先 `enabled=false`。
-3. 核对菜单→权限→角色授权三步链和页面无权限表现。
-4. 试点期设 `enabled=true`、`BATCH_MAX_SIZE=200`，仅平台管理员使用。
-5. 跑合成冒烟、200 道标定及内容格式样本，回填 §18。
-6. 达标后把上限调回 2,000；配置只影响新批次，历史批次阈值不变。
-7. 正式批次优先复核全部高置信不一致与内容格式警告；每批至少抽查 50 条高置信结果，记录人工结论。
+2. 部署 v1.5 后续迁移、后端 jar、前端 dist；`OBJECTIVE_ANSWER_CHECK_JEV_MODEL` 配置行保持 `disabled`，功能 `enabled=false`，不在应用配置中写密钥。
+3. 在服务器部署配置/环境变量写入真实 `OBJECTIVE_ANSWER_CHECK_JEV_API_KEY`，确认数据库 `api_key` 仍固定为 `模型API Key走配置文件`。
+4. 核对菜单→权限→角色授权三步链和页面无权限表现。
+5. 试点期在模型配置管理页将 `OBJECTIVE_ANSWER_CHECK_JEV_MODEL` 置为启用，再设功能 `enabled=true`、`BATCH_MAX_SIZE=200`，仅平台管理员使用。
+6. 跑合成冒烟、200 道标定及内容格式样本，回填 §18。
+7. 达标后把上限调回 2,000；yml/DB 配置只影响新批次，历史批次快照不变。
+8. 正式批次优先复核全部高置信不一致与内容格式警告；每批至少抽查 50 条高置信结果，记录人工结论。
 
 ### 17.4 回退
 
-- 立即回退：暂停活动批次，再设 `enabled=false` 并重启；历史结果和审计保留。
+- 立即回退：暂停活动批次，在模型配置页将 `OBJECTIVE_ANSWER_CHECK_JEV_MODEL` 置为禁用；如需关闭整个功能再设 `enabled=false` 并重启。历史结果和审计保留，数据库占位值不回填真实密钥。
 - 代码/菜单回退不影响题库，因为一期从未写 `exam_exam_detail`。
 - 模型异常时只切回关闭状态，**不得改成另一个模型名称继续跑而不重新标定**。
 
@@ -1804,15 +1919,18 @@ AI 准确率指标只使用 `contentQuality=clean` 的标定题；suspect 单独
 |---|---|---|
 | XLSX 数值/预检/双导入路径 | `mvn -o test -Dtest=QuestionImportNumericCellIT`（5/5） | 通过 |
 | 内容质量规则与批次组合 | `QuestionContentQualityInspectorTest`（7/7）+ `ObjectiveAnswerCheckApiIT` 的 suspect/invalid 断言 | 通过 |
+| v1.5 模型配置集中入库 | `V20261029_001` + `V20261029_003` 已在测试库应用并核对种子/列/存量范围；v1.5 单测 34/34；答案检查 IT 11/11（Api/Limit/RetryFromDone）；理论/技能相关回归通过；前端套件 21/21 + `npm run build` 通过；stash 冲突按交接说明仅恢复安全集前端，未覆盖活跃 backend 文件 | 通过（真实 JEV 密钥与生产部署未执行） |
 | 后端目标测试 | 9 个新增单测类，`Tests run: 69, Failures: 0` | 通过 |
 | 后端集成测试 | `ObjectiveAnswerCheckApiIT` 7/7、`QuestionImportNumericCellIT` 5/5、`ObjectiveAnswerCheckLimitIT` 2/2 | 通过（14/14） |
-| 后端全量回归 | `mvn -o test -Dtest='*Test'`（全量单测，IT 单独执行） | 见下方“全量回归结果”，无新增失败 |
+| 后端全量回归 | `mvn -o test -Dtest='*Test'`（2026-10-29 v1.5 后）：2489 例，9F+4E | 既有基线（competition 7F+3E、defense 1F、knowledgefix 1F），无 v1.5 新增失败 |
 | 前端 Vitest/build | `npm run test:objective-answer-check`（19/19）+ `npm run build`（tsc -b + vite） | 通过 |
 | Playwright | `STAGE_E2E_MANAGE_SERVER=1 npx playwright test --config playwright.chrome.config.ts e2e/objective-answer-check.spec.ts`（2/2） | 通过 |
 | 空库迁移/克隆增量迁移 | 测试库 `gjjddb2026` Flyway 已应用 `20261028.005`（success=1），三表/菜单/4 权限/角色授权已核对；**空库全量链未执行**（受既有历史断链限制，未修改旧迁移） | 部分通过，空库项未验证 |
 | verifier verdict | 2026-10-29 独立复核：红线静态审查（不写回题库/异步零 SecurityContext/AbortPolicy/密钥不出仓/迁移幂等）通过；后端 89 例目标测试 + 前端 19 例 Vitest + tsc/vite build 全绿；Playwright 2/2 以实施者报告为据未复跑。复核中**发现并由 verifier 修复 2 处缺陷**：①`acquire` SQL 状态白名单漏 `done`，导致 done 批次“重试失败项”必 409（方案 §11.1 done→running）——已补 `done` 并新增真实库 `ObjectiveAnswerCheckRetryFromDoneIT`（1/1）验证；②判定使用运行期 properties 阈值而非批次固化快照（§9.1/§17.3 历史批次阈值不变）——已改为取批次 `confidence_threshold/margin_threshold`，新增 `processClaimedUsesBatchSnapshotThresholds` 单测（BatchServiceTest 9/9）。另记录不阻塞项：菜单 `menu_type='page'` 与方案/兄弟菜单 `menu` 不一致（功能无碍，建议后续统一）；创建批次初始 lease 用 JVM 时间（acquire 立即以 DB 时间覆盖，影响可忽略）。空库全量迁移与 200 道标定仍未验证，**放量门槛不变** | **PASS（代码层）**；标定/空库项仍未验证 |
 
-**未勾选项说明（均为环境/人工依赖，不是代码缺失）**：
+> v1.5 配置集中入库变更发生在上述 verifier 复核之后，不在该 PASS 范围内；§16.1.1/§19.6 已由实施侧补证据，但仍需独立 verifier 对 v1.5 做一轮单独复核，当前不得把 v1.4 的 PASS 当作 v1.5 结论。
+
+**未勾选项说明（v1.5 待实施项除外）**：
 
 - §16.4 第 1 条：主题库导入页的“预检+正式导入”未做 Playwright（导入链已由 `QuestionImportNumericCellIT` 以真实 xlsx 覆盖）。
 - §16.5 / §19.5 空库全量迁移：受既有历史迁移断链限制，只验证了测试库 Flyway 增量（success=1），未宣称空库通过，也未修改旧迁移。
@@ -1896,6 +2014,18 @@ AI 准确率指标只使用 `contentQuality=clean` 的标定题；suspect 单独
 - [x] 无 BOM、无真实密钥/客户数据入库、无 `Db.saveBatch`、无 `CallerRunsPolicy`。
 - [ ] verifier 独立复核 verdict=PASS，本文验证记录与验收证据已回填。
 
+### 19.6 v1.5 模型配置集中入库
+
+- [x] 新后续迁移未修改已应用迁移；`feature_scope` 与老数据 common 默认值正确；专用 JEV 行幂等且 `api_key` 精确为 `模型API Key走配置文件`。
+- [x] 真实密钥只从 `OBJECTIVE_ANSWER_CHECK_JEV_API_KEY` 环境变量读取；DB 占位值、空串、`PENDING_USER_INPUT` 都不会发送给上游。
+- [x] 本功能按 `model_code` 读取 DB 的 baseUrl/modelId/并发/超时/启停；配置变更只对下一批次生效，历史批次快照不变。
+- [x] FAQ 转换、理论生成、技能生成的启用模型列表不出现本行；模型配置管理页可见、可启停、可维护 JEV 并发和读超时。
+- [x] 本行 API Key 在列表/编辑页显示“配置文件提供”，输入框禁用；后端拒绝通过模型配置接口写入真实密钥。
+- [x] 普通模型编辑时空 API Key 不覆盖旧密钥；系统托管的 JEV 行禁止删除，前端隐藏删除入口。
+- [x] 旧批次缺少 JEV 快照时继续/重试返回“请新建批次”，不误报“AI 检查未开通”。
+- [x] `V20261029_003` 已回填 theory-gen/skill-gen/knowledge-fix/courseware-gen/review-sync 存量种子范围。
+- [x] §16.1.1 增量测试与相关回归全部通过。
+
 ---
 
 ## 20. 风险登记与变更控制
@@ -1914,5 +2044,7 @@ AI 准确率指标只使用 `contentQuality=clean` 的标定题；suspect 单独
 | 历史结果被题库编辑污染 | 创建时完整快照 + type/content/answer sourceHash + 题库已变更提示 |
 | 权限或租户泄露 | 后端权限码 + PLATFORM_ADMIN 硬约束、插件租户过滤、Worker 上下文、跨租户/非管理员 IT |
 | 明文密钥或 Brotli 隐患复现 | 环境密钥、禁用内容压缩、请求头回归测试 |
+| 共享模型配置行污染其他功能 | `feature_scope` + FAQ/理论/技能通用下拉过滤；管理页保留全量可见 |
+| 占位值被误当真实密钥 | 固定文案 `模型API Key走配置文件` 永不发送；descriptor 仅认环境变量；配置接口拒绝改密钥 |
 
-实施过程中若需要改变以下任一内容，必须先回到本文修订并交 owner 确认：菜单范围、写回答案、第二模型、阈值语义、多选算法、单批上限、质量门槛、外发字段、权限角色、内容质量分级、自动数值转换、导入返回契约。除此之外的实现命名微调也应保持 `objectiveAnswerCheck` 统一语言，不得再出现 `subjectiveAnswerCheck` 或另一套同义模块。
+实施过程中若需要改变以下任一内容，必须先回到本文修订并交 owner 确认：菜单范围、写回答案、第二模型、阈值语义、多选算法、单批上限、质量门槛、外发字段、权限角色、内容质量分级、自动数值转换、导入返回契约、JEV 配置存放位置、api_key 占位文案、模型配置适用范围。除此之外的实现命名微调也应保持 `objectiveAnswerCheck` 统一语言，不得再出现 `subjectiveAnswerCheck` 或另一套同义模块。

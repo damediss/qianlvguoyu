@@ -71,6 +71,10 @@ class ObjectiveAnswerCheckBatchServiceTest {
     batch.setRunId(99L);
     batch.setOwnerId("owner");
     batch.setStatus(status);
+    batch.setModelId("ateve-jev-v1");
+    batch.setJevBaseUrl("https://tokendance.space/gateway");
+    batch.setJevConcurrency(2);
+    batch.setJevReadTimeoutSeconds(30);
     lenient().when(batchMapper.findById(1L)).thenReturn(batch);
     return batch;
   }
@@ -96,6 +100,32 @@ class ObjectiveAnswerCheckBatchServiceTest {
         () -> service.resume(1L, 10159L, 1L));
     assertEquals("409", e.getCode());
     verify(batchMapper, never()).acquire(anyLong(), anyLong(), anyLong(), anyString(), anyLong());
+  }
+
+  @Test
+  void resumeRejectsLegacyBatchWithoutJevSnapshot() {
+    ObjectiveAnswerCheckBatchEntity legacy = batch("paused");
+    legacy.setJevBaseUrl(null);
+    legacy.setJevConcurrency(null);
+    legacy.setJevReadTimeoutSeconds(null);
+
+    BusinessException e = assertThrows(BusinessException.class,
+        () -> service.resume(1L, 10159L, 7L));
+    assertEquals("409", e.getCode());
+    verify(batchMapper, never()).acquire(anyLong(), anyLong(), anyLong(), anyString(), anyLong());
+  }
+
+  @Test
+  void retryFailedRejectsLegacyBatchWithoutJevSnapshot() {
+    ObjectiveAnswerCheckBatchEntity legacy = batch("done");
+    legacy.setJevBaseUrl(null);
+    legacy.setJevConcurrency(null);
+    legacy.setJevReadTimeoutSeconds(null);
+
+    BusinessException e = assertThrows(BusinessException.class,
+        () -> service.retryFailed(1L, 10159L, 7L));
+    assertEquals("409", e.getCode());
+    verify(itemMapper, never()).resetFailedToPending(anyLong(), anyLong());
   }
 
   @Test

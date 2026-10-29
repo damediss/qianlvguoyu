@@ -70,6 +70,9 @@ public class ObjectiveAnswerCheckExportService {
     rowIndex = kv(sheet, rowIndex, "批次 ID", String.valueOf(batch.getId()));
     rowIndex = kv(sheet, rowIndex, "筛选快照", filterSummary(batch.getFilterJson()));
     rowIndex = kv(sheet, rowIndex, "模型", batch.getModelId());
+    rowIndex = kv(sheet, rowIndex, "JEV Base URL", batch.getJevBaseUrl());
+    rowIndex = kv(sheet, rowIndex, "JEV 派发并发", batch.getJevConcurrency());
+    rowIndex = kv(sheet, rowIndex, "JEV 读超时（秒）", batch.getJevReadTimeoutSeconds());
     rowIndex = kv(sheet, rowIndex, "提示词版本", batch.getPromptVersion());
     rowIndex = kv(sheet, rowIndex, "高置信门槛(AI置信度)", batch.getConfidenceThreshold());
     rowIndex = kv(sheet, rowIndex, "高置信门槛(概率差)", batch.getMarginThreshold());

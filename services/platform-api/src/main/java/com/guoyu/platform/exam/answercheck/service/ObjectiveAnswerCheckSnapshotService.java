@@ -96,7 +96,8 @@ public class ObjectiveAnswerCheckSnapshotService {
    */
   @Transactional
   public Long createBatch(ObjectiveAnswerSelectionReq req, Long tenantId, Long userId) {
-    if (!properties.isEnabled() || !aiService.descriptor().credentialsReady()) {
+    ObjectiveAnswerCheckAiDescriptor descriptor = aiService.descriptor();
+    if (!properties.isEnabled() || !descriptor.credentialsReady()) {
       throw new BusinessException(ErrorCode.SERVICE_UNAVAILABLE,
           "答案 AI 检查暂未开通，请联系管理员。");
     }
@@ -140,7 +141,10 @@ public class ObjectiveAnswerCheckSnapshotService {
     batch.setOutputTokens(0L);
     batch.setUsageEstimatedCalls(0);
     batch.setModelDurationMs(0L);
-    batch.setModelId(aiService.descriptor().modelId());
+    batch.setModelId(descriptor.modelId());
+    batch.setJevBaseUrl(descriptor.baseUrl());
+    batch.setJevConcurrency(descriptor.jevConcurrency());
+    batch.setJevReadTimeoutSeconds(descriptor.jevReadTimeoutSeconds());
     batch.setPromptVersion(PROMPT_VERSION);
     batch.setConfidenceThreshold(BigDecimal.valueOf(properties.getConfidenceThreshold()));
     batch.setMarginThreshold(BigDecimal.valueOf(properties.getMarginThreshold()));

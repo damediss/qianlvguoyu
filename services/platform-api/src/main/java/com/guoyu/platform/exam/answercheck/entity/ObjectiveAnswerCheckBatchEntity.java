@@ -39,6 +39,10 @@ public class ObjectiveAnswerCheckBatchEntity extends BaseEntity {
   private Integer usageEstimatedCalls;
   private Long modelDurationMs;
   private String modelId;
+  /** v1.5 JEV 连接配置的非敏感批次快照；真实密钥仍只走环境变量。 */
+  private String jevBaseUrl;
+  private Integer jevConcurrency;
+  private Integer jevReadTimeoutSeconds;
   private String promptVersion;
   private BigDecimal confidenceThreshold;
   private BigDecimal marginThreshold;

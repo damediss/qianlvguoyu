@@ -27,9 +27,10 @@ public class ObjectiveAnswerCheckProperties {
   @Max(2000)
   private int batchMaxSize = 2000;
 
+  /** Worker 池上限；每个批次实际 JEV 并发还会受模型配置行 jev_concurrency 限制。 */
   @Min(1)
   @Max(20)
-  private int concurrency = 5;
+  private int concurrency = 20;
 
   @DecimalMin("0.0")
   @DecimalMax("1.0")

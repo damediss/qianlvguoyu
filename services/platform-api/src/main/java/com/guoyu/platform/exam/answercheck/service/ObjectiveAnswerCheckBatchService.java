@@ -90,6 +90,7 @@ public class ObjectiveAnswerCheckBatchService {
     if (batch == null || batch.getRunId() == null) {
       return;
     }
+    assertJevSnapshot(batch);
     if ("pending".equals(batch.getStatus())) {
       // 创建时只写 pending + run/租约；投递前原子转 running，避免事务内派发抢跑
       if (batchMapper.acquire(batchId, tenantId, batch.getRunId(), batch.getOwnerId(), userId)
@@ -132,7 +133,10 @@ public class ObjectiveAnswerCheckBatchService {
           log.warn("[OAC] 租约所有权失效，停止派发 batchId={}", batchId);
           return;
         }
-        List<Long> ids = itemMapper.listPendingIds(batchId, Math.max(1, properties.getConcurrency()));
+        int dispatchConcurrency = Math.min(Math.max(1, properties.getConcurrency()),
+            Math.max(1, batch.getJevConcurrency() == null ? properties.getConcurrency()
+                : batch.getJevConcurrency()));
+        List<Long> ids = itemMapper.listPendingIds(batchId, dispatchConcurrency);
         if (ids.isEmpty()) {
           break;
         }
@@ -150,7 +154,9 @@ public class ObjectiveAnswerCheckBatchService {
           try {
             futures.add(CompletableFuture.runAsync(
                 () -> processClaimed(item, claimAttempt, tenantId, userId, runId,
-                    batch.getConfidenceThreshold(), batch.getMarginThreshold(),
+                    batch.getConfidenceThreshold(), batch.getMarginThreshold(), batch.getModelId(),
+                    batch.getJevBaseUrl(),
+                    batch.getJevReadTimeoutSeconds() == null ? 30 : batch.getJevReadTimeoutSeconds(),
                     consecutiveFailures), workerExecutor));
           } catch (RejectedExecutionException e) {
             itemMapper.restorePending(id, claimAttempt, userId);
@@ -178,7 +184,8 @@ public class ObjectiveAnswerCheckBatchService {
 
   private void processClaimed(ObjectiveAnswerCheckItemEntity claimed, int claimAttempt,
       Long tenantId, Long userId, Long runId, BigDecimal batchConfidenceThreshold,
-      BigDecimal batchMarginThreshold, AtomicInteger consecutiveFailures) {
+      BigDecimal batchMarginThreshold, String batchModelId, String batchJevBaseUrl,
+      int batchJevReadTimeoutSeconds, AtomicInteger consecutiveFailures) {
     TenantContextHolder.setTenantId(tenantId);
     try {
       String questionType = claimed.getQuestionType();
@@ -186,7 +193,8 @@ public class ObjectiveAnswerCheckBatchService {
       ObjectiveAnswerQuestion aiQuestion = new ObjectiveAnswerQuestion(claimed.getDetailId(),
           questionType, question.stemText(), question.contextPath(), toAiOptions(question));
       ObjectiveAnswerCheckCallContext context = new ObjectiveAnswerCheckCallContext(tenantId, userId,
-          claimed.getBatchId(), claimed.getId(), runId, claimAttempt);
+          claimed.getBatchId(), claimed.getId(), runId, claimAttempt, batchModelId, batchJevBaseUrl,
+          batchJevReadTimeoutSeconds);
       ObjectiveAnswerDecision decision = aiService.check(aiQuestion, context,
           outcome -> auditService.record(outcome, tenantId, userId));
       // 判定阈值取批次创建时的固化快照（方案 §9.1/§17.3：配置变更不影响历史批次口径）
@@ -297,6 +305,7 @@ public class ObjectiveAnswerCheckBatchService {
   @Transactional
   public void resume(Long batchId, Long tenantId, Long userId) {
     ObjectiveAnswerCheckBatchEntity batch = requireBatch(batchId);
+    assertJevSnapshot(batch);
     int processing = itemMapper.countByProcessStatus(batchId, "processing");
     boolean allowed = "paused".equals(batch.getStatus())
         || ("failed".equals(batch.getStatus()) && processing == 0);
@@ -322,6 +331,7 @@ public class ObjectiveAnswerCheckBatchService {
   @Transactional
   public int retryFailed(Long batchId, Long tenantId, Long userId) {
     ObjectiveAnswerCheckBatchEntity batch = requireBatch(batchId);
+    assertJevSnapshot(batch);
     int processing = itemMapper.countByProcessStatus(batchId, "processing");
     boolean allowed = "paused".equals(batch.getStatus()) || "done".equals(batch.getStatus())
         || ("failed".equals(batch.getStatus()) && processing == 0);
@@ -417,6 +427,15 @@ public class ObjectiveAnswerCheckBatchService {
           option.text(), option.originalCorrect()));
     }
     return options;
+  }
+
+  /** v1.5 之前创建的批次没有 JEV 快照；继续/重试会给误导性未开通错误，必须直接拒绝并引导新建批次。 */
+  private void assertJevSnapshot(ObjectiveAnswerCheckBatchEntity batch) {
+    if (batch.getJevBaseUrl() == null || batch.getJevBaseUrl().isBlank()
+        || batch.getJevConcurrency() == null || batch.getJevReadTimeoutSeconds() == null) {
+      throw new BusinessException(ErrorCode.CONFLICT,
+          "该批次缺少模型配置快照，请新建批次后再检查");
+    }
   }
 
   private String ownerId() {

@@ -652,6 +652,7 @@ public class SkillGenBatchService {
         new LambdaQueryWrapper<ExamFaqModelConfigEntity>()
             .eq(ExamFaqModelConfigEntity::getTenantId, tenantId)
             .eq(ExamFaqModelConfigEntity::getStatus, "enabled")
+            .in(ExamFaqModelConfigEntity::getFeatureScope, "common", "skill-gen")
             .orderByDesc(ExamFaqModelConfigEntity::getId));
     return list == null ? List.of() : list.stream().map(SkillModelConfigVO::from).toList();
   }

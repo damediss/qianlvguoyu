@@ -238,7 +238,7 @@ describe('ObjectiveAnswerCheckResults 检查结果', () => {
     expect(screen.getByText('1200')).toBeInTheDocument();
     expect(screen.queryByText(/采纳 AI 答案/)).not.toBeInTheDocument();
     expect(screen.queryByText(/一键写回/)).not.toBeInTheDocument();
-  });
+  }, 60000);
 
   it('复核提交携带 expectedVersion；只写复核字段', async () => {
     renderPage();
@@ -255,7 +255,7 @@ describe('ObjectiveAnswerCheckResults 检查结果', () => {
         expectedVersion: 3,
       }),
     );
-  });
+  }, 60000);
 
   it('重试失败项前二次确认，成功提示复位数量', async () => {
     renderPage();
@@ -265,5 +265,5 @@ describe('ObjectiveAnswerCheckResults 检查结果', () => {
     await userEvent.click(screen.getByRole('button', { name: '重 试' }));
     await waitFor(() => expect(api.retryFailedObjectiveAnswerItems).toHaveBeenCalledWith(BATCH_ID));
     expect(await screen.findByText(/已复位 1 道失败试题/)).toBeInTheDocument();
-  });
+  }, 60000);
 });

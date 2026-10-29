@@ -19,6 +19,8 @@ public record FaqModelConfigCreateReq(
     @DecimalMin("0.0") @DecimalMax("2.0") java.math.BigDecimal temperature,
     @Min(100) @Max(32000) Integer maxTokens,
     String extraConfig,
+    @Min(1) @Max(20) Integer jevConcurrency,
+    @Min(5) @Max(120) Integer jevReadTimeoutSeconds,
     @NotNull Integer status
 ) {
 }

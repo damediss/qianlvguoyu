@@ -749,6 +749,7 @@ public class TheoryGenBatchService {
         new LambdaQueryWrapper<ExamFaqModelConfigEntity>()
             .eq(ExamFaqModelConfigEntity::getTenantId, tenantId)
             .eq(ExamFaqModelConfigEntity::getStatus, "enabled")
+            .in(ExamFaqModelConfigEntity::getFeatureScope, "common", "theory-gen")
             .orderByDesc(ExamFaqModelConfigEntity::getId));
     return list == null ? List.of()
         : list.stream().map(com.guoyu.platform.exam.theorygen.dto.TheoryModelConfigVO::from).toList();
