@@ -70,7 +70,7 @@
 ### AI / LLM 硬规则
 
 - AI 生成内容必须标记来源、模型、生成时间和操作人；写操作默认草稿/待办，发布、审批、删除必须人工确认
-- LLM 调用收敛在 `ai/` 包，密钥/模型走配置，调用前逐字段核对目标平台文档（OpenAI 兼容 ≠ 完全兼容）
+- LLM 调用收敛在 `ai/` 包，模型密钥走配置，非敏感配置走exam_faq_model_config表，调用前逐字段核对目标平台文档（OpenAI 兼容 ≠ 完全兼容）
 - 思考型模型（deepseek/glm thinking）思维链**计入 max_tokens**：开 thinking 必须放大预算或显式关闭
 - 完整 11 条接入规范见 `services/platform-api/AGENTS.md`
 
