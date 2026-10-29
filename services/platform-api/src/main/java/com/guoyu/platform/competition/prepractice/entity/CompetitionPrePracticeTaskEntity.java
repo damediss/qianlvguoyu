@@ -2,6 +2,7 @@ package com.guoyu.platform.competition.prepractice.entity;
 
 import com.baomidou.mybatisplus.annotation.TableName;
 import com.guoyu.platform.common.domain.BaseEntity;
+import java.time.LocalDateTime;
 
 @TableName("competition_pre_practice_task")
 public class CompetitionPrePracticeTaskEntity extends BaseEntity {
@@ -15,6 +16,9 @@ public class CompetitionPrePracticeTaskEntity extends BaseEntity {
   private Long stageId;
   private String stageNameSnapshot;
   private String title;
+  private boolean effectiveTimeEnabled;
+  private LocalDateTime effectiveStartAt;
+  private LocalDateTime effectiveEndAt;
   private String sourceScopeJson;
   private String questionTypeCountsJson;
   private Integer questionCount;
@@ -45,6 +49,18 @@ public class CompetitionPrePracticeTaskEntity extends BaseEntity {
   public void setStageNameSnapshot(String stageNameSnapshot) { this.stageNameSnapshot = stageNameSnapshot; }
   public String getTitle() { return title; }
   public void setTitle(String title) { this.title = title; }
+  public boolean getEffectiveTimeEnabled() { return effectiveTimeEnabled; }
+  public void setEffectiveTimeEnabled(boolean effectiveTimeEnabled) {
+    this.effectiveTimeEnabled = effectiveTimeEnabled;
+  }
+  public LocalDateTime getEffectiveStartAt() { return effectiveStartAt; }
+  public void setEffectiveStartAt(LocalDateTime effectiveStartAt) {
+    this.effectiveStartAt = effectiveStartAt;
+  }
+  public LocalDateTime getEffectiveEndAt() { return effectiveEndAt; }
+  public void setEffectiveEndAt(LocalDateTime effectiveEndAt) {
+    this.effectiveEndAt = effectiveEndAt;
+  }
   public String getSourceScopeJson() { return sourceScopeJson; }
   public void setSourceScopeJson(String sourceScopeJson) { this.sourceScopeJson = sourceScopeJson; }
   public String getQuestionTypeCountsJson() { return questionTypeCountsJson; }

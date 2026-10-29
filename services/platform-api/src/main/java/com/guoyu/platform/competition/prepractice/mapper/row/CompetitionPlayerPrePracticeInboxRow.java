@@ -19,6 +19,9 @@ public class CompetitionPlayerPrePracticeInboxRow {
   private String status;
   private LocalDateTime deliveredAt;
   private LocalDateTime pushedAt;
+  private boolean effectiveTimeEnabled;
+  private LocalDateTime effectiveStartAt;
+  private LocalDateTime effectiveEndAt;
 
   public Long getDeliveryId() { return deliveryId; }
   public void setDeliveryId(Long deliveryId) { this.deliveryId = deliveryId; }
@@ -58,4 +61,16 @@ public class CompetitionPlayerPrePracticeInboxRow {
   public void setDeliveredAt(LocalDateTime deliveredAt) { this.deliveredAt = deliveredAt; }
   public LocalDateTime getPushedAt() { return pushedAt; }
   public void setPushedAt(LocalDateTime pushedAt) { this.pushedAt = pushedAt; }
+  public boolean getEffectiveTimeEnabled() { return effectiveTimeEnabled; }
+  public void setEffectiveTimeEnabled(boolean effectiveTimeEnabled) {
+    this.effectiveTimeEnabled = effectiveTimeEnabled;
+  }
+  public LocalDateTime getEffectiveStartAt() { return effectiveStartAt; }
+  public void setEffectiveStartAt(LocalDateTime effectiveStartAt) {
+    this.effectiveStartAt = effectiveStartAt;
+  }
+  public LocalDateTime getEffectiveEndAt() { return effectiveEndAt; }
+  public void setEffectiveEndAt(LocalDateTime effectiveEndAt) {
+    this.effectiveEndAt = effectiveEndAt;
+  }
 }

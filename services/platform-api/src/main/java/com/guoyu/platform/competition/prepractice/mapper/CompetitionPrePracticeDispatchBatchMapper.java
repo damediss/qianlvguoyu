@@ -87,7 +87,8 @@ public interface CompetitionPrePracticeDispatchBatchMapper
              b.event_id, b.event_name_snapshot, b.event_work_type_id,
              b.event_work_type_name_snapshot, b.event_work_type_level_code,
              b.event_work_type_level_name_snapshot, b.stage_id, b.stage_name_snapshot,
-             t.question_count, r.status, r.delivered_at, b.pushed_at
+             t.question_count, r.status, r.delivered_at, b.pushed_at,
+             t.effective_time_enabled, t.effective_start_at, t.effective_end_at
       FROM competition_pre_practice_dispatch_recipient r
       JOIN competition_pre_practice_dispatch_batch b
         ON b.id = r.batch_id AND b.tenant_id = r.tenant_id AND b.deleted = 0

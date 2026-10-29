@@ -1,0 +1,249 @@
+.competition-pre-practice-card .ant-card-body {
+  padding: 24px;
+}
+
+.competition-page-heading p.ant-typography {
+  max-width: 960px;
+  margin: 8px 0 0;
+  line-height: 1.65;
+}
+
+.competition-pre-practice-form {
+  width: 100%;
+  min-width: 0;
+  text-align: left;
+}
+
+.competition-pre-practice-form .ant-form-item {
+  min-width: 0;
+  margin-bottom: 0;
+}
+
+.competition-pre-practice-form .ant-form-item-label {
+  padding: 0 0 8px;
+  text-align: left;
+}
+
+.competition-pre-practice-form .ant-form-item-control,
+.competition-pre-practice-form .ant-form-item-control-input,
+.competition-pre-practice-form .ant-form-item-control-input-content {
+  width: 100%;
+  min-width: 0;
+}
+
+.competition-pre-practice-section-heading {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 6px 16px;
+  margin-bottom: 16px;
+}
+
+.competition-pre-practice-section-title.ant-typography {
+  margin: 0;
+  color: var(--color-text, #1e293b);
+  font-size: 16px;
+}
+
+.competition-pre-practice-target,
+.competition-pre-practice-scope {
+  min-width: 0;
+}
+
+.competition-pre-practice-basic-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr));
+  column-gap: 24px;
+  row-gap: 16px;
+  align-items: start;
+}
+
+.competition-pre-practice-basic-grid > .ant-form-item {
+  width: 100%;
+}
+
+.competition-pre-practice-basic-grid .ant-select,
+.competition-pre-practice-basic-grid .ant-input {
+  width: 100%;
+  min-width: 0;
+}
+
+.competition-pre-practice-task-config {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  margin-top: 18px;
+}
+
+.competition-pre-practice-task-name {
+  width: 100%;
+  max-width: 720px;
+  min-width: 0;
+}
+
+.competition-pre-practice-time-setting {
+  width: 100%;
+  max-width: 720px;
+  min-width: 0;
+  box-sizing: border-box;
+  padding: 14px 16px;
+  border: 1px solid var(--color-line, #e2e8f0);
+  border-radius: 8px;
+  background: var(--color-surface-subtle, #f8fafc);
+}
+
+.competition-pre-practice-time-setting__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20px;
+}
+
+.competition-pre-practice-time-setting__copy {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.competition-pre-practice-time-setting__range {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 20px;
+  margin-top: 14px;
+}
+
+.competition-pre-practice-time-setting__range .ant-picker {
+  width: 100%;
+}
+
+@media (max-width: 900px) {
+  .competition-pre-practice-time-setting__range {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.competition-pre-practice-scope {
+  padding-top: 24px;
+  margin-top: 24px;
+  border-top: 1px solid var(--color-line, #e2e8f0);
+}
+
+.competition-pre-practice-scope-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr));
+  column-gap: 24px;
+  row-gap: 16px;
+  align-items: start;
+}
+
+.competition-pre-practice-scope-grid > .ant-form-item {
+  width: 100%;
+}
+
+.competition-pre-practice-scope-grid .ant-select {
+  width: 100%;
+  min-width: 0;
+}
+
+.competition-pre-practice-level-options {
+  display: flex;
+  width: 100%;
+  min-height: 32px;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 8px 24px;
+}
+
+.competition-pre-practice-level-options .ant-checkbox-group-item {
+  margin-inline-end: 0;
+}
+
+.competition-pre-practice-question-counts {
+  width: 100%;
+  min-width: 0;
+  padding-top: 24px;
+  margin-top: 24px;
+  border-top: 1px solid var(--color-line, #e2e8f0);
+}
+
+.competition-pre-practice-question-counts .ant-table-wrapper {
+  max-width: 100%;
+}
+
+.competition-pre-practice-question-counts__error {
+  width: 100%;
+  margin-bottom: 12px;
+}
+
+.competition-pre-practice-question-counts__empty {
+  width: 100%;
+  margin-bottom: 12px;
+}
+
+.competition-pre-practice-question-counts__summary {
+  min-height: 32px;
+  margin-top: 12px;
+}
+
+.competition-pre-practice-form__hint {
+  width: 100%;
+  margin-top: 24px;
+}
+
+.competition-pre-practice-form__actions {
+  display: flex;
+  justify-content: flex-start;
+  padding-top: 20px;
+  margin-top: 20px;
+  border-top: 1px solid var(--color-line, #e2e8f0);
+}
+
+.competition-pre-practice-tasks__error {
+  margin-bottom: 16px;
+}
+
+.competition-pre-practice-tasks-table .ant-table-cell {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.competition-pre-practice-task-event,
+.competition-pre-practice-task-tags {
+  max-width: 100%;
+  min-width: 0;
+}
+
+.competition-pre-practice-task-tags {
+  display: flex;
+}
+
+.competition-pre-practice-task-tags .ant-space-item {
+  max-width: 100%;
+  min-width: 0;
+}
+
+.competition-pre-practice-task-tags .ant-tag {
+  max-width: 100%;
+  height: auto;
+  margin-inline-end: 0;
+  overflow-wrap: anywhere;
+  white-space: normal;
+  line-height: 1.5;
+}
+
+@media (max-width: 767px) {
+  .competition-pre-practice-card .ant-card-body {
+    padding: 16px 12px;
+  }
+
+  .competition-pre-practice-form__actions .ant-btn {
+    width: 100%;
+  }
+
+  .competition-pre-practice-section-heading {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 4px;
+  }
+}

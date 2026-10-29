@@ -31,6 +31,7 @@ import com.guoyu.platform.exam.reviewsync.support.AnswerOptionParser;
 import com.guoyu.platform.exam.reviewsync.support.QuestionTypes;
 import com.guoyu.platform.exam.reviewsync.support.SubjectiveAnswerExtractor;
 import java.time.LocalDateTime;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -84,6 +85,7 @@ public class CompetitionPlayerPrePracticeTaskApplicationService {
     CompetitionPrePracticeDispatchRecipientEntity recipient = requireRecipient(deliveryId, player);
     CompetitionPrePracticeDispatchBatchEntity batch = requireBatch(recipient, player);
     CompetitionPrePracticeTaskEntity task = requireTask(recipient, batch, player);
+    ensureTaskOpen(task);
     List<CompetitionPrePracticeTaskQuestionEntity> questions = loadQuestions(task.getId(), player);
     List<CompetitionPrePracticeAnswerEntity> answers = loadAnswers(deliveryId, player);
     Map<Long, CompetitionPrePracticeAnswerEntity> answerByQuestionId = new HashMap<>();
@@ -111,7 +113,8 @@ public class CompetitionPlayerPrePracticeTaskApplicationService {
         value(batch.getEventWorkTypeId()), batch.getEventWorkTypeNameSnapshot(),
         batch.getEventWorkTypeLevelCode(), batch.getEventWorkTypeLevelNameSnapshot(),
         value(batch.getStageId()), batch.getStageNameSnapshot(), task.getQuestionCount(),
-        recipient.getStatus(), recipient.getDeliveredAt(), batch.getPushedAt());
+        recipient.getStatus(), recipient.getDeliveredAt(), batch.getPushedAt(),
+        task.getEffectiveTimeEnabled(), task.getEffectiveStartAt(), task.getEffectiveEndAt());
     return new CompetitionPlayerPrePracticeTaskDetailVO(taskVO, answeredCount, List.copyOf(questionVOs));
   }
 
@@ -119,6 +122,7 @@ public class CompetitionPlayerPrePracticeTaskApplicationService {
   public CompetitionPlayerPrePracticeFeedbackVO feedback(Long deliveryId, Long taskQuestionId) {
     CompetitionPlayerPrincipal player = currentPlayer();
     CompetitionPrePracticeDispatchRecipientEntity recipient = requireRecipient(deliveryId, player);
+    requireOpenTask(recipient, player);
     CompetitionPrePracticeTaskQuestionEntity question = requireQuestion(
         recipient.getTaskId(), taskQuestionId, player.getTenantId());
     return feedbackVO(question);
@@ -131,6 +135,7 @@ public class CompetitionPlayerPrePracticeTaskApplicationService {
       CompetitionPlayerPrePracticeAnswerSaveReq req) {
     CompetitionPlayerPrincipal player = currentPlayer();
     CompetitionPrePracticeDispatchRecipientEntity recipient = requireRecipient(deliveryId, player);
+    requireOpenTask(recipient, player);
     CompetitionPrePracticeTaskQuestionEntity question = requireQuestion(
         recipient.getTaskId(), taskQuestionId, player.getTenantId());
     if (req == null || req.answer() == null || req.answer().isNull()) {
@@ -138,7 +143,7 @@ public class CompetitionPlayerPrePracticeTaskApplicationService {
     }
 
     JsonNode answer = validateAnswer(question, req.answer());
-    LocalDateTime now = LocalDateTime.now();
+    LocalDateTime now = LocalDateTime.now().truncatedTo(ChronoUnit.MINUTES);
     CompetitionPrePracticeAnswerEntity answerEntity = new CompetitionPrePracticeAnswerEntity();
     answerEntity.setId(IdWorker.getId());
     answerEntity.setTenantId(player.getTenantId());
@@ -221,6 +226,26 @@ public class CompetitionPlayerPrePracticeTaskApplicationService {
       throw new BusinessException(ErrorCode.NOT_FOUND, "赛前练习题目已失效");
     }
     return task;
+  }
+
+  private CompetitionPrePracticeTaskEntity requireOpenTask(
+      CompetitionPrePracticeDispatchRecipientEntity recipient,
+      CompetitionPlayerPrincipal player) {
+    CompetitionPrePracticeDispatchBatchEntity batch = requireBatch(recipient, player);
+    CompetitionPrePracticeTaskEntity task = requireTask(recipient, batch, player);
+    ensureTaskOpen(task);
+    return task;
+  }
+
+  private void ensureTaskOpen(CompetitionPrePracticeTaskEntity task) {
+    if (!task.getEffectiveTimeEnabled()) {
+      return;
+    }
+    LocalDateTime now = LocalDateTime.now().truncatedTo(ChronoUnit.MINUTES);
+    if (task.getEffectiveStartAt() == null || task.getEffectiveEndAt() == null
+        || now.isBefore(task.getEffectiveStartAt()) || now.isAfter(task.getEffectiveEndAt())) {
+      throw new BusinessException(ErrorCode.CONFLICT, "当前不在赛前练习任务的开放时间内");
+    }
   }
 
   private List<CompetitionPrePracticeTaskQuestionEntity> loadQuestions(Long taskId, CompetitionPlayerPrincipal player) {

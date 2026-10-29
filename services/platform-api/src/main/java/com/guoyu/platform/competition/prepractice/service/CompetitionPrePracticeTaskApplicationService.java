@@ -37,6 +37,8 @@ import com.guoyu.platform.exam.reviewsync.support.QuestionTypes;
 import com.guoyu.platform.exam.service.ExamPracticeResourceApplicationService;
 import com.guoyu.platform.exam.zhenti.service.ZhentiLevel;
 import com.guoyu.platform.security.SecurityContext;
+import java.time.LocalDateTime;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
@@ -134,6 +136,18 @@ public class CompetitionPrePracticeTaskApplicationService {
   @Transactional
   public CompetitionPrePracticeTaskVO create(CompetitionPrePracticeTaskCreateReq req) {
     Long tenantId = SecurityContext.currentUser().getTenantId();
+    LocalDateTime effectiveStartAt = null;
+    LocalDateTime effectiveEndAt = null;
+    if (req.effectiveTimeEnabled()) {
+      if (req.effectiveStartAt() == null || req.effectiveEndAt() == null) {
+        throw new BusinessException(ErrorCode.BAD_REQUEST, "开启任务开放时间限制时，请填写开始时间和截止时间");
+      }
+      effectiveStartAt = req.effectiveStartAt().truncatedTo(ChronoUnit.MINUTES);
+      effectiveEndAt = req.effectiveEndAt().truncatedTo(ChronoUnit.MINUTES);
+      if (!effectiveStartAt.isBefore(effectiveEndAt)) {
+        throw new BusinessException(ErrorCode.BAD_REQUEST, "截止时间必须晚于开始时间");
+      }
+    }
     List<ExamPracticeCourseScope> scopes = courseScopes(req.sourceScope(), tenantId);
     TargetScope target = requireTargetScope(tenantId, req);
     Map<String, Long> availableCounts = resourceService.countAvailable(tenantId, scopes);
@@ -165,6 +179,9 @@ public class CompetitionPrePracticeTaskApplicationService {
     task.setStageId(target.stage().getId());
     task.setStageNameSnapshot(target.stage().getName());
     task.setTitle(req.title().trim());
+    task.setEffectiveTimeEnabled(req.effectiveTimeEnabled());
+    task.setEffectiveStartAt(effectiveStartAt);
+    task.setEffectiveEndAt(effectiveEndAt);
     task.setSourceScopeJson(writeJson(sourceScope));
     task.setQuestionTypeCountsJson(writeJson(configuredCounts));
     task.setQuestionCount(questionCount);
@@ -340,7 +357,8 @@ public class CompetitionPrePracticeTaskApplicationService {
         entity.getEventWorkTypeLevelCode(), entity.getEventWorkTypeLevelNameSnapshot(),
         id(entity.getStageId()), entity.getStageNameSnapshot(), entity.getTitle(),
         readJson(entity.getSourceScopeJson()), readJson(entity.getQuestionTypeCountsJson()),
-        entity.getQuestionCount(), entity.getStatus(), entity.getDeliveryStatus(), entity.getCreatedAt());
+        entity.getQuestionCount(), entity.getStatus(), entity.getDeliveryStatus(), entity.getCreatedAt(),
+        entity.getEffectiveTimeEnabled(), entity.getEffectiveStartAt(), entity.getEffectiveEndAt());
   }
 
   private JsonNode readJson(String json) {

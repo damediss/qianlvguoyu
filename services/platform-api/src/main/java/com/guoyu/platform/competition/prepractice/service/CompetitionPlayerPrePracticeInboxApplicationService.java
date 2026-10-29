@@ -57,7 +57,8 @@ public class CompetitionPlayerPrePracticeInboxApplicationService {
         value(row.getEventWorkTypeId()), row.getEventWorkTypeNameSnapshot(),
         row.getEventWorkTypeLevelCode(), row.getEventWorkTypeLevelNameSnapshot(),
         value(row.getStageId()), row.getStageNameSnapshot(), row.getQuestionCount(),
-        row.getStatus(), row.getDeliveredAt(), row.getPushedAt());
+        row.getStatus(), row.getDeliveredAt(), row.getPushedAt(),
+        row.getEffectiveTimeEnabled(), row.getEffectiveStartAt(), row.getEffectiveEndAt());
   }
 
   private String value(Long value) {

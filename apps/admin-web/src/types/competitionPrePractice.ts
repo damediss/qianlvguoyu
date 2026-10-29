@@ -22,6 +22,9 @@ export interface CompetitionPrePracticeTask {
   stageId: string;
   stageName: string;
   title: string;
+  effectiveTimeEnabled: boolean;
+  effectiveStartAt?: string | null;
+  effectiveEndAt?: string | null;
   sourceScope: Array<{
     workTypeId: string;
     workTypeName: string;
@@ -41,6 +44,9 @@ export interface CompetitionPrePracticeTaskCreateRequest {
   eventWorkTypeLevelCode: string;
   stageId: string;
   title: string;
+  effectiveTimeEnabled: boolean;
+  effectiveStartAt?: string;
+  effectiveEndAt?: string;
   sourceScope: CompetitionPrePracticeSourceScope;
   questionTypeQuotas: Array<{ questionType: string; questionCount: number }>;
 }
@@ -126,4 +132,7 @@ export interface CompetitionPlayerPrePracticeTask {
   status: string;
   deliveredAt: string;
   pushedAt: string;
+  effectiveTimeEnabled: boolean;
+  effectiveStartAt?: string | null;
+  effectiveEndAt?: string | null;
 }

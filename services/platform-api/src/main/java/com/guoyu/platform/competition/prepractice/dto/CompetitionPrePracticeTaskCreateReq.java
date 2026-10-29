@@ -5,6 +5,7 @@ import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
+import java.time.LocalDateTime;
 import java.util.List;
 
 public record CompetitionPrePracticeTaskCreateReq(
@@ -14,5 +15,20 @@ public record CompetitionPrePracticeTaskCreateReq(
     @NotNull Long stageId,
     @NotBlank @Size(max = 255) String title,
     @NotNull @Valid CompetitionPrePracticeSourceScopeReq sourceScope,
-    @NotEmpty @Valid List<CompetitionPrePracticeQuestionTypeQuotaReq> questionTypeQuotas) {
+    @NotEmpty @Valid List<CompetitionPrePracticeQuestionTypeQuotaReq> questionTypeQuotas,
+    boolean effectiveTimeEnabled,
+    LocalDateTime effectiveStartAt,
+    LocalDateTime effectiveEndAt) {
+
+  public CompetitionPrePracticeTaskCreateReq(
+      Long eventId,
+      Long eventWorkTypeId,
+      String eventWorkTypeLevelCode,
+      Long stageId,
+      String title,
+      CompetitionPrePracticeSourceScopeReq sourceScope,
+      List<CompetitionPrePracticeQuestionTypeQuotaReq> questionTypeQuotas) {
+    this(eventId, eventWorkTypeId, eventWorkTypeLevelCode, stageId, title, sourceScope,
+        questionTypeQuotas, false, null, null);
+  }
 }
