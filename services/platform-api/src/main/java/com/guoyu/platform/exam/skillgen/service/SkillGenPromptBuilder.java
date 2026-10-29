@@ -55,7 +55,9 @@ public final class SkillGenPromptBuilder {
         .append("7. 同一考评点下的多道试题必须覆盖不同工况、不同侧面或不同参数组合，不得同义改述、不得雷同。\n")
         .append("8. 试题内容正确无争议，符合社会主义核心价值观，不得出现违反法律法规、民族歧视、地域歧视、性别歧视等内容；术语规范，标点准确。\n")
         .append("考评点重要程度档位：X=核心要素（重点考查、优先覆盖），Y=重要要素，Z=一般要素。\n")
-        .append("\n输出要求：只输出 JSON 数组，不要输出任何其他文字、解释或 markdown 围栏。数组元素结构：\n")
+        .append("\n输出要求：输出必须是 JSON 数组——第一个字符是 `[`、最后一个字符是 `]`，")
+        .append("数组元素个数必须与要求的试题道数一致，每个元素是一道完整试题；")
+        .append("不要输出任何其他文字、解释或 markdown 围栏。数组元素结构：\n")
         .append("{\"name\":\"试题名称\",\"durationMinutes\":整数分钟,\"examForm\":\"实操\",")
         .append("\"sitePrepare\":{\"equipment\":[{\"name\":\"…\",\"unit\":\"…\",\"qty\":\"…\"}]},")
         .append("\"examineePrepare\":\"考生自带清单\",\"requirements\":\"具体考核要求\",\"negatives\":\"否定项说明\",")
@@ -91,7 +93,8 @@ public final class SkillGenPromptBuilder {
     }
     sb.append("请为该考评点生成 ").append(questionCount).append(" 道完整试题")
         .append("（每道均含准备要求、考核试题、评分标准三部分；本题分值 100 分；")
-        .append("各题覆盖不同工况/侧面/参数组合）。只输出 JSON 数组。");
+        .append("各题覆盖不同工况/侧面/参数组合）。")
+        .append("只输出 JSON 数组，恰好 ").append(questionCount).append(" 个元素，第一个字符是 `[`，最后一个字符是 `]`。");
     return sb.toString();
   }
 
