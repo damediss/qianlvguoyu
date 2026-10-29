@@ -36,27 +36,29 @@ class CompetitionEventServiceTest {
       eventMapper, eventOrgMapper, orgMapper, userMapper);
 
   @Test
-  void generatesEventCodeFromNameInitialsAndCreationHour() {
+  void generatesStructuredEventCodeFromCreationDate() {
     when(eventMapper.selectOne(any())).thenReturn(null);
     when(eventMapper.insert(any(CompetitionEventEntity.class))).thenReturn(1);
 
     CompetitionEventEntity created = service.create(1L,
         new CompetitionEventCreateReq("铝焙烧竞赛", "platform", 0, null, null, null), null);
 
-    assertThat(created.getCode()).startsWith("lbsjs").matches("lbsjs\\d{10}");
+    assertThat(created.getCode()).matches("JS-\\d{8}-0001");
     assertThat(created.getCreatedAt()).isNotNull();
     assertThat(created.getUpdatedAt()).isEqualTo(created.getCreatedAt());
   }
 
   @Test
-  void appendsSequenceWhenNameAndCreationHourProduceAnExistingCode() {
-    when(eventMapper.selectOne(any())).thenReturn(event("platform", null), (CompetitionEventEntity) null);
+  void appendsSequenceWhenDateAlreadyHasAnEventCode() {
+    CompetitionEventEntity existing = event("platform", null);
+    existing.setCode(CompetitionEventCodeGenerator.generate(LocalDateTime.now(), 1));
+    when(eventMapper.selectOne(any())).thenReturn(existing, (CompetitionEventEntity) null);
     when(eventMapper.insert(any(CompetitionEventEntity.class))).thenReturn(1);
 
     CompetitionEventEntity created = service.create(1L,
         new CompetitionEventCreateReq("铝焙烧竞赛", "platform", 0, null, null, null), null);
 
-    assertThat(created.getCode()).matches("lbsjs\\d{10}-02");
+    assertThat(created.getCode()).matches("JS-\\d{8}-0002");
   }
 
   @Test

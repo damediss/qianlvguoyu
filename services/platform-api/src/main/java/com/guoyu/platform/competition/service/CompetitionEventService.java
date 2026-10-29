@@ -28,7 +28,6 @@ import java.time.LocalDateTime;
 import java.security.SecureRandom;
 import java.util.Base64;
 import java.util.List;
-import java.util.Locale;
 import java.util.Objects;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -75,8 +74,7 @@ public class CompetitionEventService {
     validateRegistrationAuditRequired(req.registrationAuditRequired());
     String scope = validateScope(req.scope());
     LocalDateTime createdAt = LocalDateTime.now();
-    String code = nextAvailableCode(tenantId,
-        CompetitionEventCodeGenerator.generate(req.name(), createdAt));
+    String code = nextAvailableCode(tenantId, createdAt);
 
     CompetitionEventEntity entity = CompetitionEventConverter.toEntity(req);
     entity.setTenantId(tenantId);
@@ -263,18 +261,33 @@ public class CompetitionEventService {
     return existing != null;
   }
 
-  private String nextAvailableCode(Long tenantId, String baseCode) {
-    if (!existsByCode(tenantId, baseCode)) {
-      return baseCode;
+  private String nextAvailableCode(Long tenantId, LocalDateTime createdAt) {
+    String datePrefix = CompetitionEventCodeGenerator.datePrefix(createdAt);
+    CompetitionEventEntity latest = mapper.selectOne(new LambdaQueryWrapper<CompetitionEventEntity>()
+        .eq(CompetitionEventEntity::getTenantId, tenantId)
+        .likeRight(CompetitionEventEntity::getCode, datePrefix)
+        .orderByDesc(CompetitionEventEntity::getCode)
+        .last("LIMIT 1"));
+    int firstSequence = 1;
+    if (latest != null) {
+      try {
+        firstSequence = Integer.parseInt(latest.getCode().substring(datePrefix.length())) + 1;
+      } catch (RuntimeException ex) {
+        log.warn("Competition event code sequence is invalid, tenantId={}, code={}",
+            tenantId, latest.getCode(), ex);
+        throw new BusinessException(ErrorCode.CONFLICT, "赛事编码序号异常，请联系管理员");
+      }
     }
-    for (int sequence = 2; sequence <= 99; sequence++) {
-      String candidate = baseCode + "-" + String.format(Locale.ROOT, "%02d", sequence);
+    for (int sequence = firstSequence;
+        sequence <= CompetitionEventCodeGenerator.MAX_SEQUENCE; sequence++) {
+      String candidate = CompetitionEventCodeGenerator.generate(createdAt, sequence);
       if (!existsByCode(tenantId, candidate)) {
         return candidate;
       }
     }
-    log.warn("Competition event code sequence exhausted, tenantId={}, baseCode={}", tenantId, baseCode);
-    throw new BusinessException(ErrorCode.CONFLICT, "同一小时内赛事编码已达到生成上限，请稍后重试");
+    log.warn("Competition event code sequence exhausted, tenantId={}, date={}", tenantId,
+        createdAt.toLocalDate());
+    throw new BusinessException(ErrorCode.CONFLICT, "当日赛事编码已达到生成上限，请次日重试");
   }
 
   private String newPlayerEntryCode() {
