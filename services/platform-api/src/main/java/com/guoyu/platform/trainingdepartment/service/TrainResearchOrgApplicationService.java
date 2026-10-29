@@ -54,9 +54,12 @@ public class TrainResearchOrgApplicationService {
     LambdaQueryWrapper<TrainResearchOrgEntity> wrapper = new LambdaQueryWrapper<TrainResearchOrgEntity>()
         .eq(TrainResearchOrgEntity::getTenantId, tenantId)
         .orderByDesc(TrainResearchOrgEntity::getCreateTime);
-    Long companyFilter = operatorScopeService.resolveCompanyFilter(null);
-    if (companyFilter != null) {
-      wrapper.eq(TrainResearchOrgEntity::getTargetOrgId, companyFilter);
+    java.util.Set<Long> companyScope = operatorScopeService.resolveCompanyIdScope(null);
+    if (companyScope != null) {
+      if (companyScope.isEmpty()) {
+        return new PageResponse<>(List.of(), req.page(), req.pageSize(), 0);
+      }
+      wrapper.in(TrainResearchOrgEntity::getTargetOrgId, companyScope);
     }
     if (req.status() != null) {
       wrapper.eq(TrainResearchOrgEntity::getStatus, req.status());
@@ -92,7 +95,8 @@ public class TrainResearchOrgApplicationService {
   }
 
   public TrainResearchOrgVO create(TrainResearchOrgCreateReq req) {
-    operatorScopeService.requireOrgOperator();
+    operatorScopeService.requireTrainingOperator();
+    operatorScopeService.assertCompanyAccessible(req.targetOrgId());
     TrainResearchOrgEntity entity = new TrainResearchOrgEntity();
     entity.setTitle(req.title());
     entity.setTargetOrgId(req.targetOrgId());
@@ -115,7 +119,7 @@ public class TrainResearchOrgApplicationService {
   }
 
   public TrainResearchOrgVO update(Long id, TrainResearchOrgUpdateReq req) {
-    operatorScopeService.requireOrgOperator();
+    operatorScopeService.requireTrainingOperator();
     Long tenantId = SecurityContext.currentUser().getTenantId();
     TrainResearchOrgEntity entity = trainResearchOrgMapper.selectOne(
         new LambdaQueryWrapper<TrainResearchOrgEntity>()
@@ -126,7 +130,10 @@ public class TrainResearchOrgApplicationService {
     }
     operatorScopeService.assertCompanyAccessible(entity.getTargetOrgId());
     if (req.title() != null) entity.setTitle(req.title());
-    if (req.targetOrgId() != null) entity.setTargetOrgId(req.targetOrgId());
+    if (req.targetOrgId() != null) {
+      operatorScopeService.assertCompanyAccessible(req.targetOrgId());
+      entity.setTargetOrgId(req.targetOrgId());
+    }
     if (req.type() != null) entity.setType(req.type());
     if (req.provinceId() != null) entity.setProvinceId(req.provinceId());
     if (req.provinceName() != null) entity.setProvinceName(req.provinceName());
@@ -151,7 +158,7 @@ public class TrainResearchOrgApplicationService {
   }
 
   public void delete(Long id) {
-    operatorScopeService.requireOrgOperator();
+    operatorScopeService.requireTrainingOperator();
     Long tenantId = SecurityContext.currentUser().getTenantId();
     TrainResearchOrgEntity entity = trainResearchOrgMapper.selectOne(
         new LambdaQueryWrapper<TrainResearchOrgEntity>()
@@ -167,6 +174,7 @@ public class TrainResearchOrgApplicationService {
    * 按名称查找或创建系统企业（orgType=company），供调研企业关联下拉使用。
    */
   public OrgSimpleVO ensureSystemCompany(EnsureSystemCompanyReq req) {
+    // 代建系统企业：仅机构/超管，企业账号不可越权建他企
     operatorScopeService.requireOrgOperator();
     String name = req.name() == null ? "" : req.name().trim();
     if (!StringUtils.hasText(name)) {

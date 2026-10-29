@@ -309,9 +309,13 @@ public class TrainSignUpPeopleImportService {
     if (!operatorScopeService.isPlatformAdmin()) {
       userQuery.eq(PlatformUserEntity::getOrgId, platformOrgId);
     }
-    Long companyFilter = operatorScopeService.resolveCompanyFilter(null);
-    if (companyFilter != null) {
-      userQuery.eq(PlatformUserEntity::getCompanyId, companyFilter);
+    java.util.Set<Long> companyScope = operatorScopeService.resolveCompanyIdScope(null);
+    if (companyScope != null) {
+      if (companyScope.isEmpty()) {
+        userQuery.eq(PlatformUserEntity::getCompanyId, -1L);
+      } else {
+        userQuery.in(PlatformUserEntity::getCompanyId, companyScope);
+      }
     }
 
     List<PlatformUserEntity> users = platformUserMapper.selectList(userQuery);
@@ -421,7 +425,7 @@ public class TrainSignUpPeopleImportService {
     }
 
     Long platformOrgId = resolvePlatformOrgId();
-    Long companyFilter = operatorScopeService.resolveCompanyFilter(null);
+    java.util.Set<Long> companyScope = operatorScopeService.resolveCompanyIdScope(null);
     List<String> preErrors = new ArrayList<>();
     List<Long> foundIds = new ArrayList<>();
     Set<String> seen = new HashSet<>();
@@ -447,8 +451,12 @@ public class TrainSignUpPeopleImportService {
       if (!operatorScopeService.isPlatformAdmin()) {
         userQuery.eq(PlatformUserEntity::getOrgId, platformOrgId);
       }
-      if (companyFilter != null) {
-        userQuery.eq(PlatformUserEntity::getCompanyId, companyFilter);
+      if (companyScope != null) {
+        if (companyScope.isEmpty()) {
+          userQuery.eq(PlatformUserEntity::getCompanyId, -1L);
+        } else {
+          userQuery.in(PlatformUserEntity::getCompanyId, companyScope);
+        }
       }
       PlatformUserEntity user = platformUserMapper.selectOne(userQuery);
       if (user == null) {
@@ -820,9 +828,8 @@ public class TrainSignUpPeopleImportService {
     if (entity == null) {
       throw new BusinessException(ErrorCode.NOT_FOUND, "报名计划不存在了");
     }
-    Long companyFilter = operatorScopeService.resolveCompanyFilter(entity.getOrgId());
-    if (companyFilter != null && entity.getOrgId() != null && !companyFilter.equals(entity.getOrgId())) {
-      throw new BusinessException(ErrorCode.FORBIDDEN, "无权访问该报名计划");
+    if (entity.getOrgId() != null) {
+      operatorScopeService.assertCompanyAccessible(entity.getOrgId());
     }
     return entity;
   }

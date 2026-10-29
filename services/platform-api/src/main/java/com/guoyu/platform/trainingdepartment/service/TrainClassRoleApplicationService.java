@@ -276,7 +276,7 @@ public class TrainClassRoleApplicationService {
 
   @Transactional
   public TrainClassRoleVO assign(Long classId, TrainClassRoleAssignReq req) {
-    operatorScopeService.requireOrgOperator();
+    operatorScopeService.requireTrainingOperator();
     TrainInfoClassEntity clazz = requireClass(classId);
     String roleCode = normalizeRole(req.getRoleCode());
     if (MONITOR.equals(roleCode)) {
@@ -362,7 +362,7 @@ public class TrainClassRoleApplicationService {
    */
   @Transactional
   public TrainClassRoleVO ensureAppAccount(Long classId, Long roleId) {
-    operatorScopeService.requireOrgOperator();
+    operatorScopeService.requireTrainingOperator();
     TrainInfoClassEntity clazz = requireClass(classId);
     TrainClassRoleEntity entity = requireActiveDutyRole(classId, roleId);
     if (entity.getPlatformUserId() != null && entity.getPlatformUserId() > 0) {
@@ -385,7 +385,7 @@ public class TrainClassRoleApplicationService {
    */
   @Transactional
   public Map<String, Object> ensureAppAccountsForClass(Long classId) {
-    operatorScopeService.requireOrgOperator();
+    operatorScopeService.requireTrainingOperator();
     TrainInfoClassEntity clazz = requireClass(classId);
     PlatformUserEnsureService.SyncStats stats = new PlatformUserEnsureService.SyncStats();
     List<TrainClassRoleEntity> unbound = roleMapper.selectList(activeWrapper(classId)).stream()
@@ -427,7 +427,7 @@ public class TrainClassRoleApplicationService {
 
   @Transactional
   public void endRole(Long classId, Long roleId) {
-    operatorScopeService.requireOrgOperator();
+    operatorScopeService.requireTrainingOperator();
     assertClassViewable(classId);
     TrainClassRoleEntity entity = roleMapper.selectById(roleId);
     if (entity == null || entity.getDeleted() != null && entity.getDeleted() == 1) {

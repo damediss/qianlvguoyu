@@ -733,7 +733,7 @@ public class TrainDivisionApplicationService {
     if (!"materialized".equals(task.getStatus())) {
       throw new BusinessException(ErrorCode.BAD_REQUEST, "仅已建班的方案可补开 App 账号");
     }
-    scopeService.requireOrgOperator();
+    scopeService.requireTrainingOperator();
     Long tenantId = task.getTenantId();
     TrainInfoListEntity trainInfo = requireTrainInfoLinked(task.getTrainInfoId(), task.getPlanId(), tenantId);
     Long orgId = resolvePlatformOrgIdForPack(task);
@@ -1722,7 +1722,7 @@ public class TrainDivisionApplicationService {
       throw new BusinessException(ErrorCode.FORBIDDEN, "无权访问该分班方案");
     }
     if (orgManage) {
-      scopeService.requireOrgOperator();
+      scopeService.requireTrainingOperator();
     }
     return task;
   }
@@ -1730,7 +1730,7 @@ public class TrainDivisionApplicationService {
   private void assertEnterpriseCanReviewPack(TrainDivisionPackTaskEntity task) {
     TrainingOperatorScopeService.Scope scope = scopeService.currentScope();
     if (!scope.isEnterpriseViewer()) {
-      scopeService.requireOrgOperator();
+      scopeService.requireTrainingOperator();
       return;
     }
     if (scope.orgId() == null || task.getCompanyId() == null || !scope.orgId().equals(task.getCompanyId())) {

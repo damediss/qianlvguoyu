@@ -80,6 +80,22 @@ public class TrainingOperatorScopeService {
   }
 
   /**
+   * 培训业务写操作：超管 / 机构 / 企业均可（P10 企业自运营）。
+   * 数据边界仍须配合 {@link #assertClassAccessible} / {@link #assertCompanyAccessible}。
+   * 仅机构可做的事（如代建系统企业、改他企功能上限）继续用 {@link #requireOrgOperator}。
+   */
+  public void requireTrainingOperator() {
+    if (isPlatformAdmin()) {
+      return;
+    }
+    Scope scope = currentScope();
+    if (scope.isOrgOperator() || scope.isEnterpriseViewer()) {
+      return;
+    }
+    throw new BusinessException(ErrorCode.FORBIDDEN, "仅培训机构或企业账号可操作");
+  }
+
+  /**
    * 企业账号强制按本企业过滤；机构/超管返回请求值或 null。
    * 列表过滤请用 {@link #resolveCompanyIdScope}（机构需「下属 ∪ 关联」）。
    * 注意：需求选企建关联前勿对机构做可达性拒绝。

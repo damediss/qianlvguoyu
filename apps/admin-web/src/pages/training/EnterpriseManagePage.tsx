@@ -24,6 +24,40 @@ const STATUS_OPTIONS = [
   { value: 'disabled', label: '禁用' },
 ];
 
+/** 雪花 Long 超过 JS 安全整数，Select 必须用字符串 value，否则只显示数字 ID */
+function roleIdStr(id: number | string | null | undefined): string {
+  return id == null ? '' : String(id);
+}
+
+function buildRoleSelectOptions(
+  roles: Array<{ id: number | string; code?: string; name?: string; defaultRole?: boolean }>,
+  selectedIds?: Array<number | string>,
+  selectedCodes?: string[],
+): Array<{ value: string; label: string }> {
+  const opts: Array<{ value: string; label: string }> = [];
+  const known = new Set<string>();
+  for (const r of roles) {
+    const value = roleIdStr(r.id);
+    if (!value || known.has(value)) continue;
+    known.add(value);
+    const name = r.name || r.code || value;
+    opts.push({
+      value,
+      label: r.defaultRole ? `${name}（默认）` : name,
+    });
+  }
+  (selectedIds ?? []).forEach((id, i) => {
+    const value = roleIdStr(id);
+    if (!value || known.has(value)) return;
+    known.add(value);
+    opts.push({
+      value,
+      label: selectedCodes?.[i] || `角色 ${value}`,
+    });
+  });
+  return opts;
+}
+
 function isPlatformAdminUser(roles: string[] | undefined, userType: string | undefined, username: string | undefined) {
   const roleSet = new Set((roles ?? []).map((r) => String(r).toUpperCase()));
   return (
@@ -77,7 +111,7 @@ export function EnterpriseManagePage() {
   const [featureCompany, setFeatureCompany] = useState<SystemCompany | null>(null);
   const [featureConstrain, setFeatureConstrain] = useState(true);
   const [featureMenuCodes, setFeatureMenuCodes] = useState<string[]>([]);
-  const [featureRoleIds, setFeatureRoleIds] = useState<number[]>([]);
+  const [featureRoleIds, setFeatureRoleIds] = useState<string[]>([]);
 
   const invalidateAccounts = () => {
     void queryClient.invalidateQueries({ queryKey: ['enterprise-accounts', accountCompany?.id] });
@@ -251,7 +285,8 @@ export function EnterpriseManagePage() {
     const defaultRole = rolesQuery.data?.find((r) => r.defaultRole);
     accountForm.setFieldsValue({
       status: 'enabled',
-      roleIds: defaultRole ? [defaultRole.id] : undefined,
+      // Select value 用字符串，避免雪花 ID 精度丢失后只显示数字
+      roleIds: defaultRole ? [roleIdStr(defaultRole.id) as unknown as number] : undefined,
     });
     setCreateAccountOpen(true);
   };
@@ -263,9 +298,26 @@ export function EnterpriseManagePage() {
       phone: row.phone,
       email: row.email,
       status: row.status === 'disabled' || row.status === 'locked' ? row.status : 'enabled',
-      roleIds: row.roleIds?.length ? row.roleIds : undefined,
+      roleIds: row.roleIds?.length
+        ? (row.roleIds.map(roleIdStr) as unknown as number[])
+        : undefined,
     });
   };
+
+  const accountRoleOptions = useMemo(
+    () =>
+      buildRoleSelectOptions(
+        rolesQuery.data ?? [],
+        editingAccount?.roleIds,
+        editingAccount?.roleCodes,
+      ),
+    [rolesQuery.data, editingAccount?.roleIds, editingAccount?.roleCodes],
+  );
+
+  const featureRoleOptions = useMemo(
+    () => buildRoleSelectOptions(featureOptionsQuery.data?.roles ?? [], featureRoleIds),
+    [featureOptionsQuery.data?.roles, featureRoleIds],
+  );
 
   const openFeatureConfig = (row: SystemCompany) => {
     setFeatureCompany(row);
@@ -279,7 +331,7 @@ export function EnterpriseManagePage() {
     if (!cfg || !featureCompany) return;
     setFeatureConstrain(!!cfg.constrainEnabled);
     setFeatureMenuCodes(cfg.menuCodes ?? []);
-    setFeatureRoleIds(cfg.roleIds ?? []);
+    setFeatureRoleIds((cfg.roleIds ?? []).map(roleIdStr).filter(Boolean));
   }, [featureConfigQuery.data, featureCompany]);
 
   const featureMenuTree: DataNode[] = useMemo(() => {
@@ -625,11 +677,9 @@ export function EnterpriseManagePage() {
             <Select
               mode="multiple"
               allowClear
+              optionFilterProp="label"
               placeholder="默认企业运营角色 TRAIN_ENTERPRISE"
-              options={(rolesQuery.data ?? []).map((r) => ({
-                value: r.id,
-                label: r.defaultRole ? `${r.name}（默认）` : r.name,
-              }))}
+              options={accountRoleOptions}
               loading={rolesQuery.isLoading}
             />
           </Form.Item>
@@ -678,10 +728,8 @@ export function EnterpriseManagePage() {
           <Form.Item name="roleIds" label="角色" rules={[{ required: true, message: '请选择角色' }]}>
             <Select
               mode="multiple"
-              options={(rolesQuery.data ?? []).map((r) => ({
-                value: r.id,
-                label: r.defaultRole ? `${r.name}（默认）` : r.name,
-              }))}
+              optionFilterProp="label"
+              options={accountRoleOptions}
               loading={rolesQuery.isLoading}
             />
           </Form.Item>
@@ -777,12 +825,10 @@ export function EnterpriseManagePage() {
               mode="multiple"
               style={{ width: '100%', marginTop: 8 }}
               placeholder="选择该企业开户时可分配的角色"
+              optionFilterProp="label"
               value={featureRoleIds}
               onChange={setFeatureRoleIds}
-              options={(featureOptionsQuery.data?.roles ?? []).map((r) => ({
-                value: r.id,
-                label: r.defaultRole ? `${r.name}（默认）` : r.name,
-              }))}
+              options={featureRoleOptions}
               loading={featureOptionsQuery.isLoading}
             />
           </div>

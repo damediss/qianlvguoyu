@@ -801,10 +801,7 @@ public class ShiftAssignApplicationService {
     if (plan == null || !Objects.equals(plan.getTenantId(), tenantId)) {
       throw new BusinessException(ErrorCode.NOT_FOUND, "三年规划不存在");
     }
-    Long companyFilter = scopeService.resolveCompanyFilter(null);
-    if (companyFilter != null && !Objects.equals(companyFilter, plan.getTargetOrgId())) {
-      throw new BusinessException(ErrorCode.FORBIDDEN, "无权操作该企业规划");
-    }
+    scopeService.assertCompanyAccessible(plan.getTargetOrgId());
     if (plan.getStatus() == null || plan.getStatus() != 4) {
       throw new BusinessException(ErrorCode.BAD_REQUEST, "仅「企业已确认」的规划可排课分班");
     }
@@ -893,13 +890,11 @@ public class ShiftAssignApplicationService {
     if (task == null || !Objects.equals(task.getTenantId(), tenantId)) {
       throw new BusinessException(ErrorCode.NOT_FOUND, "排课分班任务不存在");
     }
-    Long companyFilter = scopeService.resolveCompanyFilter(null);
-    if (companyFilter != null) {
-      TrainThreeYearPlanEntity plan = planMapper.selectById(task.getPlanId());
-      if (plan == null || !Objects.equals(plan.getTargetOrgId(), companyFilter)) {
-        throw new BusinessException(ErrorCode.FORBIDDEN, "无权查看该任务");
-      }
+    TrainThreeYearPlanEntity plan = planMapper.selectById(task.getPlanId());
+    if (plan == null) {
+      throw new BusinessException(ErrorCode.NOT_FOUND, "三年规划不存在");
     }
+    scopeService.assertCompanyAccessible(plan.getTargetOrgId());
     return task;
   }
 

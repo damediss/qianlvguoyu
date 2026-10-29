@@ -106,7 +106,7 @@ public class ClassReviewSyncApplicationService {
 
   @Transactional
   public Map<String, Object> saveConfig(Long classId, ClassReviewSyncSaveReq req) {
-    operatorScopeService.requireOrgOperator();
+    operatorScopeService.requireTrainingOperator();
     TrainInfoClassEntity clazz = requireClass(classId);
     Long tenantId = resolveTenantId();
     if (req == null || req.getExamId() == null || req.getExamId() <= 0) {
@@ -302,7 +302,7 @@ public class ClassReviewSyncApplicationService {
    */
   @Transactional(propagation = Propagation.REQUIRES_NEW)
   public Map<String, Object> autoProvisionFromPracticeScope(Long classId, ClassPracticeScopeSaveReq practiceReq) {
-    operatorScopeService.requireOrgOperator();
+    operatorScopeService.requireTrainingOperator();
     TrainInfoClassEntity clazz = requireClass(classId);
     Long tenantId = resolveTenantId();
     int enabled = practiceReq != null && practiceReq.getEnabled() != null && practiceReq.getEnabled() == 0 ? 0 : 1;
@@ -450,7 +450,7 @@ public class ClassReviewSyncApplicationService {
   /** 花名册 → 考生名单（有 platform_user_id 的学员）；班级专属同步学还会裁掉非本班残留 */
   @Transactional
   public Map<String, Object> enrollRoster(Long classId) {
-    operatorScopeService.requireOrgOperator();
+    operatorScopeService.requireTrainingOperator();
     return enrollRosterInternal(classId);
   }
 
@@ -708,7 +708,7 @@ public class ClassReviewSyncApplicationService {
   /** 写入 exam 级灰度白名单（幂等）；对外接口仍要求机构账号 */
   @Transactional
   public Map<String, Object> ensureGray(Long classId) {
-    operatorScopeService.requireOrgOperator();
+    operatorScopeService.requireTrainingOperator();
     return ensureGrayInternal(classId);
   }
 

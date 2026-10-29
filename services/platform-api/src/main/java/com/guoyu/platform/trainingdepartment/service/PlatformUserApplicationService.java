@@ -111,7 +111,7 @@ public class PlatformUserApplicationService {
 
   @Transactional
   public PlatformUserVO save(PlatformUserSaveReq req) {
-    operatorScopeService.requireOrgOperator();
+    operatorScopeService.requireTrainingOperator();
     String realname = trim(req.getRealname());
     String idcard = trim(req.getIdcard()).replace(" ", "");
     String phone = trim(req.getPhone()).replace(" ", "");
@@ -159,7 +159,7 @@ public class PlatformUserApplicationService {
 
   @Transactional
   public void delete(Long id) {
-    operatorScopeService.requireOrgOperator();
+    operatorScopeService.requireTrainingOperator();
     PlatformUserEntity entity = getExisting(id, resolveOrgId());
     entity.setDeleted(1);
     mapper.deleteById(entity.getId());

@@ -309,7 +309,7 @@ public class ClassPracticeScopeApplicationService {
 
   @Transactional
   public Map<String, Object> saveScope(Long classId, ClassPracticeScopeSaveReq req) {
-    operatorScopeService.requireOrgOperator();
+    operatorScopeService.requireTrainingOperator();
     TrainInfoClassEntity clazz = requireClass(classId);
     Long tenantId = SecurityContext.currentUser().getTenantId();
     LocalDateTime now = LocalDateTime.now();

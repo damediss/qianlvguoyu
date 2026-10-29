@@ -494,7 +494,7 @@ public class ExamScoreImportApplicationService {
   }
 
   public ExamScoreImportPreviewVO preview(List<Long> classIds, List<MultipartFile> files) {
-    operatorScopeService.requireOrgOperator();
+    operatorScopeService.requireTrainingOperator();
     List<Long> selected = normalizeClassIds(classIds);
     if (selected.isEmpty()) {
       throw new BusinessException(ErrorCode.BAD_REQUEST, "请先选择班级后再上传成绩单");
@@ -742,7 +742,7 @@ public class ExamScoreImportApplicationService {
 
   @Transactional
   public ExamScoreImportCommitResultVO commit(ExamScoreImportCommitReq req) {
-    operatorScopeService.requireOrgOperator();
+    operatorScopeService.requireTrainingOperator();
     if (req == null || !StringUtils.hasText(req.getPreviewId())) {
       throw new BusinessException(ErrorCode.BAD_REQUEST, "预览已失效，请重新上传");
     }

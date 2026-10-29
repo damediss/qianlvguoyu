@@ -132,9 +132,8 @@ public class DemandEmployeeApplicationService {
     if (entity == null) {
       throw new BusinessException(ErrorCode.NOT_FOUND, "Record not found");
     }
-    Long companyFilter = operatorScopeService.resolveCompanyFilter(entity.getOrgId());
-    if (companyFilter != null && entity.getOrgId() != null && !companyFilter.equals(entity.getOrgId())) {
-      throw new BusinessException(ErrorCode.FORBIDDEN, "无权访问该人才需求");
+    if (entity.getOrgId() != null) {
+      operatorScopeService.assertCompanyAccessible(entity.getOrgId());
     }
     return entity;
   }

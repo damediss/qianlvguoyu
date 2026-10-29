@@ -223,7 +223,7 @@ public class TrainInfoClassApplicationService {
 
   @Transactional
   public Map<String, Object> save(TrainInfoClassCreateReq req) {
-    operatorScopeService.requireOrgOperator();
+    operatorScopeService.requireTrainingOperator();
     if (req.getId() != null && req.getId() > 0) {
       // Update
       TrainInfoClassEntity entity = getExisting(req.getId());
@@ -291,7 +291,7 @@ public class TrainInfoClassApplicationService {
 
   @Transactional
   public Map<String, Object> batchDelete(List<Long> ids) {
-    operatorScopeService.requireOrgOperator();
+    operatorScopeService.requireTrainingOperator();
     if (ids == null || ids.isEmpty()) {
       throw new BusinessException(ErrorCode.BAD_REQUEST, "请选择要删除的班级");
     }
@@ -476,7 +476,7 @@ public class TrainInfoClassApplicationService {
     }
     TrainingOperatorScopeService.Scope scope = operatorScopeService.currentScope();
     if (!scope.isEnterpriseViewer()) {
-      operatorScopeService.requireOrgOperator();
+      operatorScopeService.requireTrainingOperator();
       return;
     }
     if (scope.orgId() == null || entity.getCompanyId() == null || !scope.orgId().equals(entity.getCompanyId())) {

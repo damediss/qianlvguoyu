@@ -43,9 +43,12 @@ public class TrainSignUpSelfApplicationService {
         .orderByAsc(TrainSignUpSelfEntity::getSortNumber)
         .orderByDesc(TrainSignUpSelfEntity::getCreateTime)
         .orderByDesc(TrainSignUpSelfEntity::getId);
-    Long companyFilter = operatorScopeService.resolveCompanyFilter(req.getOrgId());
-    if (companyFilter != null) {
-      wrapper.eq(TrainSignUpSelfEntity::getOrgId, companyFilter);
+    java.util.Set<Long> companyScope = operatorScopeService.resolveCompanyIdScope(req.getOrgId());
+    if (companyScope != null) {
+      if (companyScope.isEmpty()) {
+        return new PageResponse<>(java.util.List.of(), req.getPage(), req.getPageSize(), 0);
+      }
+      wrapper.in(TrainSignUpSelfEntity::getOrgId, companyScope);
     }
     if (req.getTrainInfoId() != null) {
       wrapper.eq(TrainSignUpSelfEntity::getTrainInfoId, req.getTrainInfoId());
@@ -143,9 +146,8 @@ public class TrainSignUpSelfApplicationService {
     if (entity == null) {
       throw new BusinessException(ErrorCode.NOT_FOUND, "Record not found");
     }
-    Long companyFilter = operatorScopeService.resolveCompanyFilter(entity.getOrgId());
-    if (companyFilter != null && entity.getOrgId() != null && !companyFilter.equals(entity.getOrgId())) {
-      throw new BusinessException(ErrorCode.FORBIDDEN, "无权访问该报名计划");
+    if (entity.getOrgId() != null) {
+      operatorScopeService.assertCompanyAccessible(entity.getOrgId());
     }
     return entity;
   }

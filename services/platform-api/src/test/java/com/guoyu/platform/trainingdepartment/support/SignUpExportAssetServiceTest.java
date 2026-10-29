@@ -239,6 +239,31 @@ class SignUpExportAssetServiceTest {
   }
 
   @Test
+  void legacyContractApiMapsToContractRelativePath() {
+    String url = "https://api.gjjd168.com/api/file/contract/452624199804140704_80_first_self.png";
+    assertThat(SignUpExportAssetService.relativePathFromHttpUrl(url))
+        .isEqualTo("contract/452624199804140704_80_first_self.png");
+    assertThat(SignUpExportAssetService.mapLegacyContractApiToRelative(url))
+        .isEqualTo("contract/452624199804140704_80_first_self.png");
+    assertThat(SignUpExportAssetService.mapLegacyContractApiToRelative(
+        "/api/file/contract/452624199804140704_80_expire_self.png"))
+        .isEqualTo("contract/452624199804140704_80_expire_self.png");
+    assertThat(SignUpExportAssetService.parseContractSignUpId(url)).isEqualTo(80L);
+  }
+
+  @Test
+  void copiesLegacyContractFromLocalDiskWithoutHttp() throws Exception {
+    writeFile(cdnRoot.resolve("contract/452624199804140704_80_first_self.png"), "contract-disk");
+
+    Path target = outDir.resolve("contract.jpg");
+    assertThat(service.copyTo(
+        "https://api.gjjd168.com/api/file/contract/452624199804140704_80_first_self.png",
+        target)).isTrue();
+    assertThat(Files.readString(target)).isEqualTo("contract-disk");
+    verifyNoInteractions(remoteImageUtil);
+  }
+
+  @Test
   void fileDownloadFallbackPrefersAppBaseUrl() {
     assertThat(service.fileDownloadFallbackUrl(99L))
         .isEqualTo(APP_BASE + "/api/files/99/download");

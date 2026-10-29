@@ -84,7 +84,7 @@ public class SignUpPeopleDefaultTemplatePackService {
   private final String cdnPath;
   private final ObjectMapper objectMapper;
   private final SignUpExportAssetService assetService;
-  private final IdCardImageInsetCropper idCardCropper;
+  private final IdCardExportOcrCropSupport idCardExportOcrCrop;
   private final TrainInfoClassMapper classMapper;
   private final ExamWorkTypeMapper examWorkTypeMapper;
   private final PlatformOrganizationLookupMapper platformOrganizationLookupMapper;
@@ -94,7 +94,7 @@ public class SignUpPeopleDefaultTemplatePackService {
       @Value("${platform.cdn.path:./data/cdn}") String cdnPath,
       ObjectMapper objectMapper,
       SignUpExportAssetService assetService,
-      IdCardImageInsetCropper idCardCropper,
+      IdCardExportOcrCropSupport idCardExportOcrCrop,
       TrainInfoClassMapper classMapper,
       ExamWorkTypeMapper examWorkTypeMapper,
       PlatformOrganizationLookupMapper platformOrganizationLookupMapper,
@@ -102,7 +102,7 @@ public class SignUpPeopleDefaultTemplatePackService {
     this.cdnPath = cdnPath;
     this.objectMapper = objectMapper;
     this.assetService = assetService;
-    this.idCardCropper = idCardCropper;
+    this.idCardExportOcrCrop = idCardExportOcrCrop;
     this.classMapper = classMapper;
     this.examWorkTypeMapper = examWorkTypeMapper;
     this.platformOrganizationLookupMapper = platformOrganizationLookupMapper;
@@ -263,7 +263,8 @@ public class SignUpPeopleDefaultTemplatePackService {
         new String[] {person.getIdCardFront()},
         "idCard/headerOrigin/" + idCard + "_front.jpg",
         "idCard/old/headerOrigin/" + idCard + "_front.png"))) {
-      idCardCropper.tightenInPlace(front);
+      // 库内新上传多为未抠证件原图：导出时补 OCR 证件板裁剪（失败则内收）
+      idCardExportOcrCrop.cropIdCardInPlace(front, "front");
       assets.front = front;
     } else if (StringUtils.hasText(person.getIdCardFront())) {
       logMissingAsset("身份证正面", idCard, person.getIdCardFront());
@@ -276,7 +277,7 @@ public class SignUpPeopleDefaultTemplatePackService {
         new String[] {person.getIdCardBack()},
         "idCard/headerOrigin/" + idCard + "_back.jpg",
         "idCard/old/headerOrigin/" + idCard + "_back.png"))) {
-      idCardCropper.tightenInPlace(back);
+      idCardExportOcrCrop.cropIdCardInPlace(back, "back");
       assets.back = back;
     } else if (StringUtils.hasText(person.getIdCardBack())) {
       logMissingAsset("身份证反面", idCard, person.getIdCardBack());
@@ -296,21 +297,30 @@ public class SignUpPeopleDefaultTemplatePackService {
     Path contractExpire = ctx.contractDir.resolve(realname + "_" + idCard + "_劳动合同到期页.jpg");
     Path contractSign = ctx.contractDir.resolve(realname + "_" + idCard + "_劳动合同盖章页.jpg");
 
-    boolean hasFirst = assetResolver.copyFirstExisting(contractFirst, exportImageCandidates(
+    boolean hasFirst = assetResolver.copyFirstExisting(contractFirst, exportContractCandidates(
         StringUtils.hasText(person.getContactFirstPage()),
         assetResolver::existsLocally,
-        new String[] {person.getContactFirstPage()},
-        "idCard/headerOrigin/" + idCard + "_" + signUpId + "_contact_first_page.jpg"));
-    boolean hasExpire = assetResolver.copyFirstExisting(contractExpire, exportImageCandidates(
+        person.getContactFirstPage(),
+        idCard,
+        signUpId,
+        "first_self",
+        "contact_first_page"));
+    boolean hasExpire = assetResolver.copyFirstExisting(contractExpire, exportContractCandidates(
         StringUtils.hasText(person.getContactExpirePage()),
         assetResolver::existsLocally,
-        new String[] {person.getContactExpirePage()},
-        "idCard/headerOrigin/" + idCard + "_" + signUpId + "_contact_expire_page.jpg"));
-    boolean hasSign = assetResolver.copyFirstExisting(contractSign, exportImageCandidates(
+        person.getContactExpirePage(),
+        idCard,
+        signUpId,
+        "expire_self",
+        "contact_expire_page"));
+    boolean hasSign = assetResolver.copyFirstExisting(contractSign, exportContractCandidates(
         StringUtils.hasText(person.getContactSignPage()),
         assetResolver::existsLocally,
-        new String[] {person.getContactSignPage()},
-        "idCard/headerOrigin/" + idCard + "_" + signUpId + "_contact_sign_page.jpg"));
+        person.getContactSignPage(),
+        idCard,
+        signUpId,
+        "sign_self",
+        "contact_sign_page"));
     if (StringUtils.hasText(person.getContactFirstPage()) && !hasFirst) {
       logMissingAsset("劳动合同第一页", idCard, person.getContactFirstPage());
     }
@@ -368,8 +378,10 @@ public class SignUpPeopleDefaultTemplatePackService {
   }
 
   /**
-   * 导出图片候选：库字段（含编辑页新上传的 /api/files/...）优先，旧 CDN 约定路径垫底。
-   * 修复「资料收集替换证件照后，默认模板信息图仍是旧照」——此前约定路径排在库字段前。
+   * 导出图片候选：库字段（含编辑页新上传的 /api/files/...）优先。
+   * <p>hasRecord=true 时<strong>不再</strong>追加旧 CDN 约定路径，避免换图失败后静默导出旧图；
+   * 同时把库字段 URL 映射出的本机相对路径列为显式候选（合同 /api/file/contract → contract/）。
+   * hasRecord=false 时仍可用本机存在的 legacy 约定路径。
    */
   static List<String> exportImageCandidates(
       boolean hasRecord,
@@ -379,19 +391,70 @@ public class SignUpPeopleDefaultTemplatePackService {
     List<String> ordered = new ArrayList<>();
     if (preferredStored != null) {
       for (String stored : preferredStored) {
-        if (StringUtils.hasText(stored)) {
-          ordered.add(stored.trim());
-        }
+        appendPreferredWithDerived(ordered, stored);
       }
     }
-    if (legacyConventionPaths != null) {
+    // 有库记录：禁止回退旧约定路径（换图失败不得命中旧 headerOrigin）
+    if (!hasRecord && legacyConventionPaths != null) {
       for (String legacy : legacyConventionPaths) {
-        if (StringUtils.hasText(legacy)) {
-          ordered.add(legacy.trim());
-        }
+        addUnique(ordered, legacy);
       }
     }
     return withRecordCandidates(hasRecord, existsLocally, ordered.toArray(String[]::new));
+  }
+
+  /**
+   * 合同三页候选：库字段 + URL 映射本机 + URL 内历史 planId 的 contract/ 变体；
+   * 无库记录时才追加当前班 signUpId 的 contract/ 与 headerOrigin 约定路径。
+   */
+  static List<String> exportContractCandidates(
+      boolean hasRecord,
+      Predicate<String> existsLocally,
+      String stored,
+      String idCard,
+      Long signUpId,
+      String selfSuffix,
+      String headerOriginSuffix) {
+    List<String> preferred = new ArrayList<>();
+    appendPreferredWithDerived(preferred, stored);
+    if (StringUtils.hasText(stored) && StringUtils.hasText(idCard)) {
+      Long fromUrl = SignUpExportAssetService.parseContractSignUpId(stored);
+      if (fromUrl != null && fromUrl > 0) {
+        addUnique(preferred, "contract/" + idCard + "_" + fromUrl + "_" + selfSuffix + ".png");
+        addUnique(preferred, "contract/" + idCard + "_" + fromUrl + "_" + selfSuffix + ".jpg");
+      }
+    }
+    List<String> legacy = new ArrayList<>();
+    if (signUpId != null && signUpId > 0 && StringUtils.hasText(idCard)) {
+      legacy.add("contract/" + idCard + "_" + signUpId + "_" + selfSuffix + ".png");
+      legacy.add("contract/" + idCard + "_" + signUpId + "_" + selfSuffix + ".jpg");
+      legacy.add("idCard/headerOrigin/" + idCard + "_" + signUpId + "_" + headerOriginSuffix + ".jpg");
+    }
+    return exportImageCandidates(
+        hasRecord,
+        existsLocally,
+        preferred.toArray(String[]::new),
+        legacy.toArray(String[]::new));
+  }
+
+  private static void appendPreferredWithDerived(List<String> ordered, String stored) {
+    if (!StringUtils.hasText(stored)) {
+      return;
+    }
+    String trimmed = stored.trim();
+    addUnique(ordered, trimmed);
+    String mapped = SignUpExportAssetService.mapStoredToLocalRelative(trimmed);
+    addUnique(ordered, mapped);
+  }
+
+  private static void addUnique(List<String> ordered, String value) {
+    if (!StringUtils.hasText(value)) {
+      return;
+    }
+    String trimmed = value.trim();
+    if (!ordered.contains(trimmed)) {
+      ordered.add(trimmed);
+    }
   }
 
   /**

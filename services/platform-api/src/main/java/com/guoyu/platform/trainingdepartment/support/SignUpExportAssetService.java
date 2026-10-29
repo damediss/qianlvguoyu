@@ -42,6 +42,16 @@ public class SignUpExportAssetService {
   private static final Pattern FILE_API_PATTERN =
       Pattern.compile("/api/files/(\\d+)(?:/download)?");
 
+  /** 旧 PHP 合同文件网关：/api/file/contract/{leaf} → 本机 contract/{leaf} */
+  private static final String LEGACY_CONTRACT_API_SEGMENT = "/api/file/contract/";
+
+  /**
+   * 合同文件名中的历史计划号：{身份证}_{signUpId}_first_self.png
+   */
+  private static final Pattern CONTRACT_PLAN_ID_PATTERN =
+      Pattern.compile("_(\\d+)_(first_self|expire_self|sign_self)\\.(png|jpg|jpeg)$",
+          Pattern.CASE_INSENSITIVE);
+
   /** 平台自己的文件端点片段：命中即视为相对路径，先查本机磁盘。 */
   private static final String EXAM_FILES_SEGMENT = "/exam/files/";
 
@@ -114,9 +124,16 @@ public class SignUpExportAssetService {
       try {
         Files.createDirectories(target.getParent());
 
+        // /api/files/{id}：只走文件服务，禁止再当相对路径落到旧 headerOrigin 同名盘
         Matcher api = FILE_API_PATTERN.matcher(src);
         if (api.find()) {
           return copyFileId(Long.parseLong(api.group(1)), target);
+        }
+
+        // 旧合同网关：/api/file/contract/{leaf} → contract/{leaf}
+        String legacyContract = mapLegacyContractApiToRelative(src);
+        if (legacyContract != null && copyRelative(legacyContract, target)) {
+          return true;
         }
 
         String selfRelative = toSelfRelative(src);
@@ -342,6 +359,7 @@ public class SignUpExportAssetService {
   /**
    * 从 http(s) CDN/公网地址还原可落盘的相对路径（去掉 /api/exam/files 前缀与 query）。
    * 例：https://cdn.app.gjjd168.com/upload/a.jpg → upload/a.jpg
+   * 例：https://api.gjjd168.com/api/file/contract/x_80_first_self.png → contract/x_80_first_self.png
    */
   static String relativePathFromHttpUrl(String url) {
     if (!StringUtils.hasText(url) || !isHttp(url.trim())) {
@@ -351,6 +369,10 @@ public class SignUpExportAssetService {
       String path = URI.create(url.trim()).getPath();
       if (!StringUtils.hasText(path) || "/".equals(path)) {
         return null;
+      }
+      String legacyContract = mapLegacyContractApiToRelative(path);
+      if (legacyContract != null) {
+        return legacyContract;
       }
       int examIdx = path.indexOf(EXAM_FILES_SEGMENT);
       if (examIdx >= 0) {
@@ -364,6 +386,104 @@ public class SignUpExportAssetService {
     } catch (IllegalArgumentException ex) {
       return null;
     }
+  }
+
+  /**
+   * 库字段 → 可尝试的本机相对路径（合同旧网关 / CDN upload / exam files）。
+   * 供打包侧在「库字段有记录」时把映射路径列为显式候选。
+   */
+  static String mapStoredToLocalRelative(String storedOrUrl) {
+    if (!StringUtils.hasText(storedOrUrl)) {
+      return null;
+    }
+    String src = storedOrUrl.trim();
+    String legacyContract = mapLegacyContractApiToRelative(src);
+    if (legacyContract != null) {
+      return legacyContract;
+    }
+    if (isHttp(src)) {
+      return relativePathFromHttpUrl(src);
+    }
+    if (FILE_API_PATTERN.matcher(src).find()) {
+      return null;
+    }
+    return normalizeRelative(src);
+  }
+
+  /**
+   * 从合同存储值解析历史 signUpId（文件名 …_{planId}_first_self.png）。
+   */
+  static Long parseContractSignUpId(String storedOrUrl) {
+    if (!StringUtils.hasText(storedOrUrl)) {
+      return null;
+    }
+    String leaf = contractLeafName(storedOrUrl.trim());
+    if (leaf == null) {
+      return null;
+    }
+    Matcher m = CONTRACT_PLAN_ID_PATTERN.matcher(leaf);
+    if (!m.find()) {
+      return null;
+    }
+    try {
+      return Long.parseLong(m.group(1));
+    } catch (NumberFormatException ex) {
+      return null;
+    }
+  }
+
+  /** 取合同 URL/路径的文件名部分。 */
+  static String contractLeafName(String storedOrUrl) {
+    if (!StringUtils.hasText(storedOrUrl)) {
+      return null;
+    }
+    String src = storedOrUrl.trim();
+    try {
+      if (isHttp(src)) {
+        String path = URI.create(src).getPath();
+        if (!StringUtils.hasText(path)) {
+          return null;
+        }
+        src = path;
+      }
+    } catch (IllegalArgumentException ex) {
+      // keep src
+    }
+    int slash = Math.max(src.lastIndexOf('/'), src.lastIndexOf('\\'));
+    String leaf = slash >= 0 ? src.substring(slash + 1) : src;
+    int q = leaf.indexOf('?');
+    if (q >= 0) {
+      leaf = leaf.substring(0, q);
+    }
+    return StringUtils.hasText(leaf) ? leaf : null;
+  }
+
+  /**
+   * {@code /api/file/contract/{leaf}} → {@code contract/{leaf}}；
+   * 勿还原成 {@code api/file/contract/...}（会在 cdn 根下找不到文件）。
+   */
+  static String mapLegacyContractApiToRelative(String storedOrUrl) {
+    if (!StringUtils.hasText(storedOrUrl)) {
+      return null;
+    }
+    String src = storedOrUrl.trim();
+    String path = src;
+    if (isHttp(src)) {
+      try {
+        path = URI.create(src).getPath();
+      } catch (IllegalArgumentException ex) {
+        return null;
+      }
+    }
+    if (!StringUtils.hasText(path)) {
+      return null;
+    }
+    int idx = path.indexOf(LEGACY_CONTRACT_API_SEGMENT);
+    if (idx < 0) {
+      return null;
+    }
+    String leaf = path.substring(idx + LEGACY_CONTRACT_API_SEGMENT.length());
+    return normalizeRelative("contract/" + leaf);
   }
 
   /**

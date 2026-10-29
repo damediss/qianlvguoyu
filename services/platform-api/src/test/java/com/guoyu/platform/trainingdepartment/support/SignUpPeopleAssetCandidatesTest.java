@@ -55,7 +55,7 @@ class SignUpPeopleAssetCandidatesTest {
   }
 
   @Test
-  void exportPrefersStoredPlatformUrlOverLegacyConventionPath() {
+  void exportWithRecordDoesNotFallBackToLegacyConventionPath() {
     List<String> candidates = SignUpPeopleDefaultTemplatePackService.exportImageCandidates(
         true,
         path -> true,
@@ -63,10 +63,8 @@ class SignUpPeopleAssetCandidatesTest {
         "idCard/headerOrigin/452628198508162117_header.jpg",
         "idCard/old/headerOrigin/452628198508162117_full.png");
 
-    assertThat(candidates).containsExactly(
-        "/api/files/99/download?inline=true",
-        "idCard/headerOrigin/452628198508162117_header.jpg",
-        "idCard/old/headerOrigin/452628198508162117_full.png");
+    // 有库记录时禁止回退旧约定路径，避免换图失败仍导出旧照
+    assertThat(candidates).containsExactly("/api/files/99/download?inline=true");
   }
 
   @Test
@@ -96,8 +94,42 @@ class SignUpPeopleAssetCandidatesTest {
 
     assertThat(candidates).containsExactly(
         "/api/files/1/download?inline=true",
-        "/api/files/2/download?inline=true",
-        "idCard/headerOrigin/x_header.jpg");
+        "/api/files/2/download?inline=true");
+  }
+
+  @Test
+  void contractCandidatesMapLegacyApiAndHistoricalPlanId() {
+    String stored =
+        "https://api.gjjd168.com/api/file/contract/452624199804140704_80_first_self.png";
+    List<String> candidates = SignUpPeopleDefaultTemplatePackService.exportContractCandidates(
+        true,
+        path -> false,
+        stored,
+        "452624199804140704",
+        90055L,
+        "first_self",
+        "contact_first_page");
+
+    assertThat(candidates).containsExactly(
+        stored,
+        "contract/452624199804140704_80_first_self.png",
+        "contract/452624199804140704_80_first_self.jpg");
+    assertThat(candidates).noneMatch(c -> c.contains("_90055_"));
+  }
+
+  @Test
+  void contractWithoutRecordUsesCurrentSignUpConventionWhenOnDisk() {
+    Set<String> onDisk = Set.of("contract/452624199804140704_90055_first_self.png");
+    List<String> candidates = SignUpPeopleDefaultTemplatePackService.exportContractCandidates(
+        false,
+        onDisk::contains,
+        null,
+        "452624199804140704",
+        90055L,
+        "first_self",
+        "contact_first_page");
+
+    assertThat(candidates).containsExactly("contract/452624199804140704_90055_first_self.png");
   }
 
   @Test

@@ -100,7 +100,7 @@ public class ClassPrepRosterImportService {
       throw new BusinessException(ErrorCode.BAD_REQUEST, "只能上传 xlsx/xls 文件");
     }
 
-    operatorScopeService.requireOrgOperator();
+    operatorScopeService.requireTrainingOperator();
     TrainSignUpSelfEntity signUp = getClassPrepSignUp(signUpId);
     TrainInfoClassEntity clazz = getClassAccessible(signUp.getTrainClassId());
 
@@ -272,9 +272,8 @@ public class ClassPrepRosterImportService {
     if (!classCollectionApplicationService.isClassPrep(entity) || entity.getTrainClassId() == null) {
       throw new BusinessException(ErrorCode.BAD_REQUEST, "仅支持开班准备资料收集导入花名册");
     }
-    Long companyFilter = operatorScopeService.resolveCompanyFilter(entity.getOrgId());
-    if (companyFilter != null && entity.getOrgId() != null && !companyFilter.equals(entity.getOrgId())) {
-      throw new BusinessException(ErrorCode.FORBIDDEN, "无权访问该资料收集计划");
+    if (entity.getOrgId() != null) {
+      operatorScopeService.assertCompanyAccessible(entity.getOrgId());
     }
     return entity;
   }

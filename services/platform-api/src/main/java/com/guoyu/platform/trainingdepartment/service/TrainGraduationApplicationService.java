@@ -118,9 +118,13 @@ public class TrainGraduationApplicationService {
     LambdaQueryWrapper<TrainInfoClassEntity> base = new LambdaQueryWrapper<TrainInfoClassEntity>()
         .eq(TrainInfoClassEntity::getDeleted, 0)
         .orderByDesc(TrainInfoClassEntity::getId);
-    Long companyFilter = operatorScopeService.resolveCompanyFilter(null);
-    if (companyFilter != null) {
-      base.eq(TrainInfoClassEntity::getCompanyId, companyFilter);
+    java.util.Set<Long> companyScope = operatorScopeService.resolveCompanyIdScope(null);
+    if (companyScope != null) {
+      if (companyScope.isEmpty()) {
+        base.eq(TrainInfoClassEntity::getCompanyId, -1L);
+      } else {
+        base.in(TrainInfoClassEntity::getCompanyId, companyScope);
+      }
     }
     if (StringUtils.hasText(keyword)) {
       base.like(TrainInfoClassEntity::getTitle, keyword.trim());

@@ -352,7 +352,7 @@ public class TrainPeopleListApplicationService {
   /** 编辑学员信息 */
   @Transactional
   public Map<String, Object> saveStudent(Map<String, Object> params) {
-    operatorScopeService.requireOrgOperator();
+    operatorScopeService.requireTrainingOperator();
     Long id = params.get("id") != null ? Long.valueOf(params.get("id").toString()) : null;
     if (id == null || id <= 0) {
       throw new BusinessException(ErrorCode.BAD_REQUEST, "仅支持编辑已有学员");
@@ -388,7 +388,7 @@ public class TrainPeopleListApplicationService {
   /** 批量删除学员 */
   @Transactional
   public Map<String, Object> batchDeleteStudents(List<Long> ids) {
-    operatorScopeService.requireOrgOperator();
+    operatorScopeService.requireTrainingOperator();
     if (ids == null || ids.isEmpty()) {
       throw new BusinessException(ErrorCode.BAD_REQUEST, "请选择要删除的学员");
     }
@@ -487,7 +487,7 @@ public class TrainPeopleListApplicationService {
   /** 从报名人员导入学员（同步开 App / 学员管理账号） */
   @Transactional
   public Map<String, Object> importStudents(Long traininfoId, Long classId, List<Long> studentIds) {
-    operatorScopeService.requireOrgOperator();
+    operatorScopeService.requireTrainingOperator();
     assertClassViewable(classId);
     Long companyId = resolveCompanyId(traininfoId, classId);
     Long orgId = resolveImportPlatformOrgId();
@@ -528,7 +528,7 @@ public class TrainPeopleListApplicationService {
   /** 按身份证号导入学员（同步开 App / 学员管理账号） */
   @Transactional
   public Map<String, Object> importStudentsByIdCard(Long traininfoId, Long classId, String idCardsText) {
-    operatorScopeService.requireOrgOperator();
+    operatorScopeService.requireTrainingOperator();
     assertClassViewable(classId);
     TrainSignUpSelfEntity signUp = resolveSignUpForImport(traininfoId, classId);
     if (signUp == null) {
@@ -586,7 +586,7 @@ public class TrainPeopleListApplicationService {
    */
   @Transactional
   public Map<String, Object> syncAppAccountsForClass(Long classId) {
-    operatorScopeService.requireOrgOperator();
+    operatorScopeService.requireTrainingOperator();
     assertClassViewable(classId);
     TrainInfoClassEntity clazz = trainInfoClassMapper.selectById(classId);
     if (clazz == null || (clazz.getDeleted() != null && clazz.getDeleted() == 1)) {
@@ -775,7 +775,7 @@ public class TrainPeopleListApplicationService {
   /** 新增/编辑教务/负责人 */
   @Transactional
   public Map<String, Object> saveOther(Map<String, Object> params) {
-    operatorScopeService.requireOrgOperator();
+    operatorScopeService.requireTrainingOperator();
     Long id = params.get("id") != null ? Long.valueOf(params.get("id").toString()) : 0L;
     String type = params.get("type") != null ? params.get("type").toString() : null;
     if (id > 0) {
@@ -815,7 +815,7 @@ public class TrainPeopleListApplicationService {
   /** 批量删除教务/负责人 */
   @Transactional
   public Map<String, Object> batchDeleteOthers(List<Long> ids) {
-    operatorScopeService.requireOrgOperator();
+    operatorScopeService.requireTrainingOperator();
     int count = 0;
     for (Long id : ids) {
       TrainPeopleListEntity entity = mapper.selectById(id);
@@ -856,7 +856,7 @@ public class TrainPeopleListApplicationService {
   /** 从教师库导入教务人员 */
   @Transactional
   public Map<String, Object> importOthers(Long traininfoId, Long classId, List<Long> ids) {
-    operatorScopeService.requireOrgOperator();
+    operatorScopeService.requireTrainingOperator();
     assertClassViewable(classId);
     List<TrainTeacherBankEntity> teachers = teacherBankMapper.selectBatchIds(ids);
     int count = 0;

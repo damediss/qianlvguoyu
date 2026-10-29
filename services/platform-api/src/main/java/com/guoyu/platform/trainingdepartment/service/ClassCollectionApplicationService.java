@@ -64,7 +64,7 @@ public class ClassCollectionApplicationService {
 
   @Transactional
   public Map<String, Object> ensureCollection(Long classId) {
-    operatorScopeService.requireOrgOperator();
+    operatorScopeService.requireTrainingOperator();
     TrainInfoClassEntity clazz = getClassAccessible(classId);
     Long tenantId = SecurityContext.currentUser().getTenantId();
 

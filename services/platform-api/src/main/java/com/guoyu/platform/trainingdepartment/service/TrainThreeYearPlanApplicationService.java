@@ -110,7 +110,7 @@ public class TrainThreeYearPlanApplicationService {
   @Transactional
   public PageResponse<TrainThreeYearPlanVO> page(TrainThreeYearPlanQueryReq req) {
     Long tenantId = SecurityContext.currentUser().getTenantId();
-    Long companyFilter = scopeService.resolveCompanyFilter(req.targetOrgId());
+    java.util.Set<Long> companyScope = scopeService.resolveCompanyIdScope(req.targetOrgId());
 
     LambdaQueryWrapper<TrainThreeYearPlanEntity> wrapper = new LambdaQueryWrapper<TrainThreeYearPlanEntity>()
         .eq(TrainThreeYearPlanEntity::getTenantId, tenantId)
@@ -118,8 +118,11 @@ public class TrainThreeYearPlanApplicationService {
     if (StringUtils.hasText(req.title())) {
       wrapper.like(TrainThreeYearPlanEntity::getTitle, req.title());
     }
-    if (companyFilter != null) {
-      wrapper.eq(TrainThreeYearPlanEntity::getTargetOrgId, companyFilter);
+    if (companyScope != null) {
+      if (companyScope.isEmpty()) {
+        return new PageResponse<>(java.util.List.of(), req.page(), req.pageSize(), 0);
+      }
+      wrapper.in(TrainThreeYearPlanEntity::getTargetOrgId, companyScope);
     }
     if (req.status() != null) {
       wrapper.eq(TrainThreeYearPlanEntity::getStatus, req.status());
@@ -181,7 +184,7 @@ public class TrainThreeYearPlanApplicationService {
 
   @Transactional
   public TrainThreeYearPlanVO createWithFile(TrainThreeYearPlanCreateReq req, MultipartFile file) {
-    scopeService.requireOrgOperator();
+    scopeService.requireTrainingOperator();
     if (file == null || file.isEmpty()) {
       throw new BusinessException(ErrorCode.BAD_REQUEST, "请上传员工 Excel 文件");
     }
@@ -195,6 +198,7 @@ public class TrainThreeYearPlanApplicationService {
     if (org == null || !tenantId.equals(org.getTenantId())) {
       throw new BusinessException(ErrorCode.BAD_REQUEST, "目标企业不存在");
     }
+    scopeService.assertCompanyAccessible(req.targetOrgId());
 
     TrainThreeYearPlanEntity entity = new TrainThreeYearPlanEntity();
     entity.setTenantId(tenantId);
@@ -264,7 +268,7 @@ public class TrainThreeYearPlanApplicationService {
 
   @Transactional
   public TrainThreeYearPlanVO syncFromRencai(Long id) {
-    scopeService.requireOrgOperator();
+    scopeService.requireTrainingOperator();
     TrainThreeYearPlanEntity entity = getExisting(id);
     if (entity.getRencaiTaskId() == null) {
       throw new BusinessException(ErrorCode.BAD_REQUEST, "尚未关联人才识别任务");
@@ -279,7 +283,7 @@ public class TrainThreeYearPlanApplicationService {
   /** 打开审核详情时自动拉取分析结果到本地，便于查看和修改 */
   @Transactional
   public TrainThreeYearPlanVO prepareReview(Long id) {
-    scopeService.requireOrgOperator();
+    scopeService.requireTrainingOperator();
     TrainThreeYearPlanEntity entity = getExisting(id);
     if (entity.getStatus() == null || entity.getStatus() != 2) {
       return toVO(entity, null);
@@ -295,7 +299,7 @@ public class TrainThreeYearPlanApplicationService {
 
   @Transactional
   public TrainThreeYearPlanItemVO updateItem(Long planId, Long itemId, TrainThreeYearPlanItemUpdateReq req) {
-    scopeService.requireOrgOperator();
+    scopeService.requireTrainingOperator();
     TrainThreeYearPlanEntity plan = getExisting(planId);
     if (plan.getStatus() == null || plan.getStatus() != 2) {
       throw new BusinessException(ErrorCode.BAD_REQUEST, "仅「分析完成请审核」状态下可修改明细");
@@ -360,7 +364,7 @@ public class TrainThreeYearPlanApplicationService {
 
   @Transactional
   public TrainThreeYearPlanVO submit(Long id, MultipartFile personnelFile, MultipartFile schemeFile) {
-    scopeService.requireOrgOperator();
+    scopeService.requireTrainingOperator();
     TrainThreeYearPlanEntity entity = getExisting(id);
     Integer currentStatus = entity.getStatus();
     if (currentStatus == null || (currentStatus != 2 && currentStatus != 5)) {
@@ -567,7 +571,7 @@ public class TrainThreeYearPlanApplicationService {
 
   @Transactional
   public void delete(Long id) {
-    scopeService.requireOrgOperator();
+    scopeService.requireTrainingOperator();
     TrainThreeYearPlanEntity entity = getExisting(id);
     if (entity.getStatus() != null && entity.getStatus() == 3) {
       throw new BusinessException(ErrorCode.BAD_REQUEST, "待机构审核的规划不可删除");
@@ -1257,10 +1261,7 @@ public class TrainThreeYearPlanApplicationService {
   }
 
   private void assertAccessible(TrainThreeYearPlanEntity entity) {
-    Long companyFilter = scopeService.resolveCompanyFilter(null);
-    if (companyFilter != null && !companyFilter.equals(entity.getTargetOrgId())) {
-      throw new BusinessException(ErrorCode.FORBIDDEN, "无权访问该三年规划");
-    }
+    scopeService.assertCompanyAccessible(entity.getTargetOrgId());
   }
 
   private void assertEnterpriseCanConfirm(TrainThreeYearPlanEntity entity) {
@@ -1284,7 +1285,7 @@ public class TrainThreeYearPlanApplicationService {
   private void assertEnterpriseActor(TrainThreeYearPlanEntity entity) {
     TrainingOperatorScopeService.Scope scope = scopeService.currentScope();
     if (!scope.isEnterpriseViewer()) {
-      scopeService.requireOrgOperator();
+      scopeService.requireTrainingOperator();
       return;
     }
     if (scope.orgId() == null || !scope.orgId().equals(entity.getTargetOrgId())) {

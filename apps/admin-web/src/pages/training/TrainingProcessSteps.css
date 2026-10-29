@@ -1,11 +1,147 @@
-.training-process-steps .ant-steps-item-container {
-  cursor: pointer;
+/*
+ * 培训全流程步骤条（自绘连接线，不再使用 antd Steps item-tail）
+ *
+ * 连接几何：每步等分；图标居中；tail 从「本圆右缘」拉到「下一圆左缘」，
+ * 箭头画在线段末端。末步不渲染 tail，故不会出现右侧残留横线/箭头。
+ */
+
+.training-process-steps {
+  display: flex;
+  width: 100%;
+  align-items: flex-start;
+  padding: 2px 0 0;
 }
 
-.training-process-steps .ant-steps-item-title {
+.tp-step {
+  position: relative;
+  flex: 1 1 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  margin: 0;
+  padding: 0;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
+}
+
+.tp-step:focus-visible {
+  outline: 2px solid #91caff;
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* 图标 */
+.tp-icon {
+  position: relative;
+  z-index: 2;
+  box-sizing: border-box;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: 1px solid #91caff;
+  background: #f0f7ff;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  line-height: 1;
+  color: #1677ff;
+  flex-shrink: 0;
+}
+
+.tp-step--wait .tp-icon {
+  background: #fafafa;
+  border-color: #d9d9d9;
+  color: rgba(0, 0, 0, 0.3);
+}
+
+.tp-step--process .tp-icon {
+  background: #1677ff;
+  border-color: #1677ff;
+  color: #fff;
+  box-shadow: 0 0 0 3px rgba(22, 119, 255, 0.12);
+}
+
+.tp-step--finish .tp-icon {
+  background: #e6f4ff;
+  border-color: #1677ff;
+  color: #1677ff;
+}
+
+/* 标题：相对图标水平居中 */
+.tp-title {
+  display: block;
+  width: 100%;
+  margin-top: 10px;
+  padding: 0 2px;
+  box-sizing: border-box;
+  text-align: center;
+  font-size: 12px;
+  line-height: 1.35;
+  font-weight: 400;
+  color: rgba(0, 0, 0, 0.65);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
   transition: color 0.2s;
 }
 
-.training-process-steps .ant-steps-item:not(.ant-steps-item-active):hover .ant-steps-item-title {
+.tp-step--process .tp-title {
+  color: rgba(0, 0, 0, 0.88);
+  font-weight: 500;
+}
+
+.tp-step--wait .tp-title {
+  color: rgba(0, 0, 0, 0.35);
+}
+
+.tp-step:hover .tp-title {
   color: #1677ff;
+}
+
+/*
+ * 连接线：从本格图标中心右侧 → 下一格图标中心左侧。
+ * left: 50% + 14px（半圆）；right: -50% + 14px（伸入下一格至其半圆左侧）。
+ * 末步不渲染 .tp-tail。
+ */
+.tp-tail {
+  position: absolute;
+  top: 13px;
+  left: calc(50% + 14px);
+  right: calc(-50% + 14px);
+  height: 8px;
+  z-index: 1;
+  pointer-events: none;
+  display: flex;
+  align-items: center;
+  --tp-tail: #e5e5e5;
+}
+
+.tp-tail--finish {
+  --tp-tail: #1677ff;
+}
+
+.tp-tail--process {
+  --tp-tail: #91caff;
+}
+
+.tp-tail-line {
+  flex: 1 1 auto;
+  height: 1.5px;
+  border-radius: 1px;
+  background: var(--tp-tail);
+  min-width: 0;
+}
+
+.tp-tail-arrow {
+  flex: 0 0 auto;
+  width: 7px;
+  height: 7px;
+  margin-left: 1px;
+  background: var(--tp-tail);
+  clip-path: polygon(0 0, 100% 50%, 0 100%);
 }

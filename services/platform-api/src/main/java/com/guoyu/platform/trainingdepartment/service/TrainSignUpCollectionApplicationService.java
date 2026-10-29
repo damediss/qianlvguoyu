@@ -325,9 +325,8 @@ public class TrainSignUpCollectionApplicationService {
     if (entity == null) {
       throw new BusinessException(ErrorCode.NOT_FOUND, "报名计划不存在");
     }
-    Long companyFilter = operatorScopeService.resolveCompanyFilter(entity.getOrgId());
-    if (companyFilter != null && entity.getOrgId() != null && !companyFilter.equals(entity.getOrgId())) {
-      throw new BusinessException(ErrorCode.FORBIDDEN, "无权访问该报名计划");
+    if (entity.getOrgId() != null) {
+      operatorScopeService.assertCompanyAccessible(entity.getOrgId());
     }
     return entity;
   }
