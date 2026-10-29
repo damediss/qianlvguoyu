@@ -14,34 +14,39 @@ import org.springframework.stereotype.Service;
 
 /**
  * 操作技能试题生成 AI 服务实现。
- * 复用 FaqLlmClient（OpenAI 兼容、显式超时、平台分支传参、jsonMode）；输出零信任：解析失败按失败处理。
- * 超时口径：GLM thinking（effort=high）长调用 + 三件套大输出，响应超时 180s。
+ * 复用 FaqLlmClient（OpenAI 兼容、显式超时、平台分支传参、jsonMode）；输出零信任：解析/校验失败按失败处理。
+ * 超时口径：GLM thinking 长调用 + 三件套输出，单题响应超时 180s。
  *
- * <p>GLM 数组塌缩对策（2026-10-29）：json_object 只保证合法 JSON、不约束根为数组（官方无
- * json_schema/strict），模型可能把 5 题塌缩成 1 个试题对象；见 {@link #generateForPointWithRepair}。
+ * <p>单题拆分（2026-10-29 真实探针定案）：GLM-5.3-flash 对「一次输出 N 题 JSON 数组」的任务结构理解不稳定，
+ * 会间歇性把 5 题塌缩成 1 个试题对象（json_object 只保证合法 JSON、不约束根为数组，官方无 json_schema/strict），
+ * 而单题模式 100% 成功。故 {@link #generateForPointWithRepair} 改为逐题串行生成：
+ * 每次只要求 1 个 JSON 对象，逐题解析 + 规则校验 + 查重，失败仅重试该题。
  */
 @Service
 @Slf4j
 public class SkillGenAiServiceImpl implements SkillGenAiService {
 
-  /** 单块响应超时（秒）：thinking=high + max_tokens=16384 下单块输出体量大 */
+  /** 单次响应超时（秒）：thinking + 大 max_tokens 下单题输出体量仍可达数千 token */
   static final int RESPONSE_TIMEOUT_SECONDS = 180;
 
-  /** 修正重试上限（不含首次调用，即最多 3 次 LLM 调用/块） */
+  /** 单题修正重试上限（不含首次调用，即每题最多 3 次 LLM 调用） */
   static final int MAX_REPAIR_ATTEMPTS = 2;
 
   /** 修正重试回喂失败输出的截断长度（控制 prompt 体积与成本） */
   static final int REPAIR_ECHO_MAX_CHARS = 4000;
 
-  /** 对象包装数组的白名单键（仅识别明确字段，不扫描任意数组、不裸包单对象） */
+  /** 对象包装数组的白名单键（仅识别明确字段，不扫描任意数组） */
   private static final List<String> ARRAY_WRAPPER_KEYS = List.of("questions", "data", "items", "result");
 
   private final FaqLlmClient llmClient;
   private final ObjectMapper objectMapper;
+  private final SkillQuestionValidator validator;
 
-  public SkillGenAiServiceImpl(FaqLlmClient llmClient, ObjectMapper objectMapper) {
+  public SkillGenAiServiceImpl(FaqLlmClient llmClient, ObjectMapper objectMapper,
+      SkillQuestionValidator validator) {
     this.llmClient = llmClient;
     this.objectMapper = objectMapper;
+    this.validator = validator;
   }
 
   @Override
@@ -58,48 +63,86 @@ public class SkillGenAiServiceImpl implements SkillGenAiService {
   public SkillGenGeneration generateForPointWithRepair(Long tenantId, String baseUrl, String apiKey, String modelId,
       String thinking, String reasoningEffort, int maxTokens,
       String systemPrompt, String userPrompt, int expectedCount) {
-    String repairPrompt = null;
-    long promptTokens = 0;
-    long completionTokens = 0;
-    long totalTokens = 0;
-    long cachedTokens = 0;
+    if (expectedCount <= 0) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST, "要求生成的试题道数必须大于 0");
+    }
+    List<SkillQuestionItem> items = new ArrayList<>(expectedCount);
+    Usage usage = new Usage();
+    String lastContent = null;
+    for (int index = 1; index <= expectedCount; index++) {
+      SingleOutcome outcome = generateSingleQuestion(tenantId, baseUrl, apiKey, modelId, thinking,
+          reasoningEffort, maxTokens, systemPrompt, userPrompt, items, index, expectedCount, usage);
+      items.add(outcome.item());
+      lastContent = outcome.content();
+    }
+    return new SkillGenGeneration(List.copyOf(items), lastContent, usage.calls,
+        usage.promptTokens, usage.completionTokens, usage.totalTokens, usage.cachedTokens);
+  }
+
+  /**
+   * 生成第 index 题：解析 + 单题规则校验 + 与已生成题查重，失败回喂重试（该题最多 3 次调用）。
+   *
+   * @param existing 已生成并通过校验的题目（用于拼「已生成题名」提示与查重）
+   */
+  private SingleOutcome generateSingleQuestion(Long tenantId, String baseUrl, String apiKey, String modelId,
+      String thinking, String reasoningEffort, int maxTokens, String systemPrompt,
+      String baseInfoPrompt, List<SkillQuestionItem> existing, int index, int total, Usage usage) {
+    List<String> generatedNames = new ArrayList<>(existing.size());
+    for (SkillQuestionItem e : existing) {
+      if (e.getName() != null && !e.getName().isBlank()) {
+        generatedNames.add(e.getName().trim());
+      }
+    }
+    String singlePrompt = SkillGenPromptBuilder.buildSingleUserPrompt(
+        baseInfoPrompt, index, total, generatedNames);
+    String prompt = singlePrompt;
     String lastError = "未知";
+    String failedContent = null;
     for (int attempt = 1; attempt <= MAX_REPAIR_ATTEMPTS + 1; attempt++) {
       LlmChatCompletionResult result = generateForPoint(tenantId, baseUrl, apiKey, modelId,
-          thinking, reasoningEffort, maxTokens, systemPrompt,
-          repairPrompt == null ? userPrompt : repairPrompt);
-      promptTokens += result.promptTokens();
-      completionTokens += result.completionTokens();
-      totalTokens += result.totalTokens();
-      cachedTokens += result.cachedTokens();
+          thinking, reasoningEffort, maxTokens, systemPrompt, prompt);
+      usage.calls++;
+      usage.promptTokens += result.promptTokens();
+      usage.completionTokens += result.completionTokens();
+      usage.totalTokens += result.totalTokens();
+      usage.cachedTokens += result.cachedTokens();
       try {
-        List<SkillQuestionItem> items = parseQuestions(result.content());
-        if (items.size() == expectedCount) {
-          return new SkillGenGeneration(items, result.content(), attempt,
-              promptTokens, completionTokens, totalTokens, cachedTokens);
+        SkillQuestionItem item = parseSingleQuestion(result.content());
+        List<String> errors = new ArrayList<>(validator.validate(item));
+        List<SkillQuestionItem> probe = new ArrayList<>(existing);
+        probe.add(item);
+        errors.addAll(validator.checkDuplicates(probe));
+        if (errors.isEmpty()) {
+          return new SingleOutcome(item, result.content());
         }
-        lastError = "数组元素个数 " + items.size() + " 与要求 " + expectedCount + " 不一致";
+        lastError = String.join("；", errors);
       } catch (BusinessException e) {
         lastError = e.getMessage();
       }
+      failedContent = result.content();
       if (attempt <= MAX_REPAIR_ATTEMPTS) {
-        log.warn("模型输出形态不符（{}），触发修正重试：attempt={}, point 要求 {} 题",
-            lastError, attempt, expectedCount);
-        repairPrompt = buildRepairPrompt(userPrompt, result.content(), expectedCount, lastError);
+        log.warn("第 {} 题输出不合规（{}），触发修正重试：attempt={}, point 总题数 {}",
+            index, lastError, attempt, total);
+        prompt = buildRepairPrompt(singlePrompt, failedContent, lastError, generatedNames);
       }
     }
     throw new BusinessException(ErrorCode.BAD_GATEWAY,
-        "模型输出不是试题数组（已调用 " + (MAX_REPAIR_ATTEMPTS + 1) + " 次，最后错误：" + lastError + "）");
+        "第 " + index + " 题生成失败：" + lastError + "（该题已调用 " + (MAX_REPAIR_ATTEMPTS + 1) + " 次）");
   }
 
-  /** 修正重试 prompt：保留原始任务 + 回喂失败输出（截断）+ 明确输出契约 */
-  private String buildRepairPrompt(String userPrompt, String failedContent, int expectedCount, String lastError) {
-    return userPrompt
-        + "\n\n【上次输出有误】" + lastError + "。\n"
-        + "上次输出如下（超长已截断，仅作参考，不要照抄）：\n"
-        + abbreviate(failedContent == null ? "(空)" : failedContent, REPAIR_ECHO_MAX_CHARS) + "\n"
-        + "请重新完整输出：JSON 数组，恰好 " + expectedCount + " 个元素，每个元素一道完整试题；"
-        + "第一个字符是 [，最后一个字符是 ]，不要输出任何其他文字、解释或 markdown 围栏。";
+  /** 单题修正重试 prompt：原题任务 + 失败原因 + 回喂失败输出（截断）+ 单对象契约 */
+  private String buildRepairPrompt(String singlePrompt, String failedContent, String lastError,
+      List<String> generatedNames) {
+    StringBuilder sb = new StringBuilder(singlePrompt);
+    sb.append("\n\n【上次输出有误】").append(lastError).append("。\n")
+        .append("上次输出如下（超长已截断，仅作参考，不要照抄）：\n")
+        .append(abbreviate(failedContent == null ? "(空)" : failedContent, REPAIR_ECHO_MAX_CHARS)).append("\n");
+    if (generatedNames != null && !generatedNames.isEmpty()) {
+      sb.append("已生成试题名称（禁止重复或同义改述）：")
+          .append(String.join("、", generatedNames)).append("\n");
+    }
+    sb.append("请重新输出 1 个 JSON 对象（该题本体），不要数组、不要其他文字、不要 markdown 围栏。");
+    return sb.toString();
   }
 
   private static String abbreviate(String s, int maxChars) {
@@ -148,6 +191,51 @@ public class SkillGenAiServiceImpl implements SkillGenAiService {
     return items;
   }
 
+  @Override
+  public SkillQuestionItem parseSingleQuestion(String rawContent) {
+    if (rawContent == null || rawContent.isBlank()) {
+      throw new BusinessException(ErrorCode.BAD_GATEWAY, "模型返回空内容");
+    }
+    String json = extractJson(rawContent);
+    try {
+      JsonNode node = objectMapper.readTree(json);
+      if (node.isArray()) {
+        if (node.size() != 1) {
+          throw new BusinessException(ErrorCode.BAD_GATEWAY,
+              "模型输出不是单题对象（数组元素个数 " + node.size() + "）");
+        }
+        node = node.get(0);
+      } else if (node.isObject()) {
+        // 白名单包装对象：取数组第 1 个；无白名单数组键则视为单题本体
+        JsonNode inner = null;
+        for (String key : ARRAY_WRAPPER_KEYS) {
+          JsonNode candidate = node.get(key);
+          if (candidate != null && candidate.isArray()) {
+            inner = candidate;
+            break;
+          }
+        }
+        if (inner != null) {
+          if (inner.isEmpty()) {
+            throw new BusinessException(ErrorCode.BAD_GATEWAY,
+                "模型输出不是单题对象（包装数组为空）");
+          }
+          node = inner.get(0);
+        }
+      } else {
+        throw new BusinessException(ErrorCode.BAD_GATEWAY, "模型输出不是单题对象");
+      }
+      if (!node.isObject()) {
+        throw new BusinessException(ErrorCode.BAD_GATEWAY, "模型输出不是单题对象");
+      }
+      return objectMapper.treeToValue(node, SkillQuestionItem.class);
+    } catch (BusinessException e) {
+      throw e;
+    } catch (Exception e) {
+      throw new BusinessException(ErrorCode.BAD_GATEWAY, "模型输出 JSON 解析失败: " + e.getMessage());
+    }
+  }
+
   /** 从模型输出中提取 JSON 文本（剥 ```json 围栏/前后杂文字） */
   private String extractJson(String raw) {
     String t = raw.trim();
@@ -175,5 +263,18 @@ public class SkillGenAiServiceImpl implements SkillGenAiService {
       throw new BusinessException(ErrorCode.BAD_GATEWAY, "模型输出 JSON 不完整");
     }
     return t.substring(start, end + 1);
+  }
+
+  /** 单题生成结果（题目 + 该题末次成功输出，供审计） */
+  private record SingleOutcome(SkillQuestionItem item, String content) {
+  }
+
+  /** 全点调用与 usage 累计（跨题、跨重试） */
+  private static final class Usage {
+    private int calls;
+    private long promptTokens;
+    private long completionTokens;
+    private long totalTokens;
+    private long cachedTokens;
   }
 }

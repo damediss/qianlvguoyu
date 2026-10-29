@@ -245,7 +245,7 @@ class SkillGenBatchServiceTest {
     assertTrue(ex.getMessage().contains("api_key 未配置"));
   }
 
-  // ---------- runBlock 回归：修正重试后 usage 累计、失败计数 ----------
+  // ---------- T11：runBlock 回归（单题拆分后 usage 累计、传参口径、失败计数） ----------
 
   private static void invokeRunBlock(SkillGenBatchService service, SkillGenBatchEntity batch,
       ExamFaqModelConfigEntity cfg, SkillBlueprintNodeEntity point,
@@ -310,14 +310,15 @@ class SkillGenBatchServiceTest {
   }
 
   @Test
-  void runBlock_repairGenerationCountsCumulativeUsage() throws Exception {
+  void runBlock_singleSplitCountsCumulativeUsage() throws Exception {
     ExamFaqModelConfigEntity cfg = modelConfig();
     SkillBlueprintNodeEntity point = points(1).get(0);
     List<SkillQuestionItem> items = List.of(validItem("题一"), validItem("题二"),
         validItem("题三"), validItem("题四"), validItem("题五"));
+    // attempts = 总调用次数：5 题无重试 → 5；此处给 6 表示第某题重试过一次
     when(aiService.generateForPointWithRepair(any(), anyString(), anyString(), anyString(),
         anyString(), anyString(), anyInt(), anyString(), anyString(), anyInt()))
-        .thenReturn(new SkillGenAiService.SkillGenGeneration(items, "[...]", 2,
+        .thenReturn(new SkillGenAiService.SkillGenGeneration(items, "[...]", 6,
             100, 200, 300, 10));
     when(transactionTemplate.execute(any())).thenReturn(true);
     when(draftMapper.selectCount(any())).thenReturn(0L);
@@ -325,10 +326,20 @@ class SkillGenBatchServiceTest {
     java.util.concurrent.atomic.AtomicInteger failures = new java.util.concurrent.atomic.AtomicInteger();
     invokeRunBlock(service, batch(), cfg, point, java.util.Map.of(), failures);
 
+    // 重试过也按 5 题计数，usage 用累计值
     verify(batchMapper).incrementDone(eq(300L), eq(5), eq(300L), eq(100L), eq(200L), eq(10L));
     assertEquals(0, failures.get());
-    // runBlock 不再自行解析（解析在 AI 服务内随重试完成）
+    // runBlock 不再自行解析（解析/校验在 AI 服务内随单题重试完成）
     verify(aiService, never()).parseQuestions(any());
+    // 传给 AI 服务的必须是「基础信息模板」，不得再是 5 题数组契约
+    ArgumentCaptor<String> userPrompt = ArgumentCaptor.forClass(String.class);
+    verify(aiService).generateForPointWithRepair(any(), anyString(), anyString(), anyString(),
+        anyString(), anyString(), anyInt(), anyString(), userPrompt.capture(), anyInt());
+    assertTrue(userPrompt.getValue().contains("考评点代码：A-A-001"));
+    assertTrue(userPrompt.getValue().contains("考评点名称：考评点1"));
+    assertTrue(userPrompt.getValue().contains("重要程度："), "基础信息模板应含重要程度");
+    assertTrue(!userPrompt.getValue().contains("JSON"),
+        "基础信息模板不得含输出契约（单题指令由 AI 服务按题序追加）");
   }
 
   @Test
@@ -338,13 +349,14 @@ class SkillGenBatchServiceTest {
     when(aiService.generateForPointWithRepair(any(), anyString(), anyString(), anyString(),
         anyString(), anyString(), anyInt(), anyString(), anyString(), anyInt()))
         .thenThrow(new BusinessException(com.guoyu.platform.common.exception.ErrorCode.BAD_GATEWAY,
-            "模型输出不是试题数组（已调用 3 次）"));
+            "第 3 题生成失败：模型输出不是单题对象（该题已调用 3 次）"));
 
     java.util.concurrent.atomic.AtomicInteger failures = new java.util.concurrent.atomic.AtomicInteger();
     invokeRunBlock(service, batch(), cfg, point, java.util.Map.of(), failures);
 
-    // gen == null（LLM 调用前就失败）：usage 按 0 计，但失败计数必须 +1
+    // gen == null（整点抛错）：usage 按 0 计，但失败计数必须 +1
     verify(batchMapper).incrementFailed(eq(300L), eq(0L), eq(0L), eq(0L), eq(0L));
+    verify(batchMapper, never()).incrementDone(any(), anyInt(), anyLong(), anyLong(), anyLong(), anyLong());
     assertEquals(1, failures.get());
   }
 

@@ -42,11 +42,14 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
 
 /**
- * 操作技能试题生成批次：提交（秒回）→ 异步并发分块（1 考评点 = 1 次 LLM 调用，产出 5 题）→ 草稿落库。
+ * 操作技能试题生成批次：提交（秒回）→ 异步并发分块（1 考评点 = 1 块，块内逐题 5 次串行 LLM 调用）→ 草稿落库。
  *
  * <p>线程边界与编排机制与理论链路一致（优化方案 v0.3 全部落地）：run_id 编排独占权、
  * 块级并发信号量、多轮自动补跑、熔断锁存、块级事务、断点续跑、写库先提交后投递；
  * tenantId/userId 参数传递，禁止调 SecurityContext，每 Worker 独立 set/clear TenantContextHolder。
+ *
+ * <p>单题拆分（2026-10-29）：块内由 {@link SkillGenAiService#generateForPointWithRepair} 逐题生成
+ * （每次只要求 1 个 JSON 对象，规避 GLM 数组塌缩），块级编排与校验口径不变。
  *
  * <p>发起预检（S9/S10）：点数×5 + 该（工种,等级）累计已入库（全部来源） ≥ 等级下限，不足 400。
  */
@@ -426,12 +429,11 @@ public class SkillGenBatchService {
       gen = aiService.generateForPointWithRepair(tenantId, cfg.getBaseUrl(), cfg.getApiKey(),
           cfg.getModelId(), cfg.getThinking(), cfg.getReasoningEffort(),
           cfg.getMaxTokens() == null ? 16384 : cfg.getMaxTokens(),
-          systemPrompt, SkillGenPromptBuilder.buildUserPrompt(point, l2, l1,
-              SkillBlueprintApplicationService.PER_POINT_QUOTA),
+          systemPrompt, SkillGenPromptBuilder.buildBaseUserPrompt(point, l2, l1),
           SkillBlueprintApplicationService.PER_POINT_QUOTA);
       List<SkillQuestionItem> questions = gen.items();
-      if (gen.attempts() > 1) {
-        log.info("考评点修正重试后成功：batchId={}, point={}, attempts={}",
+      if (gen.attempts() > SkillBlueprintApplicationService.PER_POINT_QUOTA) {
+        log.info("考评点单题拆分含重试完成：batchId={}, point={}, 总调用={}",
             batch.getId(), point.getFullCode(), gen.attempts());
       }
       List<String> errors = validator.validateAll(questions,

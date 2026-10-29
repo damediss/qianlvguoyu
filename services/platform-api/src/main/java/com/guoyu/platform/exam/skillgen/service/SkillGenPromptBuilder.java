@@ -1,19 +1,28 @@
 package com.guoyu.platform.exam.skillgen.service;
 
 import com.guoyu.platform.exam.skillgen.entity.SkillBlueprintNodeEntity;
+import java.util.List;
 
-/** 操作技能命题 prompt 构造器（方案 v1.1 §7） */
+/**
+ * 操作技能命题 prompt 构造器（方案 v1.1 §7；2026-10-29 单题拆分改造：输出契约由数组改单对象）。
+ *
+ * <p>单题拆分口径：system prompt 只声明「只输出 1 个 JSON 对象」，user prompt 由
+ * {@link #buildBaseUserPrompt}（考评点基础信息，每题相同）+
+ * {@link #buildSingleUserPrompt}（第 n 题指令 + 已生成题名）拼装，
+ * 由 {@code SkillGenAiServiceImpl} 在每题调用前重建。
+ */
 public final class SkillGenPromptBuilder {
 
   private SkillGenPromptBuilder() {
   }
 
   /**
-   * 输出格式示例（稳定前缀的一部分：缓存命中后边际成本极低；内容明确禁止照抄）。
-   * 给 2 个元素：单元素示例会诱导模型模仿示例结构只输出 1 题（GLM 数组塌缩事故 2026-10-29）。
+   * 输出格式示例（稳定前缀的一部分：5 次调用共用同一 system，缓存命中后边际成本极低；内容明确禁止照抄）。
+   * 单对象形态：GLM-5.3-flash 对「一次输出 N 题数组」理解不稳定、会间歇塌缩成单题对象，
+   * 单题调用是同模型下 100% 稳定的形态（2026-10-29 真实探针定案）。
    */
   private static final String EXAMPLE = """
-      [{
+      {
         "name": "联机启动集控室监控设备",
         "durationMinutes": 20,
         "examForm": "实操",
@@ -31,24 +40,7 @@ public final class SkillGenPromptBuilder {
           {"item": "联机启动操作", "score": "50", "scoreDesc": "操作步骤漏一步扣5分；顺序错误扣5分；参数设置错误扣5分；未观察设备状态扣5分；通信链路未建立扣5分；启动后未自检扣5分；未按规程停机扣5分；记录不完整扣5分；超时操作扣5分；违规操作扣5分", "maxDeduct": "50", "step": "5"},
           {"item": "通信状态确认", "score": "30", "scoreDesc": "未确认通信状态扣5分；未核对监控点位扣5分；报警功能未验证扣5分；数据记录缺失扣5分；交接事项未确认扣5分；异常情况未上报扣5分", "maxDeduct": "30", "step": "5"}
         ]
-      }, {
-        "name": "识读监控系统通信异常故障记录",
-        "durationMinutes": 15,
-        "examForm": "实操",
-        "sitePrepare": {
-          "equipment": [
-            {"name": "监控系统故障记录表", "unit": "份", "qty": "3"}
-          ]
-        },
-        "examineePrepare": "本人身份证×1、准考证×1、黑色签字笔×1",
-        "requirements": "识读监控系统显示的通信异常、设备运转不同步等故障记录，分析原因并提出处理措施",
-        "negatives": "若考生发生下列情况之一，则应及时终止其考试，考生该试题成绩记为零分：伪造故障记录或隐瞒异常情况不报",
-        "scoring": [
-          {"item": "故障记录识读", "score": "40", "scoreDesc": "未识别异常项扣10分；异常类型判断错误扣10分；关键信息遗漏扣10分；记录判读不完整扣10分", "maxDeduct": "40", "step": "5"},
-          {"item": "原因分析", "score": "35", "scoreDesc": "原因分析缺失扣10分；分析结论错误扣10分；未区分故障性质扣5分；依据不足扣10分", "maxDeduct": "35", "step": "5"},
-          {"item": "处理措施", "score": "25", "scoreDesc": "处理措施缺失扣10分；措施不当扣10分；安全注意事项遗漏扣5分", "maxDeduct": "25", "step": "5"}
-        ]
-      }]""";
+      }""";
 
   public static String buildSystemPrompt(int level) {
     StringBuilder sb = new StringBuilder();
@@ -75,15 +67,14 @@ public final class SkillGenPromptBuilder {
         .append("7. 同一考评点下的多道试题必须覆盖不同工况、不同侧面或不同参数组合，不得同义改述、不得雷同。\n")
         .append("8. 试题内容正确无争议，符合社会主义核心价值观，不得出现违反法律法规、民族歧视、地域歧视、性别歧视等内容；术语规范，标点准确。\n")
         .append("考评点重要程度档位：X=核心要素（重点考查、优先覆盖），Y=重要要素，Z=一般要素。\n")
-        .append("\n输出要求：输出必须是 JSON 数组——第一个字符是 `[`、最后一个字符是 `]`，")
-        .append("数组元素个数必须与要求的试题道数一致，每个元素是一道完整试题；")
-        .append("不要输出任何其他文字、解释或 markdown 围栏。数组元素结构：\n")
+        .append("\n输出要求：只输出 1 个 JSON 对象（一道完整试题的本体），不要输出 JSON 数组、不要 questions 等包装字段、")
+        .append("不要输出任何其他文字、解释或 markdown 围栏。对象结构：\n")
         .append("{\"name\":\"试题名称\",\"durationMinutes\":整数分钟,\"examForm\":\"实操\",")
         .append("\"sitePrepare\":{\"equipment\":[{\"name\":\"…\",\"unit\":\"…\",\"qty\":\"…\"}]},")
         .append("\"examineePrepare\":\"考生自带清单\",\"requirements\":\"具体考核要求\",\"negatives\":\"否定项说明\",")
         .append("\"scoring\":[{\"item\":\"评分要素\",\"score\":\"配分\",\"scoreDesc\":\"评分标准\",\"maxDeduct\":\"最大扣分\",\"step\":\"步长\"}]}\n")
         .append("scoring 中的配分/最大扣分/步长用数字字符串；配分合计必须为 100。\n")
-        .append("\n输出示例（仅示范格式与颗粒度，示例为 2 个元素，实际输出的元素个数必须与题目要求一致，内容不得照抄）：\n").append(EXAMPLE);
+        .append("\n输出示例（仅示范格式与颗粒度，内容不得照抄）：\n").append(EXAMPLE);
     return sb.toString();
   }
 
@@ -92,8 +83,12 @@ public final class SkillGenPromptBuilder {
     return 5;
   }
 
-  public static String buildUserPrompt(SkillBlueprintNodeEntity point,
-      SkillBlueprintNodeEntity l2Node, SkillBlueprintNodeEntity l1Node, int questionCount) {
+  /**
+   * 考评点基础信息段（不含任何输出指令）：单题拆分时作为每题 user prompt 的公共前缀。
+   * 输出指令由 {@link #buildSingleUserPrompt} 按题序追加，避免与「只输出 1 个对象」冲突。
+   */
+  public static String buildBaseUserPrompt(SkillBlueprintNodeEntity point,
+      SkillBlueprintNodeEntity l2Node, SkillBlueprintNodeEntity l1Node) {
     StringBuilder sb = new StringBuilder();
     sb.append("考评点代码：").append(point.getFullCode()).append("\n")
         .append("考评点名称：").append(point.getName()).append("\n")
@@ -111,6 +106,51 @@ public final class SkillGenPromptBuilder {
         sb.append("技能要求原文：\n").append(l2Node.getSkillRequirement()).append("\n");
       }
     }
+    return sb.toString();
+  }
+
+  /** 单题 user prompt（按实体构建，供测试与直连调用） */
+  public static String buildSingleUserPrompt(SkillBlueprintNodeEntity point,
+      SkillBlueprintNodeEntity l2Node, SkillBlueprintNodeEntity l1Node,
+      int index, int total, List<String> generatedNames) {
+    return buildSingleUserPrompt(buildBaseUserPrompt(point, l2Node, l1Node), index, total, generatedNames);
+  }
+
+  /**
+   * 单题 user prompt：基础信息 + 第 n 题指令 + 已生成题名（n=1 时省略该行）。
+   *
+   * @param baseInfo        {@link #buildBaseUserPrompt} 产出的基础信息段
+   * @param index           当前题序（从 1 开始）
+   * @param total           该考评点总题数
+   * @param generatedNames  已生成试题名称（用于防重复；为空表示首题）
+   */
+  public static String buildSingleUserPrompt(String baseInfo, int index, int total,
+      List<String> generatedNames) {
+    StringBuilder sb = new StringBuilder();
+    sb.append(baseInfo == null ? "" : baseInfo);
+    if (!sb.isEmpty() && sb.charAt(sb.length() - 1) != '\n') {
+      sb.append("\n");
+    }
+    sb.append("请为该考评点生成第 ").append(index).append(" 道完整试题（共 ").append(total)
+        .append(" 道；每道均含准备要求、考核试题、评分标准三部分；本题分值 100 分）。")
+        .append("本题是第 ").append(index).append(" 道，必须与该考评点的其它试题覆盖不同工况/侧面/参数组合，不得同义改述。\n");
+    if (generatedNames != null && !generatedNames.isEmpty()) {
+      sb.append("已生成试题名称（禁止重复或同义改述）：")
+          .append(String.join("、", generatedNames)).append("\n");
+    }
+    sb.append("只输出 1 个 JSON 对象（该题本体），不要数组、不要其他文字。");
+    return sb.toString();
+  }
+
+  /**
+   * 旧的「一次生成 N 题数组」user prompt（单题拆分后不再用于 LLM 调用）。
+   *
+   * @deprecated 数组模式已被单题拆分取代（GLM 数组塌缩，2026-10-29），保留供对照与历史断言，勿在新调用点使用
+   */
+  @Deprecated
+  public static String buildUserPrompt(SkillBlueprintNodeEntity point,
+      SkillBlueprintNodeEntity l2Node, SkillBlueprintNodeEntity l1Node, int questionCount) {
+    StringBuilder sb = new StringBuilder(buildBaseUserPrompt(point, l2Node, l1Node));
     sb.append("请为该考评点生成 ").append(questionCount).append(" 道完整试题")
         .append("（每道均含准备要求、考核试题、评分标准三部分；本题分值 100 分；")
         .append("各题覆盖不同工况/侧面/参数组合）。")
