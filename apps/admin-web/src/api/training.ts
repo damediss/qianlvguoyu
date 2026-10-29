@@ -1456,6 +1456,28 @@ export function endClassRole(classId: number | string, roleId: number | string) 
   return unwrap<void>(apiClient.post(`${BASE}/classes/${classId}/roles/${roleId}/end`));
 }
 
+/** 班级角色单行补开 App 账号 */
+export function ensureClassRoleAppAccount(classId: number | string, roleId: number | string) {
+  return unwrap<TrainClassRole>(
+    apiClient.post(`${BASE}/classes/${classId}/roles/${roleId}/ensure-app-account`),
+  );
+}
+
+/** 本班未绑定履职角色批量补开 App 账号 */
+export function ensureClassRoleAppAccounts(classId: number | string) {
+  return unwrap<{
+    classId: number;
+    attempted: number;
+    created: number;
+    reused: number;
+    updated: number;
+    skipped: number;
+    loginReady: number;
+    warnings: Array<{ name?: string; idCard?: string; reason?: string }>;
+  }>(apiClient.post(`${BASE}/classes/${classId}/roles/ensure-app-accounts`));
+}
+
+
 // ==================== 培训任务 ====================
 
 /** 班级培训任务列表 */

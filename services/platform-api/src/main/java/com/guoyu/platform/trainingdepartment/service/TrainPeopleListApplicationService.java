@@ -595,15 +595,20 @@ public class TrainPeopleListApplicationService {
     Long companyId = resolveCompanyId(clazz.getTrainInfoId(), classId);
     Long orgId = resolveImportPlatformOrgId();
 
+    // 空绑定 + SaaS 高位孤儿（>=1e9，PHP 不可登）一并补开/改绑
     List<TrainPeopleListEntity> people = mapper.selectList(new LambdaQueryWrapper<TrainPeopleListEntity>()
         .eq(TrainPeopleListEntity::getTrainClassId, classId)
         .eq(TrainPeopleListEntity::getType, "student")
         .eq(TrainPeopleListEntity::getDeleted, 0)
-        .isNull(TrainPeopleListEntity::getPlatformUserId));
+        .and(w -> w.isNull(TrainPeopleListEntity::getPlatformUserId)
+            .or()
+            .ge(TrainPeopleListEntity::getPlatformUserId,
+                com.guoyu.platform.integration.php.UserProvisioningProperties.LOCAL_ID_BOUNDARY)));
 
     PlatformUserEnsureService.SyncStats syncStats = new PlatformUserEnsureService.SyncStats();
     int linked = 0;
     for (TrainPeopleListEntity row : people) {
+      Long oldId = row.getPlatformUserId();
       PlatformUserEnsureService.EnsureResult ensure = platformUserEnsureService.ensureFromDivisionPerson(
           row.getRealname(),
           row.getIdCard(),
@@ -612,7 +617,6 @@ public class TrainPeopleListApplicationService {
           orgId);
       syncStats.accept(ensure, row.getRealname(), PlatformUserEnsureService.normalizeIdCard(row.getIdCard()));
       if (ensure.platformUserId() != null) {
-        Long oldId = row.getPlatformUserId();
         if (oldId == null || !oldId.equals(ensure.platformUserId())) {
           row.setPlatformUserId(ensure.platformUserId());
           mapper.updateById(row);

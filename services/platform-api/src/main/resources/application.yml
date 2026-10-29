@@ -402,8 +402,22 @@ platform:
     internal-token:${RENCAI_INTERNAL_TOKEN:}
     connect-timeout-seconds: ${RENCAI_CONNECT_TIMEOUT:15}
     read-timeout-seconds: ${RENCAI_READ_TIMEOUT:300}
-  # 单库化（2026-08-27）：platform.sync 三表镜像同步、platform.sync.php 第二数据源、
-  # platform.user-provisioning.php-write-enabled 开户双写均已随 integration/php、integration/sync 包拆除
+  # PHP data-source details are supplied through PHP_MYSQL_* environment variables.
+  # PHP data-source details are supplied through PHP_MYSQL_* environment variables.
+  # 三表定时同步已拆除；此处仅保留 PHP 第二数据源供开户 Writer 使用。
+  sync:
+    php:
+      url: ${PHP_MYSQL_URL:}
+      username: ${PHP_MYSQL_USERNAME:}
+      # PHP data-source details are supplied through PHP_MYSQL_* environment variables.
+      password: ${PHP_MYSQL_PASSWORD:}
+      max-active: ${PHP_MYSQL_MAX_ACTIVE:3}
+      max-wait-ms: ${PHP_MYSQL_MAX_WAIT_MS:3000}
+      query-timeout-seconds: ${PHP_MYSQL_QUERY_TIMEOUT:10}
+  user-provisioning:
+    # PHP data-source details are supplied through PHP_MYSQL_* environment variables.
+    php-write-enabled: ${PLATFORM_USER_PHP_WRITE_ENABLED:true}
+    fail-soft: ${PLATFORM_USER_PHP_FAIL_SOFT:true}
 # Sa-Token
 sa-token:
   token-name: Authorization

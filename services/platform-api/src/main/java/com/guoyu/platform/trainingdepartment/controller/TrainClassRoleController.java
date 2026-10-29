@@ -57,4 +57,19 @@ public class TrainClassRoleController {
     roleService.endRole(classId, roleId);
     return ApiResponse.ok();
   }
+
+  @PostMapping("/classes/{classId}/roles/{roleId}/ensure-app-account")
+  @PreAuthorize(TrainingAuthorityExpressions.CLASS_PEOPLE_UPDATE)
+  @AuditLog(module = "training", action = "class-role:ensure-app", targetType = "train_class_role")
+  public ApiResponse<TrainClassRoleVO> ensureAppAccount(
+      @PathVariable Long classId, @PathVariable Long roleId) {
+    return ApiResponse.ok(roleService.ensureAppAccount(classId, roleId));
+  }
+
+  @PostMapping("/classes/{classId}/roles/ensure-app-accounts")
+  @PreAuthorize(TrainingAuthorityExpressions.CLASS_PEOPLE_UPDATE)
+  @AuditLog(module = "training", action = "class-role:ensure-app-batch", targetType = "train_class_role")
+  public ApiResponse<Map<String, Object>> ensureAppAccounts(@PathVariable Long classId) {
+    return ApiResponse.ok(roleService.ensureAppAccountsForClass(classId));
+  }
 }

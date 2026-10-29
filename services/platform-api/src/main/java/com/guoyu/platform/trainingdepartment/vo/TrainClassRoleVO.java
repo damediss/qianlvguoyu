@@ -13,6 +13,8 @@ public record TrainClassRoleVO(
     String displayName,
     String phone,
     String status,
-    boolean unboundWarning
+    boolean unboundWarning,
+    /** bound | ensured | reused；列表多为 bound 或 null */
+    String bindStatus
 ) {
 }

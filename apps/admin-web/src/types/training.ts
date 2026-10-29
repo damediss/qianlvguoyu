@@ -2270,6 +2270,8 @@ export interface TrainClassRole {
   phone?: string;
   status: string;
   unboundWarning?: boolean;
+  /** bound | ensured | reused */
+  bindStatus?: string | null;
 }
 
 export interface TrainClassRoleSummary {

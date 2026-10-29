@@ -49,6 +49,15 @@ function invalidateRoleQueries(qc: ReturnType<typeof useQueryClient>, classId: A
   void qc.invalidateQueries({ queryKey: ['class-role-summary', classId] });
 }
 
+function isValidIdCard(v?: string | null): boolean {
+  const s = (v || '').trim();
+  return /^[0-9Xx]{15}$/.test(s) || /^[0-9Xx]{18}$/.test(s);
+}
+
+function isValidPhone(v?: string | null): boolean {
+  return /^1\d{10}$/.test((v || '').replace(/\s/g, ''));
+}
+
 export type ClassRolesPanelProps = {
   classId: ApiId;
   /** 是否展示顶部说明 Alert，默认 true */
@@ -92,16 +101,25 @@ export function ClassRolesPanel({ classId, showAlert = true, contextHint }: Clas
       ids: Array<number | string>;
       subjectType: string;
     }) => {
+      const results: TrainClassRole[] = [];
       for (const id of payload.ids) {
-        await trainApi.assignClassRole(classId, {
-          roleCode: payload.roleCode,
-          subjectType: payload.subjectType,
-          subjectId: id,
-        });
+        results.push(
+          await trainApi.assignClassRole(classId, {
+            roleCode: payload.roleCode,
+            subjectType: payload.subjectType,
+            subjectId: id,
+          }),
+        );
       }
+      return results;
     },
-    onSuccess: () => {
-      message.success('指派成功（开班准备与跟班已同步）');
+    onSuccess: (results) => {
+      const ensured = results.some((r) => r.bindStatus === 'ensured');
+      message.success(
+        ensured
+          ? '指派成功，已开通 App 账号，默认密码 123123，请通知老师首次登录后修改'
+          : '指派成功（开班准备与跟班已同步）',
+      );
       setImportOpen(false);
       setSelectedTeacherIds([]);
       invalidateRoleQueries(qc, classId);
@@ -116,6 +134,19 @@ export function ClassRolesPanel({ classId, showAlert = true, contextHint }: Clas
       invalidateRoleQueries(qc, classId);
     },
     onError: (e: Error) => message.error(e.message || '卸任失败'),
+  });
+
+  const ensureMu = useMutation({
+    mutationFn: (roleId: string) => trainApi.ensureClassRoleAppAccount(classId, roleId),
+    onSuccess: (row) => {
+      message.success(
+        row.bindStatus === 'ensured'
+          ? '已开通 App 账号，默认密码 123123，请通知老师首次登录后修改'
+          : '已绑定 App 账号',
+      );
+      invalidateRoleQueries(qc, classId);
+    },
+    onError: (e: Error) => message.error(e.message || '开通失败'),
   });
 
   const filtered = roles.filter((r) => matchesRoleFilter(r.roleCode, roleFilter));
@@ -138,27 +169,39 @@ export function ClassRolesPanel({ classId, showAlert = true, contextHint }: Clas
     },
     {
       title: '操作',
-      width: 100,
+      width: 160,
       align: 'center',
       render: (_, row) =>
         row.roleCode === 'monitor' ? (
           <Typography.Text type="secondary">花名册</Typography.Text>
         ) : (
-          <Button
-            type="link"
-            danger
-            size="small"
-            loading={endMu.isPending}
-            onClick={() =>
-              Modal.confirm({
-                title: '确认卸任？',
-                content: `将解除「${row.roleName}」：${row.displayName || '—'}`,
-                onOk: () => endMu.mutateAsync(row.id),
-              })
-            }
-          >
-            卸任
-          </Button>
+          <Space size={0}>
+            {row.unboundWarning ? (
+              <Button
+                type="link"
+                size="small"
+                loading={ensureMu.isPending}
+                onClick={() => ensureMu.mutate(row.id)}
+              >
+                开通账号
+              </Button>
+            ) : null}
+            <Button
+              type="link"
+              danger
+              size="small"
+              loading={endMu.isPending}
+              onClick={() =>
+                Modal.confirm({
+                  title: '确认卸任？',
+                  content: `将解除「${row.roleName}」：${row.displayName || '—'}`,
+                  onOk: () => endMu.mutateAsync(row.id),
+                })
+              }
+            >
+              卸任
+            </Button>
+          </Space>
         ),
     },
   ];
@@ -167,15 +210,15 @@ export function ClassRolesPanel({ classId, showAlert = true, contextHint }: Clas
     <div>
       {showAlert && (
         <Alert
-          type="info"
+          type={unboundCount > 0 ? 'warning' : 'info'}
           showIcon
           style={{ marginBottom: 12 }}
           message="班级角色与开班准备共用 train_class_role，两处维护实时同步"
           description={
             <>
               {unboundCount > 0
-                ? `有 ${unboundCount} 人未绑定 App 账号，指派后需确保可登录。`
-                : '可从师资库指派理论老师、实操老师、教务人员。'}
+                ? `有 ${unboundCount} 人未绑定 App 账号，请点「开通账号」或先补全师资库身份证/手机号后再指派。`
+                : '可从师资库指派理论老师、实操老师、教务人员；指派时将自动开通 App 账号。'}
               {' '}
               班长请在开班准备「学员列表」设置是否班长（系统自动同步）。
               {contextHint ? ` ${contextHint}` : ''}
@@ -229,6 +272,21 @@ export function ClassRolesPanel({ classId, showAlert = true, contextHint }: Clas
             message.warning('请选择人员');
             return;
           }
+          const teachers = teacherPage?.items ?? [];
+          const selected = teachers.filter((t) =>
+            selectedTeacherIds.some((id) => String(id) === String(t.id)),
+          );
+          // 仅校验当前页已加载项；跨页选中若缺资料由后端硬失败兜底
+          for (const t of selected) {
+            if (!isValidIdCard(t.idCardNumber) || String(t.idCardNumber).trim().length !== 18) {
+              message.error(`「${t.name || '未命名'}」请先在师资库补全 18 位身份证后再指派`);
+              return;
+            }
+            if (!isValidPhone(t.phone)) {
+              message.error(`「${t.name || '未命名'}」请先在师资库补全 11 位手机号后再指派`);
+              return;
+            }
+          }
           return assignMu.mutateAsync({
             roleCode: assignRoleCode,
             subjectType: 'teacher_bank',
@@ -246,6 +304,12 @@ export function ClassRolesPanel({ classId, showAlert = true, contextHint }: Clas
             options={ASSIGN_ROLE_OPTIONS}
           />
         </Form.Item>
+        <Alert
+          type="info"
+          showIcon
+          style={{ marginBottom: 12 }}
+          message="须具备 18 位身份证与 11 位手机号；指派成功将自动开通 App 账号（默认密码 123123）"
+        />
         <Input
           allowClear
           prefix={<SearchOutlined />}

@@ -71,6 +71,7 @@ public class TrainClassRoleApplicationService {
   private final TrainPeopleListMapper peopleMapper;
   private final TrainTeacherBankMapper teacherBankMapper;
   private final PlatformUserMapper platformUserMapper;
+  private final PlatformUserEnsureService platformUserEnsureService;
   private final TrainingOperatorScopeService operatorScopeService;
   private final FollowOpLogWriter opLogWriter;
 
@@ -80,6 +81,7 @@ public class TrainClassRoleApplicationService {
       TrainPeopleListMapper peopleMapper,
       TrainTeacherBankMapper teacherBankMapper,
       PlatformUserMapper platformUserMapper,
+      PlatformUserEnsureService platformUserEnsureService,
       TrainingOperatorScopeService operatorScopeService,
       FollowOpLogWriter opLogWriter) {
     this.roleMapper = roleMapper;
@@ -87,6 +89,7 @@ public class TrainClassRoleApplicationService {
     this.peopleMapper = peopleMapper;
     this.teacherBankMapper = teacherBankMapper;
     this.platformUserMapper = platformUserMapper;
+    this.platformUserEnsureService = platformUserEnsureService;
     this.operatorScopeService = operatorScopeService;
     this.opLogWriter = opLogWriter;
   }
@@ -274,7 +277,7 @@ public class TrainClassRoleApplicationService {
   @Transactional
   public TrainClassRoleVO assign(Long classId, TrainClassRoleAssignReq req) {
     operatorScopeService.requireOrgOperator();
-    assertClassViewable(classId);
+    TrainInfoClassEntity clazz = requireClass(classId);
     String roleCode = normalizeRole(req.getRoleCode());
     if (MONITOR.equals(roleCode)) {
       throw new BusinessException(ErrorCode.BAD_REQUEST, "班长请在花名册设置「是否班长」，系统自动同步");
@@ -288,7 +291,8 @@ public class TrainClassRoleApplicationService {
     String phone = req.getPhone();
     String idCard = req.getIdCard();
     Long peopleId = req.getPeopleId();
-    Long platformUserId = null;
+    Long existingPlatformUserId = null;
+    Long teacherCompanyId = null;
 
     if ("teacher_bank".equals(subjectType)) {
       TrainTeacherBankEntity teacher = teacherBankMapper.selectById(subjectId);
@@ -298,6 +302,7 @@ public class TrainClassRoleApplicationService {
       displayName = firstNonBlank(displayName, teacher.getName());
       phone = firstNonBlank(phone, teacher.getPhone());
       idCard = firstNonBlank(idCard, teacher.getIdCardNumber());
+      teacherCompanyId = teacher.getCompanyId();
     } else if ("people".equals(subjectType)) {
       TrainPeopleListEntity people = peopleMapper.selectById(subjectId);
       if (people == null || (people.getDeleted() != null && people.getDeleted() == 1)) {
@@ -310,26 +315,24 @@ public class TrainClassRoleApplicationService {
       displayName = firstNonBlank(displayName, people.getRealname());
       phone = firstNonBlank(phone, people.getPhone());
       idCard = firstNonBlank(idCard, people.getIdCard());
-      platformUserId = people.getPlatformUserId();
+      existingPlatformUserId = people.getPlatformUserId();
     }
 
-    if (!Boolean.FALSE.equals(req.getBindPlatformUser()) && platformUserId == null) {
-      platformUserId = findPlatformUserId(phone, idCard);
-    }
+    // 履职角色强制开户绑定；bindPlatformUser=false 忽略（见《班级角色老师App开户》）
+    AccountBind bind = resolveDutyAccount(
+        displayName, phone, idCard, existingPlatformUserId, clazz, teacherCompanyId);
 
     TrainClassRoleEntity existing = findActive(classId, roleCode, subjectType, subjectId);
     if (existing != null) {
       existing.setDisplayName(displayName);
       existing.setPhone(phone);
       existing.setPeopleId(peopleId);
-      if (platformUserId != null) {
-        existing.setPlatformUserId(platformUserId);
-      }
+      existing.setPlatformUserId(bind.platformUserId());
       roleMapper.updateById(existing);
       dualWriteLegacy(classId, roleCode, existing, false);
       emitRoleOp(classId, FollowOpEventCode.CLASS_ROLE_ASSIGN, existing,
           "更新角色指派：" + roleLabel(roleCode) + " · " + nullToDash(displayName), false);
-      return toVO(existing);
+      return toVO(existing, bind.bindStatus());
     }
 
     assertUnderCap(classId, roleCode);
@@ -342,7 +345,7 @@ public class TrainClassRoleApplicationService {
     entity.setPeopleId(peopleId);
     entity.setDisplayName(displayName);
     entity.setPhone(phone);
-    entity.setPlatformUserId(platformUserId);
+    entity.setPlatformUserId(bind.platformUserId());
     entity.setStatus("active");
     entity.setStartDate(LocalDate.now());
     entity.setTenantId(resolveTenantId(classId));
@@ -351,7 +354,75 @@ public class TrainClassRoleApplicationService {
     dualWriteLegacy(classId, roleCode, entity, false);
     emitRoleOp(classId, FollowOpEventCode.CLASS_ROLE_ASSIGN, entity,
         "指派" + roleLabel(roleCode) + "：" + nullToDash(displayName), false);
-    return toVO(entity);
+    return toVO(entity, bind.bindStatus());
+  }
+
+  /**
+   * 单行补开 App 账号并回写 platform_user_id（历史 unbound）。
+   */
+  @Transactional
+  public TrainClassRoleVO ensureAppAccount(Long classId, Long roleId) {
+    operatorScopeService.requireOrgOperator();
+    TrainInfoClassEntity clazz = requireClass(classId);
+    TrainClassRoleEntity entity = requireActiveDutyRole(classId, roleId);
+    if (entity.getPlatformUserId() != null && entity.getPlatformUserId() > 0) {
+      return toVO(entity, "bound");
+    }
+    SubjectContact contact = resolveSubjectContact(entity);
+    AccountBind bind = resolveDutyAccount(
+        contact.displayName(), contact.phone(), contact.idCard(), null, clazz, contact.companyId());
+    entity.setDisplayName(firstNonBlank(entity.getDisplayName(), contact.displayName()));
+    entity.setPhone(firstNonBlank(entity.getPhone(), contact.phone()));
+    entity.setPlatformUserId(bind.platformUserId());
+    roleMapper.updateById(entity);
+    emitRoleOp(classId, FollowOpEventCode.CLASS_ROLE_ASSIGN, entity,
+        "补开 App 账号：" + nullToDash(entity.getDisplayName()), false);
+    return toVO(entity, bind.bindStatus());
+  }
+
+  /**
+   * 本班未绑定履职角色批量补开。
+   */
+  @Transactional
+  public Map<String, Object> ensureAppAccountsForClass(Long classId) {
+    operatorScopeService.requireOrgOperator();
+    TrainInfoClassEntity clazz = requireClass(classId);
+    PlatformUserEnsureService.SyncStats stats = new PlatformUserEnsureService.SyncStats();
+    List<TrainClassRoleEntity> unbound = roleMapper.selectList(activeWrapper(classId)).stream()
+        .filter(r -> !MONITOR.equals(r.getRoleCode()))
+        .filter(r -> r.getPlatformUserId() == null || r.getPlatformUserId() <= 0)
+        .toList();
+    for (TrainClassRoleEntity entity : unbound) {
+      SubjectContact contact = resolveSubjectContact(entity);
+      String name = firstNonBlank(entity.getDisplayName(), contact.displayName());
+      String phone = firstNonBlank(entity.getPhone(), contact.phone());
+      String idCard = contact.idCard();
+      try {
+        AccountBind bind = resolveDutyAccount(name, phone, idCard, null, clazz, contact.companyId());
+        entity.setDisplayName(name);
+        entity.setPhone(phone);
+        entity.setPlatformUserId(bind.platformUserId());
+        roleMapper.updateById(entity);
+        stats.accept(
+            new PlatformUserEnsureService.EnsureResult(
+                "ensured".equals(bind.bindStatus())
+                    ? PlatformUserEnsureService.Outcome.CREATED
+                    : PlatformUserEnsureService.Outcome.REUSED,
+                bind.platformUserId(),
+                null),
+            name,
+            PlatformUserEnsureService.normalizeIdCard(idCard));
+      } catch (BusinessException ex) {
+        stats.accept(
+            PlatformUserEnsureService.EnsureResult.skipped(ex.getMessage()),
+            name,
+            PlatformUserEnsureService.normalizeIdCard(idCard));
+      }
+    }
+    Map<String, Object> out = stats.toMap();
+    out.put("classId", classId);
+    out.put("attempted", unbound.size());
+    return out;
   }
 
   @Transactional
@@ -620,11 +691,134 @@ public class TrainClassRoleApplicationService {
   }
 
   private void assertClassViewable(Long classId) {
+    requireClass(classId);
+  }
+
+  private TrainInfoClassEntity requireClass(Long classId) {
     TrainInfoClassEntity clazz = classMapper.selectById(classId);
     if (clazz == null || (clazz.getDeleted() != null && clazz.getDeleted() == 1)) {
       throw new BusinessException(ErrorCode.NOT_FOUND, "班级不存在");
     }
     operatorScopeService.assertClassAccessible(clazz);
+    return clazz;
+  }
+
+  private TrainClassRoleEntity requireActiveDutyRole(Long classId, Long roleId) {
+    TrainClassRoleEntity entity = roleMapper.selectById(roleId);
+    if (entity == null || (entity.getDeleted() != null && entity.getDeleted() == 1)) {
+      throw new BusinessException(ErrorCode.NOT_FOUND, "角色记录不存在");
+    }
+    if (!classId.equals(entity.getClassId())) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST, "角色不属于本班");
+    }
+    if (!"active".equals(entity.getStatus())) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST, "角色已卸任");
+    }
+    if (MONITOR.equals(entity.getRoleCode())) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST, "班长请走学员开户，不在此补开");
+    }
+    return entity;
+  }
+
+  private record AccountBind(Long platformUserId, String bindStatus) {}
+
+  private record SubjectContact(String displayName, String phone, String idCard, Long companyId) {}
+
+  private SubjectContact resolveSubjectContact(TrainClassRoleEntity entity) {
+    String name = entity.getDisplayName();
+    String phone = entity.getPhone();
+    String idCard = null;
+    Long companyId = null;
+    if ("teacher_bank".equals(entity.getSubjectType()) && entity.getSubjectId() != null) {
+      TrainTeacherBankEntity teacher = teacherBankMapper.selectById(entity.getSubjectId());
+      if (teacher != null && (teacher.getDeleted() == null || teacher.getDeleted() == 0)) {
+        name = firstNonBlank(name, teacher.getName());
+        phone = firstNonBlank(phone, teacher.getPhone());
+        idCard = teacher.getIdCardNumber();
+        companyId = teacher.getCompanyId();
+      }
+    } else if (entity.getPeopleId() != null) {
+      TrainPeopleListEntity people = peopleMapper.selectById(entity.getPeopleId());
+      if (people != null && (people.getDeleted() == null || people.getDeleted() == 0)) {
+        name = firstNonBlank(name, people.getRealname());
+        phone = firstNonBlank(phone, people.getPhone());
+        idCard = people.getIdCard();
+      }
+    } else if ("people".equals(entity.getSubjectType()) && entity.getSubjectId() != null) {
+      TrainPeopleListEntity people = peopleMapper.selectById(entity.getSubjectId());
+      if (people != null && (people.getDeleted() == null || people.getDeleted() == 0)) {
+        name = firstNonBlank(name, people.getRealname());
+        phone = firstNonBlank(phone, people.getPhone());
+        idCard = people.getIdCard();
+      }
+    }
+    return new SubjectContact(name, phone, idCard, companyId);
+  }
+
+  /**
+   * 履职角色：必有 platform_user_id。优先沿用已有绑定；否则按身份证 ensure（同学员规则）。
+   */
+  private AccountBind resolveDutyAccount(
+      String displayName,
+      String phone,
+      String idCard,
+      Long existingPlatformUserId,
+      TrainInfoClassEntity clazz,
+      Long teacherCompanyId) {
+    if (existingPlatformUserId != null && existingPlatformUserId > 0) {
+      PlatformUserEntity existing = platformUserMapper.selectById(existingPlatformUserId);
+      if (existing != null && (existing.getDeleted() == null || existing.getDeleted() == 0)) {
+        return new AccountBind(existingPlatformUserId, "bound");
+      }
+    }
+
+    String normalizedId = PlatformUserEnsureService.normalizeIdCard(idCard);
+    String normalizedPhone = phone == null ? "" : phone.replace(" ", "").trim();
+    if (!StringUtils.hasText(normalizedId) || normalizedId.length() != 18) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST, "请先在师资库补全 18 位身份证后再指派");
+    }
+    if (!StringUtils.hasText(normalizedPhone) || normalizedPhone.length() != 11) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST, "请先在师资库补全 11 位手机号后再指派");
+    }
+    if (!StringUtils.hasText(displayName)) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST, "姓名不能为空");
+    }
+
+    Long companyId = clazz != null && clazz.getCompanyId() != null && clazz.getCompanyId() > 0
+        ? clazz.getCompanyId()
+        : teacherCompanyId;
+    Long orgId = companyId;
+
+    PlatformUserEnsureService.EnsureResult ensure = platformUserEnsureService.ensureFromDivisionPerson(
+        displayName.trim(), normalizedId, normalizedPhone, companyId, orgId);
+    if (ensure.outcome() == PlatformUserEnsureService.Outcome.SKIPPED
+        || ensure.platformUserId() == null) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST, mapEnsureWarning(ensure.warning()));
+    }
+    String bindStatus = switch (ensure.outcome()) {
+      case CREATED -> "ensured";
+      case REUSED, UPDATED -> "reused";
+      default -> "bound";
+    };
+    log.info("[班级角色] ensure App账号 source=class_role outcome={} userId={} name={}",
+        ensure.outcome(), ensure.platformUserId(), displayName);
+    return new AccountBind(ensure.platformUserId(), bindStatus);
+  }
+
+  private static String mapEnsureWarning(String warning) {
+    if (!StringUtils.hasText(warning)) {
+      return "无法开通 App 账号，请核对手机号与身份证";
+    }
+    if (warning.contains("手机号已被其他学员占用") || warning.contains("手机号已被")) {
+      return "该手机号已绑定其他身份证账号，请核对后重试";
+    }
+    if (warning.contains("身份证")) {
+      return "请先在师资库补全 18 位身份证后再指派";
+    }
+    if (warning.contains("手机")) {
+      return "请先在师资库补全 11 位手机号后再指派";
+    }
+    return warning;
   }
 
   private Long resolveTenantId(Long classId) {
@@ -645,11 +839,11 @@ public class TrainClassRoleApplicationService {
   }
 
   private TrainClassRoleVO toVO(TrainClassRoleEntity e) {
-    boolean unbound = e.getPlatformUserId() == null
-        && !MONITOR.equals(e.getRoleCode()); // 班长通常已有学员账号；仍可能为空
-    if (MONITOR.equals(e.getRoleCode())) {
-      unbound = e.getPlatformUserId() == null;
-    }
+    return toVO(e, e.getPlatformUserId() != null && e.getPlatformUserId() > 0 ? "bound" : null);
+  }
+
+  private TrainClassRoleVO toVO(TrainClassRoleEntity e, String bindStatus) {
+    boolean unbound = e.getPlatformUserId() == null || e.getPlatformUserId() <= 0;
     return new TrainClassRoleVO(
         String.valueOf(e.getId()),
         e.getClassId(),
@@ -662,7 +856,8 @@ public class TrainClassRoleApplicationService {
         e.getDisplayName(),
         e.getPhone(),
         e.getStatus(),
-        unbound);
+        unbound,
+        bindStatus);
   }
 
   private void emitRoleOp(
@@ -683,6 +878,7 @@ public class TrainClassRoleApplicationService {
       detail.put("subjectId", entity.getSubjectId());
       detail.put("peopleId", entity.getPeopleId());
       detail.put("platformUserId", entity.getPlatformUserId());
+      detail.put("source", "class_role");
       opLogWriter.write(FollowOpLogCommand.of(classId, event)
           .title(event.defaultTitle())
           .summary(summary)
